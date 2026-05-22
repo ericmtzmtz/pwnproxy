@@ -16,7 +16,7 @@ class HookBus:
             hook_type: [] for hook_type in self.ALLOWED_HOOK_TYPES
         }
 
-    async def register(self, hook_type: str) -> asyncio.Queue:
+    def register(self, hook_type: str) -> asyncio.Queue:
         """Register a subscriber for a specific hook type."""
         if hook_type not in self.ALLOWED_HOOK_TYPES:
             raise ValueError(f"Unknown hook type: {hook_type}")

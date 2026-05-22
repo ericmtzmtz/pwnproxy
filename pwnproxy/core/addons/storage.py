@@ -4,7 +4,7 @@ import mitmproxy.http
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 
-from pwnproxy.core.db import FlowRecord, truncate_body
+from pwnproxy.core.db import FlowRecord
 from pwnproxy.core.models import Flow
 
 logger = logging.getLogger(__name__)
@@ -31,19 +31,16 @@ class StorageAddon:
 
     async def _store_flow(self, flow: Flow) -> None:
         try:
-            req_body, req_trunc = truncate_body(flow.request_body)
-            res_body, res_trunc = truncate_body(flow.response_body)
-
             record = FlowRecord(
                 method=flow.method,
                 url=flow.url,
                 request_headers=flow.request_headers,
-                request_body=req_body,
-                request_body_truncated=req_trunc,
+                request_body=flow.request_body,
+                request_body_truncated=flow.request_body_truncated,
                 status_code=flow.status_code,
                 response_headers=flow.response_headers,
-                response_body=res_body,
-                response_body_truncated=res_trunc,
+                response_body=flow.response_body,
+                response_body_truncated=flow.response_body_truncated,
                 duration_ms=flow.duration_ms,
                 error=flow.error,
                 tls=flow.tls,
