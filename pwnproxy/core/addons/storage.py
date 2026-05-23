@@ -20,14 +20,14 @@ class StorageAddon:
         )
         self._background_tasks = set()
 
-    def done(self, f: mitmproxy.http.HTTPFlow):
-        """Called when a flow completes (successful or error)."""
-        # We need to run the db insert concurrently without blocking mitmproxy's event loop
-        # Convert it to our internal model first to avoid threading/asyncio issues with mitmproxy objects
-        pwn_flow = Flow.from_mitmproxy(f)
-        task = asyncio.create_task(self._store_flow(pwn_flow))
-        self._background_tasks.add(task)
-        task.add_done_callback(self._background_tasks.discard)
+    def response(self, f: mitmproxy.http.HTTPFlow):
+        try:
+            pwn_flow = Flow.from_mitmproxy(f)
+            task = asyncio.create_task(self._store_flow(pwn_flow))
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_tasks.discard)
+        except Exception as e:
+            logger.error(f"StorageAddon.response() error: {e}", exc_info=True)
 
     async def _store_flow(self, flow: Flow) -> None:
         try:

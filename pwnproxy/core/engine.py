@@ -36,7 +36,7 @@ class ProxyEngine:
         )
 
         # Initialize master
-        self._master = DumpMaster(opts, with_termlog=False, with_dumper=False)
+        self._master = DumpMaster(opts, with_termlog=True, with_dumper=False)
         
         # We will import addons lazily or they should be injected
         # To avoid circular imports, let's load them here
@@ -52,7 +52,13 @@ class ProxyEngine:
 
         # Start master in a task
         logger.info(f"Starting ProxyEngine on {host}:{port}")
-        self._task = asyncio.create_task(self._master.run())
+        self._task = asyncio.create_task(self._run_master())
+
+    async def _run_master(self) -> None:
+        try:
+            await self._master.run()
+        except SystemExit:
+            pass
 
     def stop(self) -> None:
         """Stop the proxy server gracefully."""
