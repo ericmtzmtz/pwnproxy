@@ -9,7 +9,7 @@ class IntruderConfig(Vertical):
     def compose(self) -> ComposeResult:
         yield Static("[bold]Attack Mode[/]", classes="section-label")
         yield Select(
-            [("sniper", "Sniper"), ("cluster_bomb", "Cluster Bomb")],
+            [("Sniper", "sniper"), ("Cluster Bomb", "cluster_bomb")],
             prompt="Mode",
             id="attack-mode",
             value="sniper",

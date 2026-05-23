@@ -12,6 +12,21 @@ from pwnproxy.core.hooks import HookBus
 logger = logging.getLogger(__name__)
 
 
+# Suppress uvicorn/starlette CancelledError during shutdown
+class _SuppressCancelledError(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if "CancelledError" in record.getMessage():
+            return False
+        if record.exc_text and "CancelledError" in record.exc_text:
+            return False
+        if record.exc_info and record.exc_info[0] is asyncio.CancelledError:
+            return False
+        return True
+
+
+logging.getLogger("uvicorn.error").addFilter(_SuppressCancelledError())
+
+
 def _create_scanner_engine() -> AsyncEngine:
     db_path = Path.home() / ".pwnproxy" / "scanner_results.db"
     db_url = f"sqlite+aiosqlite:///{db_path.absolute()}"
@@ -62,6 +77,13 @@ async def start_api_server(
         access_log=False,
     )
     server = uvicorn.Server(config)
-    task = asyncio.create_task(server.serve())
+
+    async def _serve() -> None:
+        try:
+            await server.serve()
+        except asyncio.CancelledError:
+            pass
+
+    task = asyncio.create_task(_serve())
     logger.info(f"API server started on {host}:{port}")
     return task

@@ -55,7 +55,7 @@ SCANNER_TABLES: Dict[str, str] = {
 async def ws_traffic(ws: WebSocket):
     await traffic_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
-    queue = hook_bus.register("done")
+    queue = hook_bus.register("response")
 
     try:
         while True:

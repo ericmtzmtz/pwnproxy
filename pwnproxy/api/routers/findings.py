@@ -30,12 +30,16 @@ async def get_findings(scanner_name: str, request: Request, limit: int = 100, of
     engine = request.app.state.scanner_engine
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
-        result = await session.execute(
-            text(f"SELECT * FROM {table} ORDER BY id DESC LIMIT :limit OFFSET :offset"),
-            {"limit": limit, "offset": offset},
-        )
-        rows = result.mappings().all()
-        return [dict(row) for row in rows]
+        try:
+            result = await session.execute(
+                text(f"SELECT * FROM {table} ORDER BY id DESC LIMIT :limit OFFSET :offset"),
+                {"limit": limit, "offset": offset},
+            )
+            rows = result.mappings().all()
+            return [dict(row) for row in rows]
+        except Exception as exc:
+            logger.warning(f"Could not query {table}: {exc}")
+            return []
 
 
 @router.get("/findings")

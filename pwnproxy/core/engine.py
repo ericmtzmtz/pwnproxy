@@ -13,9 +13,11 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
+        self._with_termlog = with_termlog
+        self._upstream = upstream
         self._master: Optional[DumpMaster] = None
         self._task: Optional[asyncio.Task] = None
         self._extra_addons: list[object] = []
@@ -32,11 +34,12 @@ class ProxyEngine:
         opts = Options(
             listen_host=host,
             listen_port=port,
-            ssl_insecure=True,  # Allow self-signed / insecure TLS by default
+            ssl_insecure=True,
+            mode=[f"upstream:{self._upstream}"] if self._upstream else ["regular"],
         )
 
         # Initialize master
-        self._master = DumpMaster(opts, with_termlog=True, with_dumper=False)
+        self._master = DumpMaster(opts, with_termlog=self._with_termlog, with_dumper=False)
         
         # We will import addons lazily or they should be injected
         # To avoid circular imports, let's load them here
