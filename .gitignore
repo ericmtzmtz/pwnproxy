@@ -2,3 +2,13 @@ openspec/
 .agent/
 .opencode/
 .pi/
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# Poetry
+.venv/
+.venv*/
+po

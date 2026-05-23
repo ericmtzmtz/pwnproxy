@@ -7,7 +7,7 @@ from pwnproxy.core.hooks import HookBus
 @pytest.mark.asyncio
 async def test_hookbus_register_and_publish():
     bus = HookBus()
-    queue = await bus.register("request")
+    queue = bus.register("request")
     
     bus.publish("request", "flow_data")
     
@@ -28,7 +28,7 @@ async def test_hookbus_unknown_type():
 @pytest.mark.asyncio
 async def test_hookbus_overflow():
     bus = HookBus(maxsize=2)
-    queue = await bus.register("request")
+    queue = bus.register("request")
     
     bus.publish("request", "1")
     bus.publish("request", "2")

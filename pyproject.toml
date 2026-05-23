@@ -7,7 +7,7 @@ license = "AGPL-3.0-or-later"
 readme = "README.md"
 
 [tool.poetry.dependencies]
-python = "^3.11"
+python = "^3.12"
 mitmproxy = "^12.2"
 textual = "^8.2.7"
 typer = "^0.25"

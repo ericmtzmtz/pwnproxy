@@ -18,6 +18,10 @@ class ProxyEngine:
         self.db_engine = db_engine
         self._master: Optional[DumpMaster] = None
         self._task: Optional[asyncio.Task] = None
+        self._extra_addons: list[object] = []
+
+    async def register_addon(self, addon: object) -> None:
+        self._extra_addons.append(addon)
 
     async def start(self, host: str = "127.0.0.1", port: int = 8080) -> None:
         """Start the proxy server."""
@@ -43,6 +47,8 @@ class ProxyEngine:
         self._master.addons.add(HookRelayAddon(self.hook_bus))
         if self.db_engine:
             self._master.addons.add(StorageAddon(self.db_engine))
+        for addon in self._extra_addons:
+            self._master.addons.add(addon)
 
         # Start master in a task
         logger.info(f"Starting ProxyEngine on {host}:{port}")
