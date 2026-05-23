@@ -12,6 +12,8 @@ from pwnproxy.modules.interceptor.controller import (
     InterceptorController,
     FlowSnapshot,
 )
+from pwnproxy.intruder.tui.screen import IntruderScreen
+from pwnproxy.repeater.tui.screen import RepeaterScreen
 
 MAX_TUI_BODY = 102_400  # 100 KB display cap
 
@@ -132,6 +134,8 @@ class InterceptorScreen(Screen[None]):
                 yield Button("Forward", id="btn-forward", variant="primary")
                 yield Button("Forward with edits", id="btn-fwdedit", variant="default")
                 yield Button("Drop", id="btn-drop", variant="error")
+                yield Button("Send to Repeater", id="btn-repeater", variant="default")
+                yield Button("Send to Intruder", id="btn-intruder", variant="default")
                 yield Button("Diff", id="btn-diff", variant="default")
 
     def _format_headers(self, headers: Optional[dict[str, str]]) -> str:
@@ -230,3 +234,11 @@ class InterceptorScreen(Screen[None]):
             self.app.push_screen(
                 DiffOverlay(self._original, edited_snap)
             )
+        elif event.button.id == "btn-repeater":
+            repeater_screen = RepeaterScreen()
+            repeater_screen.add_tab_for_flow(self._flow)
+            self.app.push_screen(repeater_screen)
+        elif event.button.id == "btn-intruder":
+            intruder_screen = IntruderScreen()
+            intruder_screen.populate_from_flow(self._flow)
+            self.app.push_screen(intruder_screen)

@@ -102,5 +102,17 @@ class TokenStorage:
             await session.commit()
             return len(rows)
 
+    async def delete_by_id(self, token_id: int) -> bool:
+        async with self.session_factory() as session:
+            result = await session.execute(
+                select(SessionToken).where(SessionToken.id == token_id)
+            )
+            token = result.scalar_one_or_none()
+            if not token:
+                return False
+            await session.delete(token)
+            await session.commit()
+            return True
+
     async def close(self) -> None:
         await self.engine.dispose()
