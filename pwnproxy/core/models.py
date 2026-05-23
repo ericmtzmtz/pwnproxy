@@ -30,8 +30,8 @@ class Flow:
         err = mflow.error
         
         # mitmproxy headers are multi-dict, we simplify to dict for json serialization
-        req_headers = {k.decode('utf-8', 'replace'): v.decode('utf-8', 'replace') for k, v in req.headers.items(multi=True)} if req else {}
-        res_headers = {k.decode('utf-8', 'replace'): v.decode('utf-8', 'replace') for k, v in res.headers.items(multi=True)} if res else None
+        req_headers = {k: v for k, v in req.headers.items(multi=True)} if req else {}
+        res_headers = {k: v for k, v in res.headers.items(multi=True)} if res else None
         
         duration = None
         if req and req.timestamp_start:
