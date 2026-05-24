@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 class InterceptorAddon:
     """Mitmproxy addon that intercepts flows for user inspection."""
 
-    def __init__(self, output_queue: asyncio.Queue):
+    def __init__(self, output_queue: asyncio.Queue, scope_filter=None):
         self._output_queue = output_queue
         self._intercepted: dict[str, mitmproxy.http.HTTPFlow] = {}
         self._enabled: bool = True
+        self._scope_filter = scope_filter or (lambda url: True)
 
     @property
     def enabled(self) -> bool:
@@ -24,8 +25,13 @@ class InterceptorAddon:
     def set_enabled(self, value: bool) -> None:
         self._enabled = value
 
+    def set_scope_filter(self, scope_filter) -> None:
+        self._scope_filter = scope_filter
+
     def request(self, f: mitmproxy.http.HTTPFlow) -> None:
         if not self._enabled:
+            return
+        if not self._scope_filter(f.request.pretty_url):
             return
         f.intercept()
         self._intercepted[f.id] = f
@@ -34,6 +40,8 @@ class InterceptorAddon:
 
     def response(self, f: mitmproxy.http.HTTPFlow) -> None:
         if not self._enabled:
+            return
+        if not self._scope_filter(f.request.pretty_url):
             return
         f.intercept()
         self._intercepted[f.id] = f
@@ -59,6 +67,10 @@ class InterceptorAddon:
     def resume_all(self) -> None:
         for flow_id in list(self._intercepted.keys()):
             self.resume(flow_id)
+
+    def kill_all(self) -> None:
+        for flow_id in list(self._intercepted.keys()):
+            self.kill(flow_id)
 
     def pending_count(self) -> int:
         return len(self._intercepted)

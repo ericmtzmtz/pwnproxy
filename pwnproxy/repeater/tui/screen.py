@@ -23,11 +23,12 @@ class RepeaterScreen(Screen[None]):
         Binding("escape", "close_screen", "Close"),
     ]
 
-    def __init__(self, engine: Optional[RepeaterEngine] = None):
+    def __init__(self, engine: Optional[RepeaterEngine] = None, initial_flow: Optional[Flow] = None):
         super().__init__()
         self._engine = engine or RepeaterEngine()
         self._tabs: dict[str, RepeaterTab] = {}
         self._tab_counter = 0
+        self._initial_flow = initial_flow
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -37,6 +38,8 @@ class RepeaterScreen(Screen[None]):
     def on_mount(self) -> None:
         tabs = self.query_one("#repeater-tabs", Tabs)
         tabs.can_focus = False
+        if self._initial_flow:
+            self.add_tab_for_flow(self._initial_flow)
 
     def action_new_tab(self) -> None:
         self._add_tab()
@@ -51,7 +54,7 @@ class RepeaterScreen(Screen[None]):
         tab_id = f"rep-{TAB_COUNTER}"
 
         tabs = self.query_one("#repeater-tabs", Tabs)
-        tabs.append(Tab(f"Tab {TAB_COUNTER}", id=tab_id))
+        tabs.add_tab(Tab(f"Tab {TAB_COUNTER}", id=tab_id))
 
         tab_widget = RepeaterTab(
             title=f"Tab {TAB_COUNTER}",
@@ -81,7 +84,7 @@ class RepeaterScreen(Screen[None]):
         if active and active in self._tabs:
             widget = self._tabs.pop(active)
             widget.remove()
-            tabs.remove(active)
+            tabs.remove_tab(active)
             if self._tabs:
                 remaining = list(self._tabs.keys())
                 tabs.active = remaining[-1]

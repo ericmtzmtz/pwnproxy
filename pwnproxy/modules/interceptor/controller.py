@@ -53,6 +53,9 @@ class InterceptorController:
     def enabled(self) -> bool:
         return self._addon.enabled
 
+    def set_on_intercepted(self, callback: Callable[[Flow], None]) -> None:
+        self._on_intercepted = callback
+
     def start(self) -> None:
         self._consumer_task = asyncio.create_task(self._consume_loop())
 
@@ -106,6 +109,18 @@ class InterceptorController:
         self._addon.kill(flow_id)
         self._pending.pop(flow_id, None)
         self._snapshots.pop(flow_id, None)
+
+    @property
+    def pending(self) -> dict[str, Flow]:
+        return dict(self._pending)
+
+    def forward_all(self) -> None:
+        for flow_id in list(self._pending.keys()):
+            self.forward(flow_id)
+
+    def drop_all(self) -> None:
+        for flow_id in list(self._pending.keys()):
+            self.drop(flow_id)
 
     def toggle(self) -> None:
         new_state = not self._addon.enabled

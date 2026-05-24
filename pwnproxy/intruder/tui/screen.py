@@ -2,19 +2,18 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
+import httpx
+
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Header, Static
+from textual.widgets import Button, Header, Input, Select, Static
 
 from pwnproxy.intruder.engine import IntruderEngine
-from pwnproxy.intruder.generator import ClusterBombGenerator, SniperGenerator, read_wordlist
-from pwnproxy.intruder.parser import parse_markers
 from pwnproxy.intruder.tui.config import IntruderConfig
 from pwnproxy.intruder.tui.editor import IntruderEditor
 from pwnproxy.intruder.tui.results import IntruderResults
-from pwnproxy.core.models import Flow
 
 
 class IntruderScreen(Screen[None]):
@@ -25,27 +24,63 @@ class IntruderScreen(Screen[None]):
         Binding("ctrl+s", "start_attack", "Start"),
     ]
 
-    def __init__(self, engine: Optional[IntruderEngine] = None):
+    CSS = """
+    #intruder-body {
+        height: 1fr;
+    }
+    #intruder-top {
+        height: 1fr;
+    }
+    #intruder-editor-panel {
+        height: 1fr;
+    }
+    #intruder-config {
+        width: 30;
+        height: 1fr;
+    }
+    #intruder-bottom {
+        height: 1fr;
+    }
+    #intruder-status {
+        height: 1;
+    }
+    #intruder-results {
+        height: 1fr;
+        min-height: 10;
+    }
+    """
+
+    def __init__(self, engine: Optional[IntruderEngine] = None, initial_request: str = "", api_host: str = "127.0.0.1", api_port: int = 8000):
         super().__init__()
         self._engine = engine or IntruderEngine()
+        self._initial_request = initial_request
+        self._api_host = api_host
+        self._api_port = api_port
         self._running = False
         self._cancel_event = asyncio.Event()
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
-        with Horizontal(id="intruder-main"):
-            with Vertical(id="intruder-editor-panel"):
-                yield Static("[bold]Request with §markers§[/]", classes="panel-title")
-                yield IntruderEditor(id="intruder-editor")
-            yield IntruderConfig(id="intruder-config")
-        yield Static("", id="intruder-status")
-        yield IntruderResults(id="intruder-results")
+        with Vertical(id="intruder-body"):
+            with Horizontal(id="intruder-top"):
+                with Vertical(id="intruder-editor-panel"):
+                    yield Static("[bold]Request with §markers§[/]", classes="panel-title")
+                    yield IntruderEditor(id="intruder-editor")
+                yield IntruderConfig(id="intruder-config")
+            with Vertical(id="intruder-bottom"):
+                yield Static("", id="intruder-status")
+                yield IntruderResults(id="intruder-results")
 
-    def populate_from_flow(self, flow: Flow) -> None:
-        from pwnproxy.repeater.integration import format_flow_as_raw_request
-        raw = format_flow_as_raw_request(flow)
-        editor = self.query_one("#intruder-editor", IntruderEditor)
-        editor.text = raw
+    def on_mount(self) -> None:
+        if self._initial_request:
+            self.query_one("#intruder-editor", IntruderEditor).text = self._initial_request
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "btn-start":
+            self.notify("Start Attack clicked")
+            asyncio.create_task(self.action_start_attack())
+        elif event.button.id == "btn-stop":
+            self.action_stop_attack()
 
     async def action_start_attack(self) -> None:
         if self._running:
@@ -55,11 +90,6 @@ class IntruderScreen(Screen[None]):
         raw = editor.text
         if not raw.strip():
             self._set_status("[red]Empty request[/]")
-            return
-
-        template, markers = parse_markers(raw)
-        if not markers:
-            self._set_status("[red]No §markers§ found in request[/]")
             return
 
         config = self.query_one("#intruder-config", IntruderConfig)
@@ -80,40 +110,32 @@ class IntruderScreen(Screen[None]):
             self._set_status(f"[red]Wordlist not found: {wordlist_path}[/]")
             return
 
-        self._set_status(f"[yellow]Loading wordlist...[/]")
-        wordlist = [w async for w in read_wordlist(str(path))]
-        config.set_wordlist_info(len(wordlist))
-
-        if mode == "cluster_bomb":
-            wordlists = [wordlist] * len(markers)
-            gen = ClusterBombGenerator(template, markers, wordlists)
-        else:
-            gen = SniperGenerator(template, markers, wordlist)
-
-        total = gen.total_requests
-        self._set_status(f"[yellow]Starting {mode} attack: {total} requests...[/]")
+        self._set_status("[yellow]Starting attack via API...[/]")
         self._running = True
-        self._cancel_event.clear()
         self._toggle_controls(False)
 
-        results_table = self.query_one("#intruder-results", IntruderResults)
-        results_table.clear()
-
-        self._engine = IntruderEngine(concurrency=concurrency)
-
-        async for result in self._engine.execute(gen, total):
-            results_table.add_result(
-                result.request_id,
-                result.payload,
-                result.status_code,
-                result.response_length,
-                result.timing_ms,
-                result.error,
+        url = f"http://{self._api_host}:{self._api_port}/api/v1/intruder/run"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(url, json={
+                    "raw_request": raw,
+                    "mode": mode,
+                    "wordlist_path": wordlist_path,
+                    "concurrency": concurrency,
+                }, timeout=300)
+            resp.raise_for_status()
+            data = resp.json()
+            total = data.get("total", 0)
+            results = data.get("results", [])
+            self.query_one("#intruder-results", IntruderResults).post_message(
+                IntruderResults.AddResults(results)
             )
-
-        self._running = False
-        self._toggle_controls(True)
-        self._set_status(f"[green]Attack complete: {total} requests sent[/]")
+            self._set_status(f"[green]Complete: {len(results)}/{total} results[/]")
+        except Exception as e:
+            self._set_status(f"[red]Error: {e}[/]")
+        finally:
+            self._running = False
+            self._toggle_controls(True)
 
     def action_stop_attack(self) -> None:
         self._cancel_event.set()

@@ -1,55 +1,83 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 
 
 @router.get("/sessions")
-async def list_sessions(request: Request, token_type: str = None, search: str = None):
-    storage = request.app.state.token_storage
-    tokens = await storage.query(token_type=token_type, search=search)
+async def list_sessions(request: Request):
+    """List all proxy sessions (not tokens — use /api/v1/tokens for tokens)."""
+    manager = request.app.state.session_manager
+    sessions = manager.list()
     return [
         {
-            "id": t.id,
-            "token_type": t.token_type,
-            "token_value": t.token_value[:80] + ("..." if len(t.token_value) > 80 else ""),
-            "label": t.label,
-            "status": t.status,
-            "source_url": t.source_url,
-            "ref_count": t.ref_count,
-            "first_seen": t.first_seen.isoformat() if t.first_seen else None,
-            "last_seen": t.last_seen.isoformat() if t.last_seen else None,
-            "expires_at": t.expires_at.isoformat() if t.expires_at else None,
+            "name": s["name"],
+            "created_at": s.get("created_at"),
+            "last_modified": s.get("last_modified"),
+            "active": s["name"] == manager.active_name,
         }
-        for t in tokens
+        for s in sessions
     ]
 
 
-@router.get("/sessions/{token_id}")
-async def get_session(request: Request, token_id: int):
-    storage = request.app.state.token_storage
-    token = await storage.get_by_id(token_id)
-    if not token:
-        raise HTTPException(status_code=404, detail="Token not found")
+@router.get("/sessions/active")
+async def get_active_session(request: Request):
+    manager = request.app.state.session_manager
     return {
-        "id": token.id,
-        "token_type": token.token_type,
-        "token_value": token.token_value,
-        "label": token.label,
-        "status": token.status,
-        "decoded_header": token.decoded_header,
-        "decoded_payload": token.decoded_payload,
-        "source_url": token.source_url,
-        "source_flow_id": token.source_flow_id,
-        "ref_count": token.ref_count,
-        "first_seen": token.first_seen.isoformat() if token.first_seen else None,
-        "last_seen": token.last_seen.isoformat() if token.last_seen else None,
-        "expires_at": token.expires_at.isoformat() if token.expires_at else None,
+        "name": manager.active_name,
+        "path": str(manager.active_path),
+        "has_unsaved_changes": manager.has_unsaved_changes,
+        "scope_enabled": manager.scope.enabled,
     }
 
 
-@router.delete("/sessions/{token_id}", status_code=204)
-async def delete_session(request: Request, token_id: int):
-    storage = request.app.state.token_storage
-    deleted = await storage.delete_by_id(token_id)
-    if not deleted:
-        raise HTTPException(status_code=404, detail="Token not found")
+@router.post("/sessions/manage")
+async def manage_session(request: Request):
+    """Create, load, save, or delete sessions."""
+    body = await request.json()
+    action = body.get("action")
+    name = body.get("name", "")
+    manager = request.app.state.session_manager
+
+    try:
+        if action == "create":
+            await manager.create(name)
+            return {"status": "ok", "message": f"Created session '{name}'"}
+        elif action == "load":
+            await manager.load(name)
+            return {"status": "ok", "message": f"Loaded session '{name}'"}
+        elif action == "save":
+            await manager.save()
+            return {"status": "ok", "message": f"Saved session '{manager.active_name}'"}
+        elif action == "delete":
+            await manager.delete(name)
+            return {"status": "ok", "message": f"Deleted session '{name}'"}
+        elif action == "rename":
+            new_name = body.get("new_name", "")
+            from pwnproxy.modules.session_manager.manager import SessionManager
+            await SessionManager.rename(name, new_name)
+            if manager._active_name == name:
+                manager._active_name = new_name
+                manager._active_path = manager._active_path.parent / new_name
+            return {"status": "ok", "message": f"Renamed session '{name}' -> '{new_name}'"}
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/sessions/scope")
+async def get_scope(request: Request):
+    manager = request.app.state.session_manager
+    return manager.scope.to_dict()
+
+
+@router.put("/sessions/scope")
+async def update_scope(request: Request):
+    body = await request.json()
+    manager = request.app.state.session_manager
+    from pwnproxy.modules.session_manager import ScopeConfig
+    manager.scope = ScopeConfig(body)
+    manager.mark_unsaved()
+    return {"status": "ok", "message": "Scope updated"}

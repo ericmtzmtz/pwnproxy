@@ -1,17 +1,16 @@
 from typing import Optional
 
-from textual.widgets import Static
+from textual.widgets import TextArea
 
 
-class ResponseViewer(Static):
-    """Displays HTTP response contents (status, headers, body)."""
+class ResponseViewer(TextArea):
+    """Displays HTTP response as plain text (no markup parsing)."""
 
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(text="", read_only=True, **kwargs)
 
     def show_response(self, status_code: int, headers: dict, body: Optional[bytes]) -> None:
-        """Populate the viewer with response data."""
-        parts = [f"[bold]HTTP/1.1 {status_code}[/]"]
+        parts = [f"HTTP/1.1 {status_code}"]
         for key, value in headers.items():
             parts.append(f"{key}: {value}")
         parts.append("")
@@ -20,4 +19,8 @@ class ResponseViewer(Static):
             if len(text) > 100_000:
                 text = text[:100_000] + "\n... [truncated]"
             parts.append(text)
-        self.update("\n".join(parts))
+        self.text = "\n".join(parts)
+        self.move_cursor((0, 0))
+
+    def update(self, content: str) -> None:
+        self.text = content

@@ -27,8 +27,11 @@ class _SuppressCancelledError(logging.Filter):
 logging.getLogger("uvicorn.error").addFilter(_SuppressCancelledError())
 
 
-def _create_scanner_engine() -> AsyncEngine:
-    db_path = Path.home() / ".pwnproxy" / "scanner_results.db"
+def _create_scanner_engine(session_path: Optional[str] = None) -> AsyncEngine:
+    if session_path:
+        db_path = Path(session_path) / "scanner_results.db"
+    else:
+        db_path = Path.home() / ".pwnproxy" / "scanner_results.db"
     db_url = f"sqlite+aiosqlite:///{db_path.absolute()}"
     return create_async_engine(db_url, echo=False)
 
@@ -52,6 +55,7 @@ async def start_api_server(
     interceptor_controller=None,
     repeater_engine=None,
     intruder_engine=None,
+    session_manager=None,
     host: str = "127.0.0.1",
     port: int = 8000,
 ) -> asyncio.Task:
@@ -68,6 +72,7 @@ async def start_api_server(
     app.state.interceptor_controller = interceptor_controller
     app.state.repeater_engine = repeater_engine
     app.state.intruder_engine = intruder_engine
+    app.state.session_manager = session_manager
 
     config = uvicorn.Config(
         app,

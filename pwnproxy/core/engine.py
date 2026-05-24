@@ -13,19 +13,22 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, scope_filter=None):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog
         self._upstream = upstream
+        self._scope_filter = scope_filter
         self._master: Optional[DumpMaster] = None
         self._task: Optional[asyncio.Task] = None
         self._extra_addons: list[object] = []
 
     async def register_addon(self, addon: object) -> None:
         self._extra_addons.append(addon)
+        if self._master is not None:
+            self._master.addons.add(addon)
 
-    async def start(self, host: str = "127.0.0.1", port: int = 8080) -> None:
+    async def start(self, host: str = "127.0.0.1", port: int =18080) -> None:
         """Start the proxy server."""
         if self._master is not None or self._task is not None:
             raise RuntimeError("ProxyEngine is already running")
@@ -49,7 +52,7 @@ class ProxyEngine:
         # Register addons
         self._master.addons.add(HookRelayAddon(self.hook_bus))
         if self.db_engine:
-            self._master.addons.add(StorageAddon(self.db_engine))
+            self._master.addons.add(StorageAddon(self.db_engine, scope_filter=self._scope_filter))
         for addon in self._extra_addons:
             self._master.addons.add(addon)
 

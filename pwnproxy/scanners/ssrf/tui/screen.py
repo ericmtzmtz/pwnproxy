@@ -40,7 +40,7 @@ class ConfigScreen(ModalScreen[None]):
         try:
             port = int(port_str)
         except ValueError:
-            port = 8080
+            port =18080
         self._scanner.configure(callback_host=host, listen_port=port)
         self.app.pop_screen()
 

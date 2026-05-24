@@ -71,17 +71,7 @@ class RepeaterTab(Vertical):
             asyncio.create_task(self.action_send())
         elif event.button.id == "btn-intruder":
             editor = self.query_one("#req-editor", RequestEditor)
-            from pwnproxy.core.models import Flow
-            flow = Flow(
-                id="intruder",
-                method="GET",
-                url="http://localhost",
-                request_headers={},
-                request_body=None,
-            )
-            intruder = IntruderScreen()
-            intruder.populate_from_flow(flow)
-            intruder.query_one("#intruder-editor", TextArea).text = editor.text
+            intruder = IntruderScreen(initial_request=editor.text)
             self.app.push_screen(intruder)
 
     def on_text_area_key(self, event) -> None:

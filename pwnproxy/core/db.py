@@ -50,8 +50,10 @@ def ensure_db_dir(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def create_engine(db_path: Optional[str] = None) -> AsyncEngine:
-    if db_path is None:
+def create_engine(db_path: Optional[str] = None, session_path: Optional[str] = None) -> AsyncEngine:
+    if session_path is not None:
+        db_path_obj = Path(session_path) / "traffic.db"
+    elif db_path is None:
         db_path_obj = Path.home() / ".pwnproxy" / "traffic.db"
     else:
         db_path_obj = Path(db_path)

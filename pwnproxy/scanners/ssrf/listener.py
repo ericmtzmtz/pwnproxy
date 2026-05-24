@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class CallbackServer:
-    def __init__(self, host: str = "0.0.0.0", port: int = 8080):
+    def __init__(self, host: str = "0.0.0.0", port: int =18080):
         self._host = host
         self._port = port
         self._hits: dict[str, dict] = {}

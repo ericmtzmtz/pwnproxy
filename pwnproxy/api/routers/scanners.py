@@ -27,6 +27,37 @@ class TriggerRequest(BaseModel):
     scanners: List[str]
 
 
+class FlowTriggerRequest(BaseModel):
+    id: str
+    method: str
+    url: str
+    request_headers: Dict[str, str] = {}
+    request_body: str | None = None
+    status_code: int | None = None
+    response_headers: Dict[str, str] = {}
+    response_body: str | None = None
+
+
+@router.post("/scanners/trigger-flow")
+async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
+    hook_bus = request.app.state.hook_bus
+    if hook_bus is None:
+        raise HTTPException(status_code=503, detail="HookBus not available")
+    from pwnproxy.core.models import Flow as FlowModel
+    f = FlowModel(
+        id=body.id,
+        method=body.method,
+        url=body.url,
+        request_headers=body.request_headers,
+        request_body=body.request_body.encode("utf-8") if body.request_body else None,
+        status_code=body.status_code,
+        response_headers=body.response_headers,
+        response_body=body.response_body.encode("utf-8") if body.response_body else None,
+    )
+    hook_bus.publish("done", f)
+    return {"status": "scanning", "flow_id": body.id}
+
+
 @router.post("/scanners/trigger")
 async def trigger_scanners(request: Request, body: TriggerRequest):
     traffic_engine = request.app.state.traffic_engine

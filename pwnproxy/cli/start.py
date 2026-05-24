@@ -20,6 +20,9 @@ def start(
     api_port: int = typer.Option(8000, "--api-port", help="API server port"),
     tui: bool = typer.Option(False, "--tui", help="Launch TUI dashboard"),
     upstream: str = typer.Option(None, "--upstream", help="Upstream proxy URL (socks5://host:port or http://host:port)"),
+    session: str = typer.Option(None, "--session", help="Load an existing session on boot"),
+    session_name: str = typer.Option(None, "--session-name", help="Create and activate a new session on boot"),
+    no_restore_session: bool = typer.Option(False, "--no-restore-session", help="Start with empty state, do not restore last session"),
 ):
     async def _run():
         # Reconfigure logging based on mode
@@ -48,9 +51,40 @@ def start(
         traffic_engine = create_traffic_engine()
         await init_db(traffic_engine)
 
-        from pwnproxy.api.server import _create_scanner_engine, _create_sessions_engine
+        from pwnproxy.api.server import _create_scanner_engine
         scanner_engine = _create_scanner_engine()
-        sessions_engine = _create_sessions_engine()
+
+        from pwnproxy.modules.session_manager.storage import TokenStorage
+        token_storage = TokenStorage()
+        await token_storage.init()
+
+        from pwnproxy.modules.session_manager.consumer import SessionConsumer
+        session_consumer = SessionConsumer(hook_bus, token_storage)
+        await session_consumer.start()
+
+        from pwnproxy.modules.session_manager.manager import SessionManager
+        session_manager = SessionManager(
+            traffic_engine=traffic_engine,
+            scanner_engine=scanner_engine,
+            token_storage=token_storage,
+        )
+        if no_restore_session:
+            session_manager._active_name = "default"
+            session_manager._active_path = Path.home() / ".pwnproxy" / "sessions" / "default"
+        else:
+            await session_manager.start()
+
+        if session_name:
+            await session_manager.create(session_name)
+        elif session:
+            await session_manager.load(session)
+
+        traffic_engine = session_manager.get_traffic_engine()
+        scanner_engine = session_manager.get_scanner_engine()
+        token_storage = session_manager.get_token_storage()
+
+        scope_check = lambda flow: session_manager.scope.is_in_scope(flow.url)
+        hook_bus.set_scope_filter(scope_check)
 
         from pwnproxy.intruder.engine import IntruderEngine
         from pwnproxy.repeater.engine import RepeaterEngine
@@ -64,7 +98,7 @@ def start(
                 console.print(f"[yellow]Supported schemes: {', '.join(valid_schemes)}[/]")
                 raise typer.Exit(1)
 
-        proxy = ProxyEngine(hook_bus=hook_bus, db_engine=traffic_engine, with_termlog=not tui, upstream=upstream)
+        proxy = ProxyEngine(hook_bus=hook_bus, db_engine=traffic_engine, with_termlog=not tui, upstream=upstream, scope_filter=scope_check)
         await proxy.start(host=host, port=proxy_port)
 
         await asyncio.sleep(0.3)
@@ -76,7 +110,6 @@ def start(
             await asyncio.gather(
                 traffic_engine.dispose(),
                 scanner_engine.dispose(),
-                sessions_engine.dispose(),
                 return_exceptions=True,
             )
             raise typer.Exit(1)
@@ -84,10 +117,25 @@ def start(
         from pwnproxy.modules.interceptor.addon import InterceptorAddon
         from pwnproxy.modules.interceptor.controller import InterceptorController
         intercept_queue: asyncio.Queue = asyncio.Queue()
-        intercept_addon = InterceptorAddon(intercept_queue)
+        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=session_manager.scope.is_in_scope)
         await proxy.register_addon(intercept_addon)
         interceptor_controller = InterceptorController(intercept_addon, on_intercepted=lambda f: None)
         interceptor_controller.start()
+
+        from pwnproxy.scanners.sqli.scanner import SQLiScanner
+        from pwnproxy.scanners.xss.scanner import XSSScanner
+        from pwnproxy.scanners.lfi.scanner import LFIScanner
+        from pwnproxy.scanners.xxe.scanner import XXEScanner
+        from pwnproxy.scanners.ssrf.scanner import SSRFScanner
+        scanners = [
+            SQLiScanner(hook_bus),
+            XSSScanner(hook_bus),
+            LFIScanner(hook_bus),
+            XXEScanner(hook_bus),
+            SSRFScanner(hook_bus),
+        ]
+        for s in scanners:
+            await s.start()
 
         api_task = await start_api_server(
             hook_bus=hook_bus,
@@ -96,6 +144,8 @@ def start(
             repeater_engine=repeater_engine,
             intruder_engine=intruder_engine,
             interceptor_controller=interceptor_controller,
+            token_storage=token_storage,
+            session_manager=session_manager,
             host=host,
             port=api_port,
         )
@@ -108,10 +158,14 @@ def start(
 
             ws_host = "127.0.0.1"
             dashboard = DashboardApp(
-                host=ws_host, api_port=api_port, hook_bus=hook_bus
+                host=ws_host,
+                api_port=api_port,
+                hook_bus=hook_bus,
+                interceptor_controller=interceptor_controller,
             )
             dashboard_task = asyncio.create_task(dashboard.run_async())
 
+        console.print(f"[green]Session:[/] {session_manager.active_name}")
         console.print(f"[green]Proxy[/] listening on [bold]{host}:{proxy_port}[/]")
         console.print(f"[green]API[/] listening on [bold]{host}:{api_port}[/]")
         if upstream:
@@ -136,6 +190,10 @@ def start(
         console.print("\n[bold yellow]Shutting down...[/]")
         proxy.stop()
         interceptor_controller.stop()
+        for s in scanners:
+            await s.stop()
+        await session_consumer.stop()
+        await session_manager.stop()
         api_task.cancel()
         if dashboard_task:
             dashboard_task.cancel()
@@ -143,7 +201,6 @@ def start(
         await asyncio.gather(
             traffic_engine.dispose(),
             scanner_engine.dispose(),
-            sessions_engine.dispose(),
             api_task,
             return_exceptions=True,
         )

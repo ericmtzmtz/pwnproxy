@@ -114,5 +114,17 @@ class TokenStorage:
             await session.commit()
             return True
 
+    async def repoint(self, db_path: str) -> None:
+        await self.engine.dispose()
+        db_path_obj = Path(db_path)
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        db_url = f"sqlite+aiosqlite:///{db_path_obj.absolute()}"
+        self.engine = create_async_engine(db_url, echo=False)
+        self.session_factory = sessionmaker(
+            self.engine, class_=AsyncSession, expire_on_commit=False
+        )
+        async with self.engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
     async def close(self) -> None:
         await self.engine.dispose()

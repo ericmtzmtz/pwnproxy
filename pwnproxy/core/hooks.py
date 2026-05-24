@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,10 @@ class HookBus:
         self._subscribers: Dict[str, List[asyncio.Queue]] = {
             hook_type: [] for hook_type in self.ALLOWED_HOOK_TYPES
         }
+        self._scope_filter: Optional[Callable[[Any], bool]] = None
+
+    def set_scope_filter(self, filter_fn: Optional[Callable[[Any], bool]]) -> None:
+        self._scope_filter = filter_fn
 
     def register(self, hook_type: str) -> asyncio.Queue:
         """Register a subscriber for a specific hook type."""
@@ -29,6 +33,9 @@ class HookBus:
         """Publish a flow to all subscribers of the hook type."""
         if hook_type not in self.ALLOWED_HOOK_TYPES:
             raise ValueError(f"Unknown hook type: {hook_type}")
+
+        if self._scope_filter and not self._scope_filter(flow):
+            return
             
         for queue in self._subscribers[hook_type]:
             try:

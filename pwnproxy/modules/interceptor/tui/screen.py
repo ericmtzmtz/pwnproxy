@@ -40,7 +40,7 @@ class DiffOverlay(ModalScreen[None]):
         self._diffs = compute_full_diff(original, edited)
 
     def compose(self) -> ComposeResult:
-        yield Header(show clock=False)
+        yield Header(show_clock=False)
         with Container(id="diff-content"):
             for section, lines in self._diffs.items():
                 yield Static(f"[bold]── {section} ──[/]", classes="diff-section")
@@ -80,7 +80,7 @@ class InterceptorScreen(Screen[None]):
         self._original = original
 
     def compose(self) -> ComposeResult:
-        yield Header(show clock=False)
+        yield Header(show_clock=False)
         with Container(id="interceptor-main"):
             with Container(id="interceptor-panels"):
                 with Vertical(id="request-panel", classes="panel"):
@@ -239,6 +239,7 @@ class InterceptorScreen(Screen[None]):
             repeater_screen.add_tab_for_flow(self._flow)
             self.app.push_screen(repeater_screen)
         elif event.button.id == "btn-intruder":
-            intruder_screen = IntruderScreen()
-            intruder_screen.populate_from_flow(self._flow)
+            from pwnproxy.repeater.integration import format_flow_as_raw_request
+            raw = format_flow_as_raw_request(self._flow)
+            intruder_screen = IntruderScreen(initial_request=raw)
             self.app.push_screen(intruder_screen)

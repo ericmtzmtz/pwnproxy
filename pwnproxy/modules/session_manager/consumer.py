@@ -36,7 +36,7 @@ class SessionConsumer:
             return
         self._running = True
         await self._storage.init()
-        self._queue = self._hook_bus.register("done")
+        self._queue = self._hook_bus.register("response")
         self._task = asyncio.create_task(self._consume_loop())
 
     async def stop(self) -> None:

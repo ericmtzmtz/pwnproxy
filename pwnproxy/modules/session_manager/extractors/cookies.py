@@ -16,7 +16,8 @@ def extract(flow: Flow) -> list[TokenCandidate]:
     candidates: list[TokenCandidate] = []
 
     candidates.extend(_from_header(flow.request_headers.get("cookie", ""), flow))
-    candidates.extend(_from_set_cookie(flow.response_headers, flow))
+    if flow.response_headers:
+        candidates.extend(_from_set_cookie(flow.response_headers, flow))
 
     return candidates
 
@@ -49,16 +50,23 @@ def _from_set_cookie(
     headers: dict[str, str], flow: Flow
 ) -> list[TokenCandidate]:
     candidates = []
-    raw = headers.get("set-cookie", "")
+
+    raw = next(
+        (v for k, v in headers.items() if k.lower() == "set-cookie"),
+        None
+    )
     if not raw:
         return candidates
 
-    for part in raw.split(";"):
-        part = part.strip()
-        if "=" in part and SESSION_PATTERN.search(part.split("=")[0]):
-            name, _, val = part.partition("=")
-            name = name.strip()
-            val = val.strip()
+    # Multiple Set-Cookie headers may be comma-joined by dict dedup
+    for cookie_part in re.split(r",(?=[^ ;]+=)", raw):
+        cookie_part = cookie_part.strip()
+        if "=" not in cookie_part:
+            continue
+        name, _, val = cookie_part.partition("=")
+        name = name.strip()
+        val = val.split(";")[0].strip()
+        if SESSION_PATTERN.search(name):
             candidates.append(
                 TokenCandidate(
                     token_type="cookie",
@@ -68,5 +76,5 @@ def _from_set_cookie(
                     source_flow_id=flow.id,
                 )
             )
-            break
+
     return candidates

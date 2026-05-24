@@ -72,7 +72,7 @@ pwnproxy is a terminal-native web application security testing toolkit. Built on
 pip install pwnproxy
 
 # 2. Start proxy + API
-pwnproxy start --proxy-port 8080 --api-port 8000
+pwnproxy start --proxy-port18080 --api-port 8000
 
 # 3. Configure curl to use the proxy
 curl -x http://127.0.0.1:8080 http://httpbin.org/get
@@ -140,7 +140,7 @@ Configure your browser's HTTP proxy to `127.0.0.1:8080`. For HTTPS interception,
 Start the proxy server and API control plane.
 
 ```bash
-pwnproxy start --proxy-port 8080 --api-port 8000
+pwnproxy start --proxy-port18080 --api-port 8000
 ```
 
 | Option | Default | Description |
