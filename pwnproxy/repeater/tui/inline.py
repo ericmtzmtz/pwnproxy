@@ -24,10 +24,10 @@ class InlineRepeater(Vertical):
         height: 1fr;
     }
     #rep-detail-panel {
-        height: 1fr;
+        height: 2fr;
     }
     #rep-list-panel {
-        height: 30%;
+        height: 1fr;
         border-top: solid $surface;
     }
     #rep-request-table {
