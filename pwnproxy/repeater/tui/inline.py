@@ -23,19 +23,14 @@ class InlineRepeater(Vertical):
     InlineRepeater {
         height: 1fr;
     }
-    #rep-body {
+    #rep-detail-panel {
         height: 1fr;
     }
     #rep-list-panel {
-        width: 30%;
-        height: 1fr;
-        border-right: solid $surface;
+        height: 30%;
+        border-top: solid $surface;
     }
-    #rep-list-panel > DataTable {
-        height: 1fr;
-    }
-    #rep-detail-panel {
-        width: 70%;
+    #rep-request-table {
         height: 1fr;
     }
     """
@@ -47,12 +42,11 @@ class InlineRepeater(Vertical):
         self._row_counter = 0
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="rep-body"):
-            with Vertical(id="rep-list-panel"):
-                yield Label("[bold]Requests[/]", id="rep-list-title")
-                yield RepeaterTable(id="rep-request-table")
-            with Vertical(id="rep-detail-panel"):
-                yield RepeaterTab(id="rep-editor-viewer")
+        with Vertical(id="rep-detail-panel"):
+            yield RepeaterTab(id="rep-editor-viewer")
+        with Vertical(id="rep-list-panel"):
+            yield Label("[bold]Requests[/]", id="rep-list-title")
+            yield RepeaterTable(id="rep-request-table")
 
     def on_mount(self) -> None:
         tab = self.query_one("#rep-editor-viewer", RepeaterTab)
