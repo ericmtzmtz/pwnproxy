@@ -146,7 +146,8 @@ def start(
             ssrf=SSRFScanner(hook_bus, storage=SsrfStorage(db_path=scanner_db)),
             scan_log_store=scan_log_store,
         )
-        # Scanners start OFF — enabled via Scanner tab toggles
+        # Start scanners ON by default
+        await scan_manager.start_all()
 
         api_task = await start_api_server(
             hook_bus=hook_bus,
