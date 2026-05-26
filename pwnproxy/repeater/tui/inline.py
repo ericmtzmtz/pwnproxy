@@ -26,6 +26,13 @@ class InlineRepeater(Vertical):
     #rep-detail-panel {
         height: 2fr;
     }
+    #rep-info-bar {
+        height: 1;
+        background: $surface;
+        border-top: solid $primary;
+        border-bottom: solid $primary;
+        content-align: center middle;
+    }
     #rep-list-panel {
         height: 1fr;
         border-top: solid $surface;
@@ -44,6 +51,7 @@ class InlineRepeater(Vertical):
     def compose(self) -> ComposeResult:
         with Vertical(id="rep-detail-panel"):
             yield RepeaterTab(id="rep-editor-viewer")
+        yield Label("", id="rep-info-bar")
         with Vertical(id="rep-list-panel"):
             yield Label("[bold]Requests[/]", id="rep-list-title")
             yield RepeaterTable(id="rep-request-table")
@@ -70,6 +78,7 @@ class InlineRepeater(Vertical):
             str(flow.status_code or ""),
             key=row_key,
         )
+        self._update_info_bar(flow, ts, len(raw))
 
     def _on_repeater_response(self, response_text: str) -> None:
         if self._current_id and self._current_id in self._requests:
@@ -82,6 +91,7 @@ class InlineRepeater(Vertical):
 
         self._current_id = row_key
         req = self._requests[row_key]
+        flow = req["flow"]
 
         tab = self.query_one("#rep-editor-viewer", RepeaterTab)
         tab.display = True
@@ -93,3 +103,14 @@ class InlineRepeater(Vertical):
             viewer.text = req["response_text"]
         else:
             viewer.text = ""
+
+        self._update_info_bar(flow, "", len(req["raw"]))
+
+    def _update_info_bar(self, flow: Flow, ts: str, size: int) -> None:
+        bar = self.query_one("#rep-info-bar", Label)
+        bar_text = f"  {flow.method}  {flow.url}  [{flow.status_code or ''}]  {size}B  {ts}"
+        if self._current_id and self._current_id in self._requests:
+            resp = self._requests[self._current_id].get("response_text")
+            if resp:
+                bar_text += f"  |  Response: {len(resp)}B"
+        bar.update(bar_text.strip())

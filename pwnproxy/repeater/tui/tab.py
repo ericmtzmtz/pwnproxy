@@ -31,12 +31,13 @@ class RepeaterTab(Vertical):
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, classes="tab-title")
+        with Horizontal(id="repeater-toolbar"):
+            yield Button("Send (F5)", id="btn-send", variant="primary")
+            yield Button("Send to Intruder", id="btn-intruder", variant="default")
         with Horizontal(id="repeater-content"):
             with Vertical(id="editor-panel", classes="repeater-panel"):
                 yield Static("[bold]Request[/]", classes="panel-title")
                 yield RequestEditor(text=self._initial_text, id="req-editor")
-                yield Button("Send (F5)", id="btn-send", variant="primary")
-                yield Button("Send to Intruder", id="btn-intruder", variant="default")
 
             with Vertical(id="viewer-panel", classes="repeater-panel"):
                 yield Static("[bold]Response[/]", classes="panel-title")
