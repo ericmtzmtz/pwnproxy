@@ -51,7 +51,6 @@ class InlineRepeater(Vertical):
     def on_mount(self) -> None:
         tab = self.query_one("#rep-editor-viewer", RepeaterTab)
         tab.on_response = self._on_repeater_response
-        tab.display = False
 
     def add_flow(self, flow: Flow) -> None:
         raw = format_flow_as_raw_request(flow)
