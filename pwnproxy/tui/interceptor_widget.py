@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -187,4 +188,19 @@ class InterceptorWidget(Vertical):
         flow = self._controller.pending.get(flow_id)
         if not flow:
             return
-        self.app._hook_bus.publish("request", flow)
+        asyncio.create_task(self._trigger_scan_async(flow))
+
+    async def _trigger_scan_async(self, flow: Flow) -> None:
+        mgr = getattr(self.app, "_scan_manager", None)
+        if not mgr:
+            logger.warning("ScanManager not available")
+            return
+        active = await mgr.rescan_flow(flow)
+        if not active:
+            await mgr.start("sqli")
+            self.app.notify("Auto-started SQLi scanner (no scanners were active)")
+            active = await mgr.rescan_flow(flow)
+        if active:
+            self.app.notify(f"Scanning... active: {', '.join(active)}")
+        else:
+            self.app.notify("No scanners available — cannot scan", severity="error")

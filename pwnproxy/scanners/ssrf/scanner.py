@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Callable, Optional
 
 from pwnproxy.core.hooks import HookBus
@@ -35,7 +36,15 @@ class SSRFScanner:
         self._consumer_task: Optional[asyncio.Task] = None
         self._scan_tasks: set[asyncio.Task] = set()
         self._pending_canaries: dict[str, SsrfFinding] = {}
+        self._on_flow_complete: Optional[Callable] = None
+        self._flow_counter: dict[str, int] = {}
+        self._flow_start: dict[str, float] = {}
+        self._flow_url: dict[str, str] = {}
+        self._flow_method: dict[str, str] = {}
+        self._flow_findings_before: dict[str, int] = {}
         self._running = False
+        self._paused = asyncio.Event()
+        self._paused.set()
         self._callback_check_task: Optional[asyncio.Task] = None
 
         self.flows_processed = 0
@@ -45,6 +54,10 @@ class SSRFScanner:
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def is_paused(self) -> bool:
+        return not self._paused.is_set()
 
     @property
     def callback_server(self) -> CallbackServer:
@@ -66,6 +79,7 @@ class SSRFScanner:
         if self._running:
             return
         self._running = True
+        self._paused.set()
         await self._storage.create_tables()
         await self._callback_server.start()
         self._queue = self._hook_bus.register("done")
@@ -74,6 +88,7 @@ class SSRFScanner:
 
     async def stop(self) -> None:
         self._running = False
+        self._paused.set()
         if self._consumer_task:
             self._consumer_task.cancel()
             self._consumer_task = None
@@ -89,9 +104,16 @@ class SSRFScanner:
         await self._replayer.close()
         self._pending_canaries.clear()
 
+    def pause(self) -> None:
+        self._paused.clear()
+
+    def resume(self) -> None:
+        self._paused.set()
+
     def status(self) -> dict:
         return {
             "running": self._running,
+            "paused": self.is_paused,
             "flows_processed": self.flows_processed,
             "params_scanned": self.params_scanned,
             "findings": self.finding_count,
@@ -105,7 +127,15 @@ class SSRFScanner:
         while self._running:
             try:
                 flow: Flow = await self._queue.get()
+                await self._paused.wait()
                 self.flows_processed += 1
+
+                fid = flow.id
+                self._flow_counter[fid] = 0
+                self._flow_start[fid] = time.monotonic()
+                self._flow_url[fid] = flow.url
+                self._flow_method[fid] = flow.method
+                self._flow_findings_before[fid] = self.finding_count
 
                 redirect_params = self._extractor.extract_redirect_params(flow)
                 url_params = self._extractor.extract_url_params(flow)
@@ -115,13 +145,40 @@ class SSRFScanner:
                     if key in seen:
                         continue
                     seen.add(key)
+                    self._flow_counter[fid] += 1
                     task = asyncio.create_task(self._scan_point(point))
                     self._scan_tasks.add(task)
-                    task.add_done_callback(self._scan_tasks.discard)
+                    task.add_done_callback(lambda t, fid=fid: self._on_scan_point_done(t, fid))
+
+                if self._flow_counter[fid] == 0:
+                    self._finalize_flow(fid)
+
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"SSRF consumer error: {e}", exc_info=True)
+
+    def _on_scan_point_done(self, task: asyncio.Task, flow_id: str) -> None:
+        self._scan_tasks.discard(task)
+        if flow_id not in self._flow_counter:
+            return
+        self._flow_counter[flow_id] -= 1
+        if self._flow_counter[flow_id] <= 0:
+            self._finalize_flow(flow_id)
+
+    def _finalize_flow(self, flow_id: str) -> None:
+        elapsed = (time.monotonic() - self._flow_start.get(flow_id, 0)) * 1000
+        url = self._flow_url.get(flow_id, "")
+        method = self._flow_method.get(flow_id, "")
+        before = self._flow_findings_before.get(flow_id, self.finding_count)
+        finding_count = self.finding_count - before
+        if self._on_flow_complete:
+            asyncio.create_task(self._on_flow_complete(flow_id, url, method, "ssrf", elapsed, finding_count))
+        self._flow_counter.pop(flow_id, None)
+        self._flow_start.pop(flow_id, None)
+        self._flow_url.pop(flow_id, None)
+        self._flow_method.pop(flow_id, None)
+        self._flow_findings_before.pop(flow_id, None)
 
     async def _scan_point(self, point) -> None:
         await self._rate_limiter.acquire(point.host)

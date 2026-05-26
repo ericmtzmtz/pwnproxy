@@ -2,7 +2,7 @@ from collections import deque
 from typing import Optional
 
 from textual.message import Message
-from textual.widgets import DataTable
+from textual.widgets import DataTable, Label
 from textual.widgets._data_table import RowKey
 
 SEVERITY_STYLES: dict[str, str] = {
@@ -25,6 +25,17 @@ def _color_severity(severity: Optional[str]) -> str:
 class FindingsTable(DataTable):
     DEFAULT_CSS = """
     FindingsTable { height: 1fr; }
+    #findings-filter-bar {
+        height: auto;
+        padding: 0 1;
+        background: $panel;
+    }
+    #findings-filter-label {
+        width: 1fr;
+    }
+    #findings-filter-clear {
+        width: 10;
+    }
     """
     class AddFinding(Message):
         def __init__(self, msg: dict) -> None:
@@ -35,12 +46,23 @@ class FindingsTable(DataTable):
         super().__init__(**kwargs)
         self._row_keys: deque[RowKey] = deque()
         self._can_focus = False
+        self._url_filter: Optional[str] = None
 
     def on_mount(self) -> None:
         self.add_columns("Scanner", "Target", "Severity", "Detail")
 
+    def set_url_filter(self, url: str) -> None:
+        self._url_filter = url
+
+    def clear_filter(self) -> None:
+        self._url_filter = None
+
     def on_findings_table_add_finding(self, event: AddFinding) -> None:
         data = event.msg
+        if self._url_filter:
+            target = data.get("target_url") or data.get("url", "")
+            if self._url_filter not in target:
+                return
         scanner = data.get("scanner", "?").upper()
         target = data.get("target_url") or data.get("url", "")
         severity = _color_severity(data.get("severity"))

@@ -25,6 +25,7 @@ from pwnproxy.tui.log_widget import LogTable
 from pwnproxy.tui.findings_widget import FindingsTable
 from pwnproxy.repeater.tui.inline import InlineRepeater
 from pwnproxy.tui.scope_widget import ScopeTab
+from pwnproxy.tui.scanner_widget import ScannerTab
 from pwnproxy.tui.sessions_widget import SessionsTab, SessionsTable
 from pwnproxy.tui.ws_client import stream_findings, stream_traffic
 
@@ -131,12 +132,14 @@ class DashboardApp(App):
         api_port: int = 8000,
         hook_bus: Optional[HookBus] = None,
         interceptor_controller: Optional[InterceptorController] = None,
+        scan_manager: Optional["ScanManager"] = None,
     ):
         super().__init__()
         self._host = host
         self._api_port = api_port
         self._hook_bus = hook_bus
         self._interceptor_controller = interceptor_controller
+        self._scan_manager = scan_manager
         self._active_session: str = "default"
 
     def compose(self) -> ComposeResult:
@@ -152,6 +155,8 @@ class DashboardApp(App):
                 )
             with TabPane("Repeater", id="repeater"):
                 yield InlineRepeater(id="repeater-inline")
+            with TabPane("Scanner", id="tab-scan"):
+                yield ScannerTab(id="scanner-tab")
             with TabPane("Intruder", id="intruder"):
                 with Container(classes="tool-launcher"):
                     yield Static("[bold]Intruder[/]")

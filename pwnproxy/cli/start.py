@@ -127,15 +127,19 @@ def start(
         from pwnproxy.scanners.lfi.scanner import LFIScanner
         from pwnproxy.scanners.xxe.scanner import XXEScanner
         from pwnproxy.scanners.ssrf.scanner import SSRFScanner
-        scanners = [
-            SQLiScanner(hook_bus),
-            XSSScanner(hook_bus),
-            LFIScanner(hook_bus),
-            XXEScanner(hook_bus),
-            SSRFScanner(hook_bus),
-        ]
-        for s in scanners:
-            await s.start()
+        from pwnproxy.scanners.common.scan_log_store import ScanLogStore
+        from pwnproxy.scanners.common.manager import ScanManager
+        scan_log_store = ScanLogStore()
+        await scan_log_store.create_table()
+        scan_manager = ScanManager(
+            sqli=SQLiScanner(hook_bus),
+            xss=XSSScanner(hook_bus),
+            lfi=LFIScanner(hook_bus),
+            xxe=XXEScanner(hook_bus),
+            ssrf=SSRFScanner(hook_bus),
+            scan_log_store=scan_log_store,
+        )
+        # Scanners start OFF — enabled via Scanner tab toggles
 
         api_task = await start_api_server(
             hook_bus=hook_bus,
@@ -162,6 +166,7 @@ def start(
                 api_port=api_port,
                 hook_bus=hook_bus,
                 interceptor_controller=interceptor_controller,
+                scan_manager=scan_manager,
             )
             dashboard_task = asyncio.create_task(dashboard.run_async())
 
@@ -190,8 +195,7 @@ def start(
         console.print("\n[bold yellow]Shutting down...[/]")
         proxy.stop()
         interceptor_controller.stop()
-        for s in scanners:
-            await s.stop()
+        await scan_manager.dispose()
         await session_consumer.stop()
         await session_manager.stop()
         api_task.cancel()
