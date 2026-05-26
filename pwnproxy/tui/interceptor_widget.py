@@ -187,5 +187,4 @@ class InterceptorWidget(Vertical):
         flow = self._controller.pending.get(flow_id)
         if not flow:
             return
-        from pwnproxy.core.hooks import HookEvent
-        self.app._hook_bus.publish(HookEvent(type="request", flow=flow))
+        self.app._hook_bus.publish("request", flow)
