@@ -89,6 +89,8 @@ class RepeaterTab(Vertical):
             if self.on_response:
                 self.on_response({
                     "text": viewer.text,
+                    "method": parsed["method"],
+                    "path": parsed["path"],
                     "status_code": response.status_code,
                     "size": len(response.content or b""),
                     "duration_ms": elapsed,
@@ -98,6 +100,8 @@ class RepeaterTab(Vertical):
             if self.on_response:
                 self.on_response({
                     "text": viewer.text,
+                    "method": "",
+                    "path": "",
                     "status_code": 0,
                     "size": 0,
                     "duration_ms": 0,

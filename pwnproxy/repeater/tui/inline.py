@@ -79,7 +79,8 @@ class InlineRepeater(Vertical):
             str(flow.status_code or ""),
             key=row_key,
         )
-        self._update_info_bar(flow, ts, len(raw))
+        self._current_id = row_key
+        self._update_info_bar_from_current()
 
     def _on_repeater_response(self, data: dict) -> None:
         if self._current_id and self._current_id in self._requests:
@@ -88,13 +89,33 @@ class InlineRepeater(Vertical):
                 "status_code": data["status_code"],
                 "response_size": data["size"],
                 "duration_ms": data["duration_ms"],
+                "sent_method": data["method"],
+                "sent_path": data["path"],
             })
-            flow = self._requests[self._current_id]["flow"]
-            self._update_info_bar(
-                flow,
-                "",
-                len(self._requests[self._current_id]["raw"]),
-            )
+            self._update_info_bar_from_current()
+
+    def _update_info_bar_from_current(self) -> None:
+        if not self._current_id or self._current_id not in self._requests:
+            return
+        req_data = self._requests[self._current_id]
+        flow = req_data["flow"]
+        method = req_data.get("sent_method") or flow.method
+        path = req_data.get("sent_path") or flow.url
+        size = len(req_data["raw"])
+        status = req_data.get("status_code") or flow.status_code or ""
+        resp_size = req_data.get("response_size")
+        dur = req_data.get("duration_ms")
+        ts = ""
+        parts = [method, path]
+        if status:
+            parts.append(f"[{status}]")
+        parts.append(f"Req: {size}B")
+        if resp_size is not None:
+            parts.append(f"Res: {resp_size}B")
+        if dur:
+            parts.append(f"{dur:.0f}ms")
+        bar = self.query_one("#rep-info-bar", Label)
+        bar.update("  ".join(parts))
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         row_key = str(event.row_key.value)
@@ -116,25 +137,6 @@ class InlineRepeater(Vertical):
         else:
             viewer.text = ""
 
-        self._update_info_bar(flow, "", len(req["raw"]))
+        self._update_info_bar_from_current()
 
-    def _update_info_bar(self, flow: Flow, ts: str, size: int) -> None:
-        bar = self.query_one("#rep-info-bar", Label)
-        parts = [flow.method, flow.url]
-        if self._current_id and self._current_id in self._requests:
-            req_data = self._requests[self._current_id]
-            status = req_data.get("status_code") or flow.status_code or ""
-            resp_size = req_data.get("response_size")
-            dur = req_data.get("duration_ms")
-            if status:
-                parts.append(f"[{status}]")
-            parts.append(f"Req: {size}B")
-            if resp_size is not None:
-                parts.append(f"Res: {resp_size}B")
-            if dur:
-                parts.append(f"{dur:.0f}ms")
-        else:
-            parts.append(f"{size}B")
-        if ts:
-            parts.append(ts)
-        bar.update("  ".join(parts))
+
