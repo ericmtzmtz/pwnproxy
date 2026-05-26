@@ -217,6 +217,14 @@ class DashboardApp(App):
             self.query_one(TabbedContent), "active", "repeater"
         ))
 
+    def on_scanner_tab_findings_detail(self, event: ScannerTab.FindingsDetail) -> None:
+        ft = self.query_one("#findings-table", FindingsTable)
+        ft.set_url_filter(event.url)
+        self.set_timer(0, lambda: setattr(
+            self.query_one(TabbedContent), "active", "findings"
+        ))
+        self.notify(f"Filtering findings by: {event.url[:60]}")
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
         if btn_id == "btn-intruder":

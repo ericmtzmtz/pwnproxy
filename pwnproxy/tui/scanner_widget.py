@@ -60,6 +60,10 @@ class ScannerTab(Vertical):
         color: gray;
         padding: 0 2;
     }
+    #btn-view-findings {
+        width: auto;
+        margin: 1 0 0 2;
+    }
     """
 
     class FindingsDetail(Message):
@@ -82,12 +86,14 @@ class ScannerTab(Vertical):
         with Vertical(id="scan-detail"):
             yield Label("Findings Detail", id="scan-detail-label")
             yield Static("Select a row to view findings", id="scan-detail-empty")
+            yield Button("View in Findings Tab", id="btn-view-findings", variant="primary")
 
     def on_mount(self) -> None:
         table = self.query_one("#scan-history", DataTable)
         table.add_columns("URL", "Method", "Scanners", "Findings", "Avg Time (ms)")
         table.cursor_type = "row"
         table.zebra_stripes = True
+        self.query_one("#btn-view-findings", Button).visible = False
         self.set_interval(2.0, self._refresh)
 
     async def _refresh(self) -> None:
@@ -121,11 +127,12 @@ class ScannerTab(Vertical):
         table.clear()
         for r in rows:
             table.add_row(
-                r["url"][:100],
+                r["url"],
                 r["method"],
                 r["scanners"],
                 str(r["total_findings"]),
                 str(r["avg_duration_ms"]),
+                key=r["url"],
                 height=1,
             )
 
@@ -141,19 +148,34 @@ class ScannerTab(Vertical):
         empty = self.query_one("#scan-detail-empty", Static)
         empty.visible = False
         entries = await mgr._scan_log_store.query_findings_for_url(url)
+        seen: set[str] = set()
         for e in entries:
+            sn = e['scanner_name']
+            if sn in seen:
+                continue
+            seen.add(sn)
             label = (
-                f"[bold]{e['scanner_name']}[/] "
+                f"[bold]{sn}[/] "
                 f"({e['status']}) — "
                 f"findings: {e['finding_count']}, "
                 f"time: {e['duration_ms']}ms"
             )
             detail.mount(Static(label))
-        if not entries:
+        btn = self.query_one("#btn-view-findings", Button)
+        if entries:
+            btn.visible = True
+            self._detail_url = url
+        else:
+            btn.visible = False
             empty.visible = True
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         bid = event.button.id or ""
+        if bid == "btn-view-findings":
+            url = getattr(self, "_detail_url", "")
+            if url:
+                self.post_message(self.FindingsDetail(url))
+            return
         mgr = getattr(self.app, "_scan_manager", None)
         if not mgr:
             return
@@ -171,7 +193,6 @@ class ScannerTab(Vertical):
             mgr.resume_all()
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        row = event.row_key.value
-        if row is not None:
-            url = str(event.data_table.get_row_at(event.cursor_key)[0])
+        url = event.row_key.value
+        if url:
             asyncio.create_task(self._show_findings_detail(url))

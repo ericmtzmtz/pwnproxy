@@ -127,16 +127,23 @@ def start(
         from pwnproxy.scanners.lfi.scanner import LFIScanner
         from pwnproxy.scanners.xxe.scanner import XXEScanner
         from pwnproxy.scanners.ssrf.scanner import SSRFScanner
+        from pwnproxy.scanners.sqli.storage import FindingStorage as SqliStorage
+        from pwnproxy.scanners.xss.storage import XssFindingStorage as XssStorage
+        from pwnproxy.scanners.lfi.storage import LfiFindingStorage as LfiStorage
+        from pwnproxy.scanners.xxe.storage import XxeFindingStorage as XxeStorage
+        from pwnproxy.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
         from pwnproxy.scanners.common.scan_log_store import ScanLogStore
         from pwnproxy.scanners.common.manager import ScanManager
-        scan_log_store = ScanLogStore()
+        session_path = session_manager._active_path
+        scanner_db = str(session_path / "scanner_results.db")
+        scan_log_store = ScanLogStore(db_path=scanner_db)
         await scan_log_store.create_table()
         scan_manager = ScanManager(
-            sqli=SQLiScanner(hook_bus),
-            xss=XSSScanner(hook_bus),
-            lfi=LFIScanner(hook_bus),
-            xxe=XXEScanner(hook_bus),
-            ssrf=SSRFScanner(hook_bus),
+            sqli=SQLiScanner(hook_bus, storage=SqliStorage(db_path=scanner_db)),
+            xss=XSSScanner(hook_bus, storage=XssStorage(db_path=scanner_db)),
+            lfi=LFIScanner(hook_bus, storage=LfiStorage(db_path=scanner_db)),
+            xxe=XXEScanner(hook_bus, storage=XxeStorage(db_path=scanner_db)),
+            ssrf=SSRFScanner(hook_bus, storage=SsrfStorage(db_path=scanner_db)),
             scan_log_store=scan_log_store,
         )
         # Scanners start OFF — enabled via Scanner tab toggles
