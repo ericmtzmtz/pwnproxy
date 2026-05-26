@@ -216,7 +216,10 @@ class DashboardApp(App):
     ) -> None:
         inline = self.query_one("#repeater-inline", InlineRepeater)
         inline.add_flow(event.flow)
-        self.query_one(TabbedContent).active = "repeater"
+        self.notify(f"Sent to Repeater: {event.flow.url[:60]}")
+        self.set_timer(0, lambda: setattr(
+            self.query_one(TabbedContent), "active", "repeater"
+        ))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id

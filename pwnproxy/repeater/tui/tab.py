@@ -43,8 +43,7 @@ class RepeaterTab(Vertical):
                 yield ResponseViewer(id="resp-viewer")
 
     def on_mount(self) -> None:
-        editor = self.query_one("#req-editor", RequestEditor)
-        editor.focus()
+        pass
 
     async def action_send(self) -> None:
         editor = self.query_one("#req-editor", RequestEditor)
