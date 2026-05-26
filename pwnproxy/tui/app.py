@@ -23,6 +23,7 @@ from pwnproxy.modules.interceptor.controller import InterceptorController
 from pwnproxy.tui.interceptor_widget import InterceptorWidget
 from pwnproxy.tui.log_widget import LogTable
 from pwnproxy.tui.findings_widget import FindingsTable
+from pwnproxy.repeater.tui.inline import InlineRepeater
 from pwnproxy.tui.scope_widget import ScopeTab
 from pwnproxy.tui.sessions_widget import SessionsTable
 from pwnproxy.tui.ws_client import stream_findings, stream_traffic
@@ -150,10 +151,7 @@ class DashboardApp(App):
                     id="interceptor-widget",
                 )
             with TabPane("Repeater", id="repeater"):
-                with Container(classes="tool-launcher"):
-                    yield Static("[bold]Repeater[/]")
-                    yield Static("Replay and modify HTTP requests.")
-                    yield Button("Launch Repeater", id="btn-repeater", variant="primary")
+                yield InlineRepeater(id="repeater-inline")
             with TabPane("Intruder", id="intruder"):
                 with Container(classes="tool-launcher"):
                     yield Static("[bold]Intruder[/]")
@@ -213,12 +211,16 @@ class DashboardApp(App):
         async for msg in stream_findings(self._host, self._api_port):
             self.query_one("#findings-table", FindingsTable).post_message(FindingsTable.AddFinding(msg))
 
+    def on_interceptor_widget_send_to_repeater(
+        self, event: InterceptorWidget.SendToRepeater
+    ) -> None:
+        inline = self.query_one("#repeater-inline", InlineRepeater)
+        inline.add_flow(event.flow)
+        self.query_one(TabbedContent).active = "repeater"
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         btn_id = event.button.id
-        if btn_id == "btn-repeater":
-            from pwnproxy.repeater.tui.screen import RepeaterScreen
-            self.push_screen(RepeaterScreen())
-        elif btn_id == "btn-intruder":
+        if btn_id == "btn-intruder":
             from pwnproxy.intruder.tui.screen import IntruderScreen
             self.push_screen(IntruderScreen(api_host=self._host, api_port=self._api_port))
         elif btn_id == "btn-session-new":

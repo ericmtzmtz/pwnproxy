@@ -13,7 +13,7 @@ from pwnproxy.modules.interceptor.controller import (
     FlowSnapshot,
 )
 from pwnproxy.intruder.tui.screen import IntruderScreen
-from pwnproxy.repeater.tui.screen import RepeaterScreen
+from pwnproxy.tui.interceptor_widget import InterceptorWidget
 
 MAX_TUI_BODY = 102_400  # 100 KB display cap
 
@@ -235,9 +235,8 @@ class InterceptorScreen(Screen[None]):
                 DiffOverlay(self._original, edited_snap)
             )
         elif event.button.id == "btn-repeater":
-            repeater_screen = RepeaterScreen()
-            repeater_screen.add_tab_for_flow(self._flow)
-            self.app.push_screen(repeater_screen)
+            self.app.post_message(InterceptorWidget.SendToRepeater(self._flow))
+            self.app.pop_screen()
         elif event.button.id == "btn-intruder":
             from pwnproxy.repeater.integration import format_flow_as_raw_request
             raw = format_flow_as_raw_request(self._flow)

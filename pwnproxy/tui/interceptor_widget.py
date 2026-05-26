@@ -47,6 +47,11 @@ class InterceptorWidget(Vertical):
             self.flow = flow
             super().__init__()
 
+    class SendToRepeater(Message):
+        def __init__(self, flow: Flow) -> None:
+            self.flow = flow
+            super().__init__()
+
     def __init__(self, controller: InterceptorController, **kwargs):
         super().__init__(**kwargs)
         self._controller = controller
@@ -165,9 +170,7 @@ class InterceptorWidget(Vertical):
         flow = self._controller.pending.get(flow_id)
         if not flow:
             return
-        from pwnproxy.repeater.tui.screen import RepeaterScreen
-        screen = RepeaterScreen(initial_flow=flow)
-        self.app.push_screen(screen)
+        self.app.post_message(self.SendToRepeater(flow))
 
     def _open_intruder(self, flow_id: str) -> None:
         flow = self._controller.pending.get(flow_id)

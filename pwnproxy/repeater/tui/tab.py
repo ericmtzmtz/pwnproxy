@@ -20,12 +20,14 @@ class RepeaterTab(Vertical):
         title: str = "Untitled",
         initial_text: str = "",
         engine: Optional[RepeaterEngine] = None,
+        on_response=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         self._title = title
         self._initial_text = initial_text
         self._engine = engine or RepeaterEngine()
+        self.on_response = on_response
 
     def compose(self) -> ComposeResult:
         yield Static(self._title, classes="tab-title")
@@ -63,8 +65,12 @@ class RepeaterTab(Vertical):
                 headers=dict(response.headers),
                 body=response.content,
             )
+            if self.on_response:
+                self.on_response(viewer.text)
         except Exception as exc:
             viewer.update(f"[red]Error: {exc}[/]")
+            if self.on_response:
+                self.on_response(viewer.text)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-send":

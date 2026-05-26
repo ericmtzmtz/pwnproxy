@@ -24,7 +24,7 @@ class RepeaterEngine:
         client = await self._get_client()
         headers = parsed.get("headers", {})
         host = headers.get("Host", "localhost")
-        scheme = headers.get("X-Forwarded-Proto", "https")
+        scheme = headers.get("X-Forwarded-Proto", "http")
         path = parsed.get("path", "/")
         url = f"{scheme}://{host}{path}"
         method = parsed.get("method", "GET")
