@@ -15,22 +15,41 @@ from pwnproxy.repeater.tui.viewer import ResponseViewer
 class RepeaterTab(Vertical):
     """A single repeater tab with editor (left) and viewer (right)."""
 
+    DEFAULT_CSS = """
+    RepeaterTab {
+        height: 1fr;
+    }
+    #repeater-toolbar {
+        height: auto;
+    }
+    #repeater-content {
+        height: 1fr;
+    }
+    .repeater-panel {
+        height: 1fr;
+        width: 1fr;
+    }
+    #req-editor {
+        height: 1fr;
+    }
+    #resp-viewer {
+        height: 1fr;
+    }
+    """
+
     def __init__(
         self,
-        title: str = "Untitled",
         initial_text: str = "",
         engine: Optional[RepeaterEngine] = None,
         on_response=None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self._title = title
         self._initial_text = initial_text
         self._engine = engine or RepeaterEngine()
         self.on_response = on_response
 
     def compose(self) -> ComposeResult:
-        yield Static(self._title, classes="tab-title")
         with Horizontal(id="repeater-toolbar"):
             yield Button("Send (F5)", id="btn-send", variant="primary")
             yield Button("Send to Intruder", id="btn-intruder", variant="default")
