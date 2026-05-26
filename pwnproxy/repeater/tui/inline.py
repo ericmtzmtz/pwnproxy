@@ -27,7 +27,7 @@ class InlineRepeater(Vertical):
         height: 2fr;
     }
     #rep-info-bar {
-        height: 1;
+        height: 3;
         width: 1fr;
         background: $surface;
         border-top: solid $primary;
@@ -81,9 +81,20 @@ class InlineRepeater(Vertical):
         )
         self._update_info_bar(flow, ts, len(raw))
 
-    def _on_repeater_response(self, response_text: str) -> None:
+    def _on_repeater_response(self, data: dict) -> None:
         if self._current_id and self._current_id in self._requests:
-            self._requests[self._current_id]["response_text"] = response_text
+            self._requests[self._current_id].update({
+                "response_text": data["text"],
+                "status_code": data["status_code"],
+                "response_size": data["size"],
+                "duration_ms": data["duration_ms"],
+            })
+            flow = self._requests[self._current_id]["flow"]
+            self._update_info_bar(
+                flow,
+                "",
+                len(self._requests[self._current_id]["raw"]),
+            )
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         row_key = str(event.row_key.value)
@@ -109,9 +120,21 @@ class InlineRepeater(Vertical):
 
     def _update_info_bar(self, flow: Flow, ts: str, size: int) -> None:
         bar = self.query_one("#rep-info-bar", Label)
-        bar_text = f"  {flow.method}  {flow.url}  [{flow.status_code or ''}]  {size}B  {ts}"
+        parts = [flow.method, flow.url]
         if self._current_id and self._current_id in self._requests:
-            resp = self._requests[self._current_id].get("response_text")
-            if resp:
-                bar_text += f"  |  Response: {len(resp)}B"
-        bar.update(bar_text.strip())
+            req_data = self._requests[self._current_id]
+            status = req_data.get("status_code") or flow.status_code or ""
+            resp_size = req_data.get("response_size")
+            dur = req_data.get("duration_ms")
+            if status:
+                parts.append(f"[{status}]")
+            parts.append(f"Req: {size}B")
+            if resp_size is not None:
+                parts.append(f"Res: {resp_size}B")
+            if dur:
+                parts.append(f"{dur:.0f}ms")
+        else:
+            parts.append(f"{size}B")
+        if ts:
+            parts.append(ts)
+        bar.update("  ".join(parts))

@@ -78,18 +78,30 @@ class RepeaterTab(Vertical):
 
         try:
             parsed = parse_raw_request(raw_text)
+            t0 = asyncio.get_event_loop().time()
             response = await self._engine.send(parsed)
+            elapsed = (asyncio.get_event_loop().time() - t0) * 1000
             viewer.show_response(
                 status_code=response.status_code,
                 headers=dict(response.headers),
                 body=response.content,
             )
             if self.on_response:
-                self.on_response(viewer.text)
+                self.on_response({
+                    "text": viewer.text,
+                    "status_code": response.status_code,
+                    "size": len(response.content or b""),
+                    "duration_ms": elapsed,
+                })
         except Exception as exc:
             viewer.update(f"[red]Error: {exc}[/]")
             if self.on_response:
-                self.on_response(viewer.text)
+                self.on_response({
+                    "text": viewer.text,
+                    "status_code": 0,
+                    "size": 0,
+                    "duration_ms": 0,
+                })
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "btn-send":
