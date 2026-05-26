@@ -46,6 +46,28 @@ class ScopeTable(DataTable):
 
 
 class ScopeTab(Vertical):
+    DEFAULT_CSS = """
+    .scope-panel {
+        width: 1fr;
+        height: 1fr;
+        padding: 0 1;
+    }
+    .scope-panel-title {
+        text-style: bold;
+        padding: 0 1;
+    }
+    #scope-toggle-row {
+        height: auto;
+        align: center middle;
+        padding: 1;
+    }
+    #scope-tables {
+        height: 1fr;
+    }
+    #scope-in-table, #scope-out-table {
+        height: 1fr;
+    }
+    """
     def __init__(self, host: str = "127.0.0.1", api_port: int = 8000, **kwargs):
         super().__init__(**kwargs)
         self._host = host

@@ -23,6 +23,9 @@ def _color_severity(severity: Optional[str]) -> str:
 
 
 class FindingsTable(DataTable):
+    DEFAULT_CSS = """
+    FindingsTable { height: 1fr; }
+    """
     class AddFinding(Message):
         def __init__(self, msg: dict) -> None:
             self.msg = msg

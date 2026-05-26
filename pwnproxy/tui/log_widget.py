@@ -25,6 +25,9 @@ MAX_LOG_ROWS = 5000
 
 
 class LogTable(DataTable):
+    DEFAULT_CSS = """
+    LogTable { height: 1fr; }
+    """
     class AddFlow(Message):
         def __init__(self, msg: dict) -> None:
             self.msg = msg

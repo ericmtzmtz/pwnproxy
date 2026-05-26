@@ -24,7 +24,7 @@ class IntruderScreen(Screen[None]):
         Binding("ctrl+s", "start_attack", "Start"),
     ]
 
-    CSS = """
+    DEFAULT_CSS = """
     #intruder-body {
         height: 1fr;
     }

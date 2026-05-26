@@ -14,6 +14,34 @@ logger = logging.getLogger(__name__)
 
 
 class InterceptorWidget(Vertical):
+    DEFAULT_CSS = """
+    #interceptor-widget {
+        height: 1fr;
+        layout: vertical;
+    }
+    #interceptor-header {
+        height: auto;
+        align: center middle;
+        padding: 1;
+    }
+    #interceptor-table {
+        height: 1fr;
+    }
+    #interceptor-actions {
+        height: auto;
+        align: center middle;
+        padding: 0;
+    }
+    .interceptor-act-col {
+        height: auto;
+        align: center middle;
+    }
+    .interceptor-act-col Button {
+        width: 20;
+        height: 3;
+        margin: 0 1;
+    }
+    """
     class AddFlow(Message):
         def __init__(self, flow: Flow) -> None:
             self.flow = flow

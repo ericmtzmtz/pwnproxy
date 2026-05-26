@@ -5,6 +5,23 @@ from textual.widgets import DataTable
 
 
 class SessionsTable(DataTable):
+    DEFAULT_CSS = """
+    SessionsTable { height: 1fr; }
+    #session-controls {
+        height: auto;
+        padding: 0;
+        align: center middle;
+    }
+    .sessions-col {
+        height: auto;
+        align: center middle;
+    }
+    .sessions-col Button {
+        width: 14;
+        height: 3;
+        margin: 0 1;
+    }
+    """
     class LoadSessions(Message):
         def __init__(self, data: list[dict]) -> None:
             self.data = data

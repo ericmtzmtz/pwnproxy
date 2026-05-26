@@ -87,23 +87,6 @@ class DashboardApp(App):
     CSS = """
     TabbedContent { height: 1fr; }
     TabPane { height: 1fr; }
-    LogTable { height: 1fr; }
-    FindingsTable { height: 1fr; }
-    SessionsTable { height: 1fr; }
-    #session-controls {
-        height: auto;
-        padding: 0;
-        align: center middle;
-    }
-    .sessions-col {
-        height: auto;
-        align: center middle;
-    }
-    .sessions-col Button {
-        width: 14;
-        height: 3;
-        margin: 0 1;
-    }
     #dialog-content {
         width: 50;
         height: auto;
@@ -119,54 +102,6 @@ class DashboardApp(App):
         height: 3;
         align: center middle;
     }
-    .scope-panel {
-        width: 1fr;
-        height: 1fr;
-        padding: 0 1;
-    }
-    .scope-panel-title {
-        text-style: bold;
-        padding: 0 1;
-    }
-    #scope-toggle-row {
-        height: auto;
-        align: center middle;
-        padding: 1;
-    }
-    #scope-tables {
-        height: 1fr;
-    }
-    #scope-in-table, #scope-out-table {
-        height: 1fr;
-    }
-
-    #interceptor-widget {
-        height: 1fr;
-        layout: vertical;
-    }
-    #interceptor-header {
-        height: auto;
-        align: center middle;
-        padding: 1;
-    }
-    #interceptor-table {
-        height: 1fr;
-    }
-    #interceptor-actions {
-        height: auto;
-        align: center middle;
-        padding: 0;
-    }
-    .interceptor-act-col {
-        height: auto;
-        align: center middle;
-    }
-    .interceptor-act-col Button {
-        width: 20;
-        height: 3;
-        margin: 0 1;
-    }
-
     .tool-launcher {
         height: 100%;
         align: center middle;
