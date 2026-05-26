@@ -28,6 +28,7 @@ class InlineRepeater(Vertical):
     }
     #rep-info-bar {
         height: 1;
+        width: 1fr;
         background: $surface;
         border-top: solid $primary;
         border-bottom: solid $primary;
