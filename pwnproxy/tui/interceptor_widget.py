@@ -91,6 +91,7 @@ class InterceptorWidget(Vertical):
             ts,
             key=flow.id,
         )
+        self.app.notify(f"Intercepted: {flow.method} {flow.url[:60]}")
 
     def _get_selected_flow_id(self) -> Optional[str]:
         table = self.query_one("#interceptor-table", DataTable)
