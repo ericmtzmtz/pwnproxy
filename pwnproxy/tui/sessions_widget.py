@@ -1,12 +1,16 @@
 from typing import Optional
 
+from textual.app import ComposeResult
+from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import DataTable
+from textual.widgets import Button, DataTable
 
 
-class SessionsTable(DataTable):
+class SessionsTab(Vertical):
     DEFAULT_CSS = """
-    SessionsTable { height: 1fr; }
+    SessionsTab {
+        height: 1fr;
+    }
     #session-controls {
         height: auto;
         padding: 0;
@@ -21,6 +25,27 @@ class SessionsTable(DataTable):
         height: 3;
         margin: 0 1;
     }
+    SessionsTable {
+        height: 1fr;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Horizontal(id="session-controls"):
+            with Vertical(classes="sessions-col"):
+                yield Button("New Session", id="btn-session-new", variant="primary")
+                yield Button("Load", id="btn-session-load")
+            with Vertical(classes="sessions-col"):
+                yield Button("Rename", id="btn-session-rename")
+                yield Button("Save", id="btn-session-save")
+            with Vertical(classes="sessions-col"):
+                yield Button("Delete", id="btn-session-delete", variant="error")
+        yield SessionsTable(id="sessions-table")
+
+
+class SessionsTable(DataTable):
+    DEFAULT_CSS = """
+    SessionsTable { height: 1fr; }
     """
     class LoadSessions(Message):
         def __init__(self, data: list[dict]) -> None:

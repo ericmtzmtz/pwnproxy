@@ -5,7 +5,7 @@ from typing import Optional
 import httpx
 
 from textual.app import App, ComposeResult
-from textual.containers import Container, Horizontal, Vertical
+from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -25,7 +25,7 @@ from pwnproxy.tui.log_widget import LogTable
 from pwnproxy.tui.findings_widget import FindingsTable
 from pwnproxy.repeater.tui.inline import InlineRepeater
 from pwnproxy.tui.scope_widget import ScopeTab
-from pwnproxy.tui.sessions_widget import SessionsTable
+from pwnproxy.tui.sessions_widget import SessionsTab, SessionsTable
 from pwnproxy.tui.ws_client import stream_findings, stream_traffic
 
 logger = logging.getLogger(__name__)
@@ -158,16 +158,7 @@ class DashboardApp(App):
                     yield Static("Automated fuzzing with payload positions.")
                     yield Button("Launch Intruder", id="btn-intruder", variant="primary")
             with TabPane("Sessions", id="tab-sessions"):
-                with Horizontal(id="session-controls"):
-                    with Vertical(classes="sessions-col"):
-                        yield Button("New Session", id="btn-session-new", variant="primary")
-                        yield Button("Load", id="btn-session-load")
-                    with Vertical(classes="sessions-col"):
-                        yield Button("Rename", id="btn-session-rename")
-                        yield Button("Save", id="btn-session-save")
-                    with Vertical(classes="sessions-col"):
-                        yield Button("Delete", id="btn-session-delete", variant="error")
-                yield SessionsTable(id="sessions-table")
+                yield SessionsTab()
             with TabPane("Scope", id="tab-scope"):
                 yield ScopeTab(host=self._host, api_port=self._api_port, id="scope-tab")
             with TabPane("Findings", id="findings"):
