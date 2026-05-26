@@ -71,10 +71,10 @@ class RepeaterTab(Vertical):
 
         raw_text = editor.text
         if not raw_text.strip():
-            viewer.update("[red]Empty request[/]")
+            viewer.update("--- Empty request ---")
             return
 
-        viewer.update("[yellow]Sending...[/]")
+        viewer.update("--- Sending... ---")
 
         try:
             parsed = parse_raw_request(raw_text)
@@ -94,7 +94,7 @@ class RepeaterTab(Vertical):
                     "duration_ms": elapsed,
                 })
         except Exception as exc:
-            viewer.update(f"[red]Error: {exc}[/]")
+            viewer.update(f"--- Error: {exc} ---")
             if self.on_response:
                 self.on_response({
                     "text": viewer.text,
