@@ -5,9 +5,9 @@
 </p>
 
 <h1 align="center">pwnproxy</h1>
-<p align="center"><strong>Open source Burp Suite alternative for the terminal</strong></p>
+<p align="center"><strong>Open source Burp Suite alternative — plugin architecture, headless CI/CD, AI agent ready</strong></p>
 
-pwnproxy is a terminal-native web application security testing toolkit. Built on mitmproxy with a FastAPI control plane and a Typer CLI, it provides intercepting proxy, automated scanning (SQLi, XSS, LFI, XXE, SSRF), session token management, repeater, intruder, and a REST API — all running locally without a GUI or cloud dependency.
+pwnproxy is a modular web application security testing platform. Built on mitmproxy with a FastAPI control plane, Typer CLI, and plugin system, it provides intercepting proxy, automated scanning (SQLi, XSS, LFI, XXE, SSRF), session token management, repeater, intruder, a REST API, and an MCP server for AI agent integration — all running locally without a GUI or cloud dependency.
 
 ---
 
@@ -15,11 +15,15 @@ pwnproxy is a terminal-native web application security testing toolkit. Built on
 
 - **Intercepting Proxy** — Pause, inspect, edit, and resume HTTP/HTTPS flows in real time with a Textual TUI
 - **Automated Scanners** — SQLi (error + time-based blind), XSS (reflected + stored with context-aware payloads), LFI (OS fingerprinting + PHP wrappers), XXE (error-based + OOB + JSON mutation), SSRF (OOB callback detection)
+- **Plugin System** — Extend with custom scanners and hooks via PyPI packages (`pwnproxy-*`); watchdog auto-disables failing plugins
+- **Headless CLI** — `pwnproxy scan url <target>` with JSON/SARIF output and CI/CD exit codes
+- **MCP Server** — Native Model Context Protocol server for AI agent integration (Claude Desktop, Copilot, custom agents)
+- **Burp Import** — Migrate existing Burp scope configurations with `pwnproxy import burp --config <file>`
 - **Session Manager** — Auto-extract JWT, cookies, and CSRF tokens from proxied traffic; store with dedup by SHA256 hash
 - **Repeater** — Send raw HTTP requests and inspect responses, bypassing the proxy
 - **Intruder** — Burp-compatible §marker§ fuzzing with Sniper and Cluster Bomb modes
-- **REST API** — Full programmatic control over traffic, findings, sessions, interceptor, repeater, and intruder
-- **CLI** — Start/stop proxy + API, query history, browse findings, manage sessions
+- **REST API** — Full programmatic control over traffic, findings, sessions, plugins, scanning, and burp import
+- **WebSocket** — Real-time traffic and finding streams with room isolation for team collaboration
 - **3 SQLite Databases** — Persistent storage for traffic (`traffic.db`), scanner results (`scanner_results.db`), and session tokens (`sessions.db`)
 
 ---
@@ -27,40 +31,46 @@ pwnproxy is a terminal-native web application security testing toolkit. Built on
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                         pwnproxy                              │
-│                                                               │
-│  ┌──────────┐    HookBus (asyncio.Queue pub/sub)              │
-│  │          │    ┌──────┐ ┌───────┐ ┌───────┐ ┌──────────┐   │
-│  │  Proxy   │───▶│request││response││ error ││  done    │   │
-│  │ (mitmproxy)│   └──────┘ └───────┘ └───────┘ └──────────┘   │
-│  │  Addons  │        │         │        │          │          │
-│  │ ┌──────┐ │        ▼         ▼        ▼          ▼          │
-│  │ │Hook  │ │   ┌──────────────────────────────────┐          │
-│  │ │Relay │ │   │         Consumers                 │          │
-│  │ ├──────┤ │   │ ┌────────┐ ┌────────┐ ┌────────┐ │          │
-│  │ │Stor- │ │   │ │Scanner │ │Session │ │Inter-  │ │          │
-│  │ │age   │ │   │ │(x5)    │ │Manager │ │ceptor  │ │          │
-│  │ └──────┘ │   │ └────────┘ └────────┘ └────────┘ │          │
-│  └──────────┘   └──────────────────────────────────┘          │
-│       │                                                       │
-│       ▼                                                       │
-│  ┌──────────┐     ┌──────────┐     ┌──────────┐              │
-│  │ Repeater │     │ Intruder │     │Session   │              │
-│  │ (httpx)  │     │(fuzzer)  │     │Storage   │              │
-│  └──────────┘     └──────────┘     └──────────┘              │
-│                                                               │
-│  ┌──────────────────────────────────────────────────┐          │
-│  │          FastAPI Control Plane (:8000)            │          │
-│  │  /flows  /findings  /sessions  /interceptor      │          │
-│  │  /repeater  /intruder  /scanners  /ws            │          │
-│  └──────────────────────────────────────────────────┘          │
-│                                                               │
-│  ┌──────────────────────────────────────────────────┐          │
-│  │          Typer CLI (pwnproxy)                     │          │
-│  │  start  history  findings  session                │          │
-│  └──────────────────────────────────────────────────┘          │
-└──────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                         pwnproxy                                  │
+│                                                                   │
+│  ┌──────────┐    HookBus (asyncio.Queue pub/sub)                  │
+│  │          │    ┌──────┐ ┌───────┐ ┌───────┐ ┌──────────┐       │
+│  │  Proxy   │───▶│request││response││ error ││  done    │       │
+│  │ (mitmproxy)│   └──────┘ └───────┘ └───────┘ └──────────┘       │
+│  │  Addons  │        │         │        │          │              │
+│  │ ┌──────┐ │        ▼         ▼        ▼          ▼              │
+│  │ │Hook  │ │   ┌──────────────────────────────────────┐          │
+│  │ │Relay │ │   │         Consumers                     │          │
+│  │ ├──────┤ │   │ ┌────────┐ ┌────────┐ ┌────────────┐ │          │
+│  │ │Stor- │ │   │ │ Plugin │ │Session │ │  Plugin    │ │          │
+│  │ │age   │ │   │ │ Loader │ │Manager │ │ Watchdog   │ │          │
+│  │ └──────┘ │   │ │(scanner│ └────────┘ │(auto-disable│ │          │
+│  └──────────┘   │ │ hooks) │            │ after 3× ) │ │          │
+│       │         │ └────────┘            └────────────┘ │          │
+│       ▼         └──────────────────────────────────────┘          │
+│  ┌──────────┐     ┌──────────┐     ┌──────────┐                  │
+│  │ Repeater │     │ Intruder │     │Session   │                  │
+│  │ (httpx)  │     │(fuzzer)  │     │Storage   │                  │
+│  └──────────┘     └──────────┘     └──────────┘                  │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────┐          │
+│  │          FastAPI Control Plane (:8000)                │          │
+│  │  /flows  /findings  /sessions  /interceptor          │          │
+│  │  /repeater  /intruder  /scanners  /ws  /plugins      │          │
+│  │  /scan  /import                                        │          │
+│  └──────────────────────────────────────────────────────┘          │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────┐          │
+│  │          Typer CLI (pwnproxy)                         │          │
+│  │  start  scan  plugin  import  history  findings       │          │
+│  └──────────────────────────────────────────────────────┘          │
+│                                                                   │
+│  ┌──────────────────────────────────────────────────────┐          │
+│  │          MCP Server (pwnproxy-mcp — stdio)            │          │
+│  │  scan_url  list_findings  get_status                  │          │
+│  └──────────────────────────────────────────────────────┘          │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -72,7 +82,7 @@ pwnproxy is a terminal-native web application security testing toolkit. Built on
 pip install pwnproxy
 
 # 2. Start proxy + API
-pwnproxy start --proxy-port18080 --api-port 8000
+pwnproxy start --proxy-port 8080 --api-port 8000
 
 # 3. Configure curl to use the proxy
 curl -x http://127.0.0.1:8080 http://httpbin.org/get
@@ -82,6 +92,12 @@ pwnproxy history
 
 # 5. View via API
 curl http://127.0.0.1:8000/api/v1/flows
+
+# 6. Headless scan (no proxy needed)
+pwnproxy scan url https://example.com --output json
+
+# 7. List installed plugins
+pwnproxy plugin list
 ```
 
 ---
@@ -221,6 +237,292 @@ pwnproxy session delete 1
 
 ---
 
+<details>
+<summary><strong>pwnproxy scan url</strong></summary>
+
+Headless scan a target URL without starting the proxy.
+
+```bash
+# Basic scan
+pwnproxy scan url https://example.com
+
+# Specify scanners
+pwnproxy scan url https://example.com --scanners sqli,xss
+
+# JSON output to file
+pwnproxy scan url https://example.com --output json --output-file results.json
+
+# SARIF output for CI/CD
+pwnproxy scan url https://example.com --output sarif --output-file report.sarif
+```
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--scanners` | all | Comma-separated scanner filter |
+| `--timeout` | `60` | Scan timeout per URL in seconds |
+| `--output` | `json` | Output format: `json` or `sarif` |
+| `--output-file` | stdout | Write output to file |
+
+**Exit codes**: `0` = no findings, `1` = findings found, `2` = error.
+
+The scan command uses httpx directly (no proxy needed) and returns results in-memory.
+</details>
+
+<details>
+<summary><strong>pwnproxy plugin</strong></summary>
+
+Manage the plugin system.
+
+```bash
+# List loaded + available plugins
+pwnproxy plugin list
+
+# Search PyPI for community plugins
+pwnproxy plugin search sqli
+
+# Install a plugin from PyPI
+pwnproxy plugin install pwnproxy-scanner-my-scanner
+
+# Scaffold a new plugin project
+pwnproxy plugin create --template scanner my-scanner
+```
+
+| Subcommand | Description |
+|------------|-------------|
+| `list` | List active and available plugins |
+| `search <term>` | Search PyPI for `pwnproxy-*` packages |
+| `install <name>` | Install a plugin via pip |
+| `create --template scanner|hook <name>` | Scaffold a PyPI-ready plugin project |
+</details>
+
+<details>
+<summary><strong>pwnproxy import burp</strong></summary>
+
+Import Burp Suite configuration.
+
+```bash
+pwnproxy import burp --config burp-config.json
+```
+
+Imports the target scope (include/exclude URL rules) from a Burp Suite JSON export and writes them to `~/.pwnproxy/burp_scope.json`.
+</details>
+
+---
+
+## Plugin System
+
+pwnproxy's plugin system lets you extend the platform with custom scanners and hooks distributed as PyPI packages.
+
+### Architecture
+
+```
+PluginLoader
+├── load_builtin(adapter)     # Register a built-in scanner
+├── load_plugin(package)      # Load a third-party plugin
+├── activate(name)            # Enable a loaded plugin
+├── deactivate(name)          # Disable without removing
+├── run_scan(flow)            # Run all active ScannerPlugins
+├── run_hooks_request(flow)   # Run all active HookPlugins (request)
+├── run_hooks_response(flow)  # Run all active HookPlugins (response)
+└── list_active()             # Get status of all plugins
+
+PluginWatchdog
+├── record_success(name)
+├── record_failure(name)      # Auto-disable after 3 consecutive failures
+├── stats()                   # Per-plugin failure/success counts
+└── reset(name)               # Manual re-enable
+```
+
+### Built-in Scanner Plugins
+
+All 5 built-in scanners are registered as `ScannerPlugin` adapters by default. They implement the same interface as third-party plugins, ensuring the plugin API stays correct.
+
+### Writing a Scanner Plugin
+
+```python
+from pwnproxy.plugin.base import ScannerPlugin, Finding
+
+class MyScanner(ScannerPlugin):
+    name = "my-scanner"
+    version = "0.1.0"
+    author = "you"
+
+    async def scan(self, flow: Flow) -> Finding | None:
+        # Extract params from flow
+        params = self.extract_params(flow)
+        for param in params:
+            # ... test logic ...
+            if vulnerable:
+                return Finding(
+                    scanner=self.name,
+                    url=flow.url,
+                    method=flow.method,
+                    param_name=param.name,
+                    param_location=param.location,
+                    technique="my-technique",
+                    severity="high",
+                    confidence="confirmed",
+                    payload="<payload>",
+                    evidence="<reponse snippet>",
+                )
+        return None
+```
+
+### Plugin Discovery
+
+Plugins are discovered via:
+1. **PyPI** — packages matching `pwnproxy-{category}-{name}` (e.g., `pwnproxy-scanner-xss-ai`)
+2. **Local** — installed packages with `pwnproxy` keyword in their metadata
+3. **Registry** — optional custom registry URL in `~/.pwnproxy/config.toml`
+
+### Plugin Configuration
+
+```toml
+# ~/.pwnproxy/config.toml
+[plugin]
+plugin_timeout = 30         # Seconds before a plugin times out
+watchdog_threshold = 3      # Consecutive failures before auto-disable
+registry = "https://..."    # Optional custom registry URL
+```
+
+---
+
+## MCP Server (AI Agent Integration)
+
+pwnproxy provides a native [Model Context Protocol](https://modelcontextprotocol.io) server (`pwnproxy-mcp`) for AI agent integration via stdio transport.
+
+### Installation
+
+```bash
+pip install pwnproxy-mcp
+```
+
+### Available Tools
+
+| Tool | Description |
+|------|-------------|
+| `scan_url` | Scan a target URL for vulnerabilities |
+| `list_findings` | List available scanners and their status |
+| `get_status` | Get proxy and scanner health |
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "pwnproxy-mcp"
+    }
+  }
+}
+```
+
+### GitHub Copilot
+
+Add to your `.github/copilot-instructions.md`:
+
+```markdown
+The project includes pwnproxy-mcp — an MCP server for security scanning.
+Start it with `pwnproxy-mcp` for AI-assisted vulnerability assessment.
+```
+
+### Custom Agents
+
+```python
+import asyncio
+from pwnproxy_mcp.server import PwnProxyMCPServer, _build_loader
+
+loader = _build_loader()
+server = PwnProxyMCPServer(loader)
+
+async def main():
+    findings = await server.handle_scan_url("https://example.com")
+    print(findings)
+
+asyncio.run(main())
+```
+
+---
+
+## Headless / CI-CD Integration
+
+### Proxy Mode (headless)
+
+```bash
+pwnproxy start  # no --tui needed; headless by default
+# Findings stream as JSON lines to stdout
+```
+
+### Scan Mode (no proxy)
+
+```bash
+pwnproxy scan url https://example.com --output sarif --output-file report.sarif
+```
+
+### GitHub Actions
+
+```yaml
+- name: Security scan
+  run: |
+    pip install pwnproxy
+    pwnproxy scan url ${{ matrix.url }} --output sarif --output-file report.sarif
+  continue-on-error: true
+
+- name: Upload SARIF
+  uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: report.sarif
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Scan completed, no findings |
+| `1` | Scan completed, findings found |
+| `2` | Error (timeout, network, invalid URL) |
+
+---
+
+## Burp Suite Migration
+
+### Importing Scope
+
+1. Export your Burp Suite configuration: **Burp → Settings → Project → Save copy of project file**
+2. Or export scope JSON: **Settings → Project → Scope → Copy scope** → save as JSON
+3. Import into pwnproxy:
+
+```bash
+pwnproxy import burp --config burp-config.json
+```
+
+The import extracts:
+- **In-scope targets** → pwnproxy scope configuration
+- **Excluded targets** → pwnproxy exclusion rules
+
+### What's Not Imported
+
+- BApp / BCheck rules (Java API lock-in, not supported)
+- Session handling rules (pwnproxy handles sessions differently)
+- Intruder attack definitions (manual replay in pwnproxy intruder)
+
+### Workflow Comparison
+
+| Task | Burp Suite | pwnproxy |
+|------|-----------|----------|
+| Proxy traffic | Proxy tab | TUI traffic view |
+| Manual testing | Repeater | `pwnproxy repeater` |
+| Fuzzing | Intruder | `pwnproxy intruder` |
+| Scanning | Active/Passive scan | Automated + `pwnproxy scan` |
+| Session tokens | Session handler | `pwnproxy session` |
+| Plugins | BApp Store | `pwnproxy plugin install` |
+| AI integration | N/A | `pwnproxy-mcp` MCP server |
+| CI/CD | N/A | `pwnproxy scan --output sarif` |
+
+---
+
 ## API Reference
 
 The API runs on `http://127.0.0.1:8000` by default (configurable via `--api-port`).
@@ -257,6 +559,52 @@ curl http://127.0.0.1:8000/api/v1/findings/sqli?limit=100
 ```
 
 Available scanners: `sqli`, `xss`, `lfi`, `xxe`, `ssrf`.
+</details>
+
+<details>
+<summary><strong>Plugins</strong></summary>
+
+#### List plugins
+
+```bash
+curl http://127.0.0.1:8000/api/v1/plugins
+```
+
+#### Toggle plugin (enable/disable)
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/plugins/sqli/toggle
+```
+</details>
+
+<details>
+<summary><strong>Headless Scan (API)</strong></summary>
+
+#### Launch a scan
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/scan \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "scanners": ["sqli", "xss"]}'
+```
+
+#### Poll scan results
+
+```bash
+curl http://127.0.0.1:8000/api/v1/scan/<scan_id>
+```
+</details>
+
+<details>
+<summary><strong>Burp Import (API)</strong></summary>
+
+#### Import Burp config
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/import/burp \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@burp-config.json"
+```
 </details>
 
 <details>
@@ -350,6 +698,40 @@ curl -X POST http://127.0.0.1:8000/api/v1/scanners/trigger \
 Available scanners: `sqli`, `xss`, `lfi`, `xxe`, `ssrf`.
 </details>
 
+<details>
+<summary><strong>WebSocket Events</strong></summary>
+
+Real-time event streams for live UIs and collaboration.
+
+#### Traffic stream
+
+```bash
+# ws://127.0.0.1:8000/ws/traffic
+# Receives: {"type": "flow", "method": "GET", "url": "...", "id": "...", "status_code": 200}
+```
+
+#### Findings stream (poll-based)
+
+```bash
+# ws://127.0.0.1:8000/ws/findings
+# Receives: {"type": "finding", "scanner": "sqli", ...}
+```
+
+#### Unified events stream
+
+```bash
+# ws://127.0.0.1:8000/ws/events
+# Combines both traffic + finding events in one connection
+```
+
+#### Room-isolated stream (multi-client)
+
+```bash
+# ws://127.0.0.1:8000/ws/rooms/{room_id}
+# Isolates traffic per room for team sessions
+```
+</details>
+
 ---
 
 ## Scanners
@@ -429,6 +811,36 @@ cd pwnproxy
 poetry install
 ```
 
+### Local Development
+
+Start all services (proxy + API + Web UI) with a single command:
+
+**Linux / macOS:**
+```bash
+./dev.sh
+```
+
+**Windows (PowerShell 7+):**
+```powershell
+.\dev.ps1
+```
+
+This starts the proxy on `:8080`, API on `:8000`, and Web UI on `:4321`, then polls the health endpoint before showing all URLs. Press `Ctrl+C` to stop everything cleanly.
+
+Override ports via environment variables:
+```bash
+PWNPROXY_PROXY_PORT=9090 PWNPROXY_API_PORT=9000 ./dev.sh
+```
+
+To run services individually instead:
+```bash
+# Terminal 1: Proxy + API
+pwnproxy start --proxy-port 8080 --api-port 8000
+
+# Terminal 2: Web UI
+cd web-ui && npm run dev
+```
+
 ### Running Tests
 
 ```bash
@@ -456,6 +868,39 @@ All 235 tests pass.
 ### Architecture References
 
 For detailed design docs and archived change specifications, see [`openspec/`](./openspec) and [`openspec/changes/archive/`](./openspec/changes/archive/).
+
+---
+
+## Roadmap
+
+### v1 (current) — Platform Foundation
+- [x] Intercepting proxy, 5 scanners, session manager, repeater, intruder
+- [x] REST API, CLI, WebSocket streams
+- [x] Plugin system (ScannerPlugin, HookPlugin, watchdog, PyPI discovery)
+- [x] Headless `pwnproxy scan url` with JSON/SARIF export and CI/CD exit codes
+- [x] Headless proxy mode (`--no-tui`)
+- [x] Burp Suite config import
+- [x] MCP server (`pwnproxy-mcp`) for AI agent integration
+
+### v1.5 — Ecosystem Maturation
+- [ ] Plugin marketplace: `pwnproxy plugin search` with rating/downloads
+- [ ] Community plugin SDK documentation site
+- [ ] Official VS Code extension (pwnproxy as background scanner)
+- [ ] `pwnproxy-mcp-enterprise` — HTTP transport, team prompts, audit logging
+
+### v2 — Web UI + Collaboration
+- [ ] Astro + Tailwind dark-theme dashboard (`web-ui/`)
+- [ ] Live traffic view with WebSocket
+- [ ] Findings table with severity grouping and filtering
+- [ ] Team rooms: shared proxy sessions with granular permissions
+- [ ] Export engine: PDF reports with templating
+- [ ] Plugin management UI (install, toggle, configure from browser)
+
+### v2.5 — Advanced Automation
+- [ ] Scheduled scanning with cron-like triggers
+- [ ] Webhook notifications (Slack, Discord, email)
+- [ ] Global rate limiting and distributed scanning
+- [ ] AI-assisted payload generation via MCP prompts
 
 ---
 
