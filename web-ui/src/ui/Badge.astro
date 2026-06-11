@@ -1,0 +1,19 @@
+---
+export interface Props {
+  variant?: "default" | "danger" | "warning" | "success" | "info";
+}
+
+const { variant = "default" } = Astro.props;
+
+const colors: Record<string, string> = {
+  default: "bg-neutral-800 text-neutral-200",
+  danger: "bg-red-900/40 text-danger-500",
+  warning: "bg-yellow-900/40 text-warning-500",
+  success: "bg-green-900/40 text-success-500",
+  info: "bg-blue-900/40 text-info-500",
+};
+---
+
+<span class={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${colors[variant]}`}>
+  <slot />
+</span>

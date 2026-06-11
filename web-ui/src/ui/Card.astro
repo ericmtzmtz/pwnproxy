@@ -1,0 +1,19 @@
+---
+export interface Props {
+  variant?: "default" | "accent";
+}
+
+const { variant = "default" } = Astro.props;
+
+const styles: Record<string, string> = {
+  default: "border-neutral-800 bg-neutral-900",
+  accent: "border-primary-800/50 bg-primary-900/20",
+};
+---
+
+<div class={`rounded-lg border ${styles[variant]} p-4`}>
+  <div class="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+    <slot name="title" />
+  </div>
+  <slot />
+</div>

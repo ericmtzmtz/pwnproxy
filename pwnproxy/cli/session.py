@@ -1,3 +1,4 @@
+import builtins
 import json
 from pathlib import Path
 
@@ -16,7 +17,12 @@ app = typer.Typer(help="Manage proxy sessions (save/load proxy state)", no_args_
 def session_default(ctx: typer.Context):
     if ctx.invoked_subcommand is not None:
         return
-    _list_sessions()
+    sessions = SessionManager.list()
+    if not sessions:
+        console.print("[yellow]No sessions found. Start the proxy to create one.[/]")
+        return
+    for s in sessions:
+        console.print(f"  [cyan]{s['name']}[/]")
 
 
 @app.command()
@@ -64,7 +70,7 @@ def info(name: str = typer.Argument(..., help="Session name")):
     if scope_file.exists():
         scope = json.loads(scope_file.read_text())
 
-    files = list(session_path.iterdir()) if session_path.exists() else []
+    files = builtins.list(session_path.iterdir()) if session_path.exists() else []
 
     text = (
         f"[bold]Name:[/] {meta.get('name', name)}\n"

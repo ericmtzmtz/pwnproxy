@@ -202,3 +202,6 @@ class SQLiScanner:
         await self._storage.save_finding(finding)
         if self._on_finding:
             self._on_finding(finding)
+        finding_data = {k: v for k, v in finding.__dict__.items() if not k.startswith("_")}
+        finding_data["scanner"] = "sqli"
+        self._hook_bus.publish("finding", finding_data)

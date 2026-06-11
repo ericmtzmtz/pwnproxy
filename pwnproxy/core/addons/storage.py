@@ -14,9 +14,11 @@ logger = logging.getLogger(__name__)
 class StorageAddon:
     """Mitmproxy addon that persists completed flows to SQLite asynchronously."""
 
-    def __init__(self, db_engine: AsyncEngine, scope_filter: Optional[Callable[[Flow], bool]] = None):
+    def __init__(self, db_engine: AsyncEngine, scope_filter: Optional[Callable[[Flow], bool]] = None, hook_bus=None, capture_enabled_fn: Optional[Callable[[], bool]] = None):
         self.db_engine = db_engine
         self.scope_filter = scope_filter
+        self.hook_bus = hook_bus
+        self._capture_enabled_fn = capture_enabled_fn
         self.session_factory = sessionmaker(
             self.db_engine, class_=AsyncSession, expire_on_commit=False
         )
@@ -24,6 +26,8 @@ class StorageAddon:
 
     def response(self, f: mitmproxy.http.HTTPFlow):
         try:
+            if self._capture_enabled_fn and not self._capture_enabled_fn():
+                return
             pwn_flow = Flow.from_mitmproxy(f)
             if self.scope_filter and not self.scope_filter(pwn_flow):
                 return
@@ -53,5 +57,14 @@ class StorageAddon:
             async with self.session_factory() as session:
                 session.add(record)
                 await session.commit()
+                db_id = record.id
+
+            if self.hook_bus:
+                self.hook_bus.publish("flow_stored", {
+                    "id": db_id,
+                    "method": flow.method,
+                    "url": flow.url,
+                    "status_code": flow.status_code,
+                })
         except Exception as e:
             logger.error(f"Failed to store flow {flow.id}: {e}", exc_info=True)

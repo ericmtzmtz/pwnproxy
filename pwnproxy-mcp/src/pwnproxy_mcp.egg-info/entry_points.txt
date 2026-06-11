@@ -1,0 +1,3 @@
+[console_scripts]
+pwnproxy-mcp = pwnproxy_mcp.server:main
+pwnproxy-mcp-enterprise = pwnproxy_mcp.enterprise:main

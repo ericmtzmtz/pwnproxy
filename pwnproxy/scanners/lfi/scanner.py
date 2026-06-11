@@ -166,3 +166,6 @@ class LFIScanner:
         await self._storage.save_finding(finding)
         if self._on_finding:
             self._on_finding(finding)
+        finding_data = {k: v for k, v in finding.__dict__.items() if not k.startswith("_")}
+        finding_data["scanner"] = "lfi"
+        self._hook_bus.publish("finding", finding_data)

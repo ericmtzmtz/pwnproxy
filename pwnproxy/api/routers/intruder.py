@@ -1,13 +1,15 @@
+import logging
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from pwnproxy.intruder.generator import ClusterBombGenerator, SniperGenerator, read_wordlist
-from pwnproxy.intruder.parser import parse_markers
+from pwnproxy.intruder.generator import read_wordlist
 
 router = APIRouter(prefix="/api/v1", tags=["intruder"])
+
+logger = logging.getLogger(__name__)
 
 
 class IntruderRunRequest(BaseModel):
@@ -15,7 +17,6 @@ class IntruderRunRequest(BaseModel):
     mode: str = "sniper"
     wordlist_path: str
     concurrency: int = 10
-    max_results: int = 100
 
 
 class IntruderResultItem(BaseModel):
@@ -27,13 +28,14 @@ class IntruderResultItem(BaseModel):
     error: Optional[str] = None
 
 
-class IntruderRunResponse(BaseModel):
-    total: int
-    results: List[IntruderResultItem]
-
-
 @router.post("/intruder/run")
 async def intruder_run(request: Request, body: IntruderRunRequest):
+    from pwnproxy.intruder.parser import parse_markers
+
+    store = getattr(request.app.state, "task_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Task store not available")
+
     engine = request.app.state.intruder_engine
     if not engine:
         raise HTTPException(status_code=503, detail="Intruder engine not available")
@@ -50,28 +52,39 @@ async def intruder_run(request: Request, body: IntruderRunRequest):
     if not wordlist:
         raise HTTPException(status_code=400, detail="Empty wordlist")
 
-    if body.mode == "cluster_bomb":
-        wordlists = [wordlist] * len(markers)
-        gen = ClusterBombGenerator(template, markers, wordlists)
-    else:
-        gen = SniperGenerator(template, markers, wordlist)
+    session_mgr = getattr(request.app.state, "session_manager", None)
+    session_name = session_mgr.active_name if session_mgr else ""
 
-    total = gen.total_requests
-    engine._concurrency = body.concurrency
+    config = {
+        "raw_request": body.raw_request,
+        "mode": body.mode,
+        "wordlist_path": body.wordlist_path,
+        "concurrency": body.concurrency,
+    }
+    task_id = await store.create("intruder", config, session_name=session_name)
 
-    results: list[IntruderResultItem] = []
-    async for result in engine.execute(gen, total):
-        results.append(
-            IntruderResultItem(
-                request_id=result.request_id,
-                payload=result.payload,
-                status_code=result.status_code,
-                response_length=result.response_length,
-                timing_ms=result.timing_ms,
-                error=result.error,
-            )
-        )
-        if len(results) >= body.max_results:
-            break
+    from pwnproxy.api.routers.tasks import _launch_task_runner
+    coro = _launch_task_runner("intruder", config, task_id, store, request)
+    store.track(task_id, coro)
 
-    return IntruderRunResponse(total=total, results=results)
+    logger.info("Intruder attack %s started: %d words, mode=%s, wordlist=%s",
+                task_id, len(wordlist), body.mode, body.wordlist_path)
+
+    return {"attack_id": task_id, "task_id": task_id, "status": "running", "total": len(wordlist)}
+
+
+@router.get("/intruder/attack/{attack_id}")
+async def poll_attack(attack_id: str, request: Request):
+    store = getattr(request.app.state, "task_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Task store not available")
+    task = await store.get(attack_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Attack '{attack_id}' not found")
+    return {
+        "status": task["status"],
+        "total": task["total"],
+        "completed": task["progress"],
+        "results": task["result"].get("results", []) if task["result"] else [],
+        "error": task["error"],
+    }

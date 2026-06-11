@@ -56,8 +56,11 @@ async def start_api_server(
     repeater_engine=None,
     intruder_engine=None,
     session_manager=None,
+    plugin_loader=None,
+    proxy_engine=None,
     host: str = "127.0.0.1",
     port: int = 8000,
+    proxy_port: int = 8080,
 ) -> asyncio.Task:
     """Start the FastAPI/Uvicorn server in a background task."""
     if traffic_engine is None:
@@ -73,6 +76,10 @@ async def start_api_server(
     app.state.repeater_engine = repeater_engine
     app.state.intruder_engine = intruder_engine
     app.state.session_manager = session_manager
+    app.state.plugin_loader = plugin_loader
+    app.state.proxy_engine = proxy_engine
+    app.state.task_store = session_manager.task_store if session_manager else None
+    app.state.proxy_port = proxy_port
 
     config = uvicorn.Config(
         app,

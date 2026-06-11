@@ -1,7 +1,13 @@
+# AI
 openspec/
 .agent/
 .opencode/
 .pi/
+.mcp.json
+AGENTS.md
+opencode.jsonc
+.claude/
+.cursor/
 
 # Python
 __pycache__/
@@ -12,3 +18,8 @@ __pycache__/
 .venv/
 .venv*/
 po
+
+# web-ui
+web-ui/node_modules/
+web-ui/dist/
+

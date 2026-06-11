@@ -1,0 +1,26 @@
+---
+export interface Props {
+  variant?: "primary" | "secondary" | "ghost" | "danger";
+  size?: "sm" | "md";
+  type?: "button" | "submit";
+  disabled?: boolean;
+}
+
+const { variant = "primary", size = "md", type = "button", disabled = false } = Astro.props;
+
+const variants: Record<string, string> = {
+  primary: "bg-primary-600 text-white hover:bg-primary-500 disabled:bg-primary-800 disabled:text-primary-400",
+  secondary: "bg-neutral-800 text-neutral-200 hover:bg-neutral-700 disabled:bg-neutral-900 disabled:text-neutral-600",
+  ghost: "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200 disabled:text-neutral-600",
+  danger: "bg-red-800 text-white hover:bg-red-700 disabled:bg-red-900 disabled:text-red-400",
+};
+
+const sizes: Record<string, string> = {
+  sm: "px-2.5 py-1 text-xs",
+  md: "px-3.5 py-2 text-sm",
+};
+---
+
+<button type={type} disabled={disabled} class={`inline-flex items-center justify-center gap-2 rounded-md font-medium transition-colors ${variants[variant]} ${sizes[size]} disabled:cursor-not-allowed`}>
+  <slot />
+</button>

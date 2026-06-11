@@ -1,21 +1,42 @@
 import json
+import os
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 
 
+def _db_size(session_path: Path, db_name: str) -> int:
+    db = session_path / db_name
+    try:
+        return os.path.getsize(db)
+    except OSError:
+        return 0
+
+
 @router.get("/sessions")
 async def list_sessions(request: Request):
-    """List all proxy sessions (not tokens — use /api/v1/tokens for tokens)."""
+    """List all proxy sessions."""
+    import pwnproxy.modules.session_manager.manager as _mgr
+
     manager = request.app.state.session_manager
     sessions = manager.list()
+
+    try:
+        last_active = _mgr.LAST_SESSION_FILE.read_text().strip()
+    except OSError:
+        last_active = None
+
     return [
         {
             "name": s["name"],
             "created_at": s.get("created_at"),
             "last_modified": s.get("last_modified"),
             "active": s["name"] == manager.active_name,
+            "last_active": s["name"] == last_active,
+            "request_count": _db_size(_mgr.SESSIONS_ROOT / s["name"], "traffic.db"),
+            "finding_count": _db_size(_mgr.SESSIONS_ROOT / s["name"], "scanner_results.db"),
         }
         for s in sessions
     ]

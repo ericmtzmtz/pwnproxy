@@ -1,4 +1,5 @@
 import re
+from typing import Optional
 
 LFI_SIGNATURES: dict[str, list[re.Pattern]] = {
     "unix": [

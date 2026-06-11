@@ -2,12 +2,37 @@
   <img src="https://img.shields.io/badge/python-3.14+-blue.svg" alt="Python 3.14+">
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="AGPL v3">
   <img src="https://img.shields.io/badge/tests-235%20passing-brightgreen.svg" alt="235 tests passing">
+  <img src="https://img.shields.io/badge/MCP-native-purple.svg" alt="MCP Native">
 </p>
 
 <h1 align="center">pwnproxy</h1>
-<p align="center"><strong>Open source Burp Suite alternative — plugin architecture, headless CI/CD, AI agent ready</strong></p>
+<p align="center"><strong>The security testing platform built for the AI era.</strong></p>
+<p align="center">Plugin architecture &nbsp;·&nbsp; Headless CI/CD &nbsp;·&nbsp; MCP-native AI agent integration &nbsp;·&nbsp; AGPL</p>
+
+<br>
+
+> **→ Pentesters** use the TUI and CLI like Burp — no GUI license required.  
+> **→ AI agents and CI/CD pipelines** consume the REST API and MCP server natively.  
+> **→ Teams** share live sessions in real time via WebSocket rooms.
 
 pwnproxy is a modular web application security testing platform. Built on mitmproxy with a FastAPI control plane, Typer CLI, and plugin system, it provides intercepting proxy, automated scanning (SQLi, XSS, LFI, XXE, SSRF), session token management, repeater, intruder, a REST API, and an MCP server for AI agent integration — all running locally without a GUI or cloud dependency.
+
+---
+
+## Why pwnproxy
+
+Burp Suite was designed for a single pentester with a GUI.  
+pwnproxy was designed for a world where security testing happens in pipelines, AI agents reproduce findings automatically, and teams collaborate in real time.
+
+| | Burp Suite | pwnproxy |
+|---|---|---|
+| Audience | Manual pentesters | Pentesters + AI agents + CI/CD + teams |
+| Plugins | Java BApp Store | `pip install pwnproxy-*` |
+| Headless | Workarounds required | Native CLI + REST API |
+| AI integration | None | MCP server — Claude, Copilot, custom agents |
+| Collaboration | Collaborator (OOB only) | WebSocket rooms, shared sessions |
+| Output format | UI-bound, XML/HTML | JSON-first, SARIF, OpenAPI |
+| Cost | $449/yr (Pro), $9k+/yr (DAST) | Free, AGPL |
 
 ---
 
@@ -28,6 +53,102 @@ pwnproxy is a modular web application security testing platform. Built on mitmpr
 
 ---
 
+## AI Agent Integration (MCP)
+
+pwnproxy ships a native MCP server. Any MCP-compatible agent (Claude, Copilot, custom) can scan targets, read findings, and control the proxy without parsing CLI output or wrapping HTTP calls.
+
+```bash
+pip install pwnproxy-mcp
+```
+
+**Example: Claude reproduces a bug bounty report automatically**
+```
+scan_url("https://target.com/api/search?q=test", plugins=["sqli","xss"])
+→ Finding: SQLi confirmed in param 'q', technique: error-based, severity: critical
+```
+
+**Example: CI/CD pipeline blocks a deploy on critical findings**
+```bash
+pwnproxy scan url https://staging.example.com --output sarif
+# exit code 1 → findings found → PR blocked
+```
+
+### Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "pwnproxy-mcp"
+    }
+  }
+}
+```
+
+### GitHub Copilot
+
+Add to your `.github/copilot-instructions.md`:
+
+```markdown
+The project includes pwnproxy-mcp — an MCP server for security scanning.
+Start it with `pwnproxy-mcp` for AI-assisted vulnerability assessment.
+```
+
+### Custom Agents
+
+```python
+import asyncio
+from pwnproxy_mcp.server import PwnProxyMCPServer, _build_loader
+
+loader = _build_loader()
+server = PwnProxyMCPServer(loader)
+
+async def main():
+    findings = await server.handle_scan_url("https://example.com")
+    print(findings)
+
+asyncio.run(main())
+```
+
+### Available MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `scan_url` | Scan a target URL for vulnerabilities |
+| `list_findings` | List available scanners and their status |
+| `get_status` | Get proxy and scanner health |
+
+---
+
+## Quickstart
+
+```bash
+# 1. Install
+pip install pwnproxy
+
+# 2. Start proxy + API
+pwnproxy start --proxy-port 8080 --api-port 8000
+
+# 3. Configure curl to use the proxy
+curl -x http://127.0.0.1:8080 http://httpbin.org/get
+
+# 4. View captured traffic
+pwnproxy history
+
+# 5. View via API
+curl http://127.0.0.1:8000/api/v1/flows
+
+# 6. Headless scan (no proxy needed)
+pwnproxy scan url https://example.com --output json
+
+# 7. List installed plugins
+pwnproxy plugin list
+```
+
+---
+
 ## Architecture
 
 ```
@@ -37,7 +158,7 @@ pwnproxy is a modular web application security testing platform. Built on mitmpr
 │  ┌──────────┐    HookBus (asyncio.Queue pub/sub)                  │
 │  │          │    ┌──────┐ ┌───────┐ ┌───────┐ ┌──────────┐       │
 │  │  Proxy   │───▶│request││response││ error ││  done    │       │
-│  │ (mitmproxy)│   └──────┘ └───────┘ └───────┘ └──────────┘       │
+│  │(mitmproxy)│   └──────┘ └───────┘ └───────┘ └──────────┘       │
 │  │  Addons  │        │         │        │          │              │
 │  │ ┌──────┐ │        ▼         ▼        ▼          ▼              │
 │  │ │Hook  │ │   ┌──────────────────────────────────────┐          │
@@ -71,33 +192,6 @@ pwnproxy is a modular web application security testing platform. Built on mitmpr
 │  │  scan_url  list_findings  get_status                  │          │
 │  └──────────────────────────────────────────────────────┘          │
 └──────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Quickstart
-
-```bash
-# 1. Install
-pip install pwnproxy
-
-# 2. Start proxy + API
-pwnproxy start --proxy-port 8080 --api-port 8000
-
-# 3. Configure curl to use the proxy
-curl -x http://127.0.0.1:8080 http://httpbin.org/get
-
-# 4. View captured traffic
-pwnproxy history
-
-# 5. View via API
-curl http://127.0.0.1:8000/api/v1/flows
-
-# 6. Headless scan (no proxy needed)
-pwnproxy scan url https://example.com --output json
-
-# 7. List installed plugins
-pwnproxy plugin list
 ```
 
 ---
@@ -156,13 +250,20 @@ Configure your browser's HTTP proxy to `127.0.0.1:8080`. For HTTPS interception,
 Start the proxy server and API control plane.
 
 ```bash
-pwnproxy start --proxy-port18080 --api-port 8000
+pwnproxy start --proxy-port 8080 --api-port 8000
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--proxy-port` | `8080` | Proxy listen port |
 | `--api-port` | `8000` | API server port |
+
+Output on start:
+```
+Session: default
+Proxy  → 127.0.0.1:8080  (intercepting)
+API    → 127.0.0.1:8000  (http://127.0.0.1:8000/docs)
+```
 
 Press `Ctrl+C` to stop both servers gracefully.
 </details>
@@ -234,8 +335,6 @@ pwnproxy session delete 1
 | `get <id>` | Show full token details |
 | `delete <id>` | Remove a token from storage |
 </details>
-
----
 
 <details>
 <summary><strong>pwnproxy scan url</strong></summary>
@@ -335,7 +434,7 @@ PluginWatchdog
 
 ### Built-in Scanner Plugins
 
-All 5 built-in scanners are registered as `ScannerPlugin` adapters by default. They implement the same interface as third-party plugins, ensuring the plugin API stays correct.
+All 5 built-in scanners are registered as `ScannerPlugin` adapters by default. They implement the same interface as third-party plugins — the plugin API has no special cases for built-ins.
 
 ### Writing a Scanner Plugin
 
@@ -348,10 +447,8 @@ class MyScanner(ScannerPlugin):
     author = "you"
 
     async def scan(self, flow: Flow) -> Finding | None:
-        # Extract params from flow
         params = self.extract_params(flow)
         for param in params:
-            # ... test logic ...
             if vulnerable:
                 return Finding(
                     scanner=self.name,
@@ -363,7 +460,7 @@ class MyScanner(ScannerPlugin):
                     severity="high",
                     confidence="confirmed",
                     payload="<payload>",
-                    evidence="<reponse snippet>",
+                    evidence="<response snippet>",
                 )
         return None
 ```
@@ -387,71 +484,12 @@ registry = "https://..."    # Optional custom registry URL
 
 ---
 
-## MCP Server (AI Agent Integration)
-
-pwnproxy provides a native [Model Context Protocol](https://modelcontextprotocol.io) server (`pwnproxy-mcp`) for AI agent integration via stdio transport.
-
-### Installation
-
-```bash
-pip install pwnproxy-mcp
-```
-
-### Available Tools
-
-| Tool | Description |
-|------|-------------|
-| `scan_url` | Scan a target URL for vulnerabilities |
-| `list_findings` | List available scanners and their status |
-| `get_status` | Get proxy and scanner health |
-
-### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "pwnproxy": {
-      "command": "pwnproxy-mcp"
-    }
-  }
-}
-```
-
-### GitHub Copilot
-
-Add to your `.github/copilot-instructions.md`:
-
-```markdown
-The project includes pwnproxy-mcp — an MCP server for security scanning.
-Start it with `pwnproxy-mcp` for AI-assisted vulnerability assessment.
-```
-
-### Custom Agents
-
-```python
-import asyncio
-from pwnproxy_mcp.server import PwnProxyMCPServer, _build_loader
-
-loader = _build_loader()
-server = PwnProxyMCPServer(loader)
-
-async def main():
-    findings = await server.handle_scan_url("https://example.com")
-    print(findings)
-
-asyncio.run(main())
-```
-
----
-
 ## Headless / CI-CD Integration
 
 ### Proxy Mode (headless)
 
 ```bash
-pwnproxy start  # no --tui needed; headless by default
+pwnproxy start  # headless by default; no TUI required
 # Findings stream as JSON lines to stdout
 ```
 
@@ -517,7 +555,7 @@ The import extracts:
 | Fuzzing | Intruder | `pwnproxy intruder` |
 | Scanning | Active/Passive scan | Automated + `pwnproxy scan` |
 | Session tokens | Session handler | `pwnproxy session` |
-| Plugins | BApp Store | `pwnproxy plugin install` |
+| Plugins | BApp Store (Java) | `pwnproxy plugin install` (Python) |
 | AI integration | N/A | `pwnproxy-mcp` MCP server |
 | CI/CD | N/A | `pwnproxy scan --output sarif` |
 
@@ -525,7 +563,7 @@ The import extracts:
 
 ## API Reference
 
-The API runs on `http://127.0.0.1:8000` by default (configurable via `--api-port`).
+The API runs on `http://127.0.0.1:8000` by default (configurable via `--api-port`). Interactive docs at `http://127.0.0.1:8000/docs`.
 
 <details>
 <summary><strong>Traffic (Flows)</strong></summary>
@@ -694,41 +732,27 @@ curl -X POST http://127.0.0.1:8000/api/v1/scanners/trigger \
     "scanners": ["sqli", "xss"]
   }'
 ```
-
-Available scanners: `sqli`, `xss`, `lfi`, `xxe`, `ssrf`.
 </details>
 
 <details>
 <summary><strong>WebSocket Events</strong></summary>
 
-Real-time event streams for live UIs and collaboration.
-
-#### Traffic stream
+Real-time event streams for live UIs and team collaboration.
 
 ```bash
-# ws://127.0.0.1:8000/ws/traffic
-# Receives: {"type": "flow", "method": "GET", "url": "...", "id": "...", "status_code": 200}
-```
+# Traffic stream
+ws://127.0.0.1:8000/ws/traffic
+# → {"type": "flow", "method": "GET", "url": "...", "id": "...", "status_code": 200}
 
-#### Findings stream (poll-based)
+# Findings stream
+ws://127.0.0.1:8000/ws/findings
+# → {"type": "finding", "scanner": "sqli", ...}
 
-```bash
-# ws://127.0.0.1:8000/ws/findings
-# Receives: {"type": "finding", "scanner": "sqli", ...}
-```
+# Unified events stream (traffic + findings)
+ws://127.0.0.1:8000/ws/events
 
-#### Unified events stream
-
-```bash
-# ws://127.0.0.1:8000/ws/events
-# Combines both traffic + finding events in one connection
-```
-
-#### Room-isolated stream (multi-client)
-
-```bash
-# ws://127.0.0.1:8000/ws/rooms/{room_id}
-# Isolates traffic per room for team sessions
+# Room-isolated stream (multi-client team sessions)
+ws://127.0.0.1:8000/ws/rooms/{room_id}
 ```
 </details>
 
@@ -774,7 +798,7 @@ All scanners are HookBus consumers: they listen for `"done"` events published by
 <details>
 <summary><strong>XXE Scanner</strong></summary>
 
-- **Detection**: Error-based (DOOCTYPE with local file entities, XML parser error detection), XInclude bypass (`<xi:include>` when DOCTYPE blocked), JSON-to-XML mutation (for `application/json` endpoints), OOB (parameter entity callback to configured domain).
+- **Detection**: Error-based (DOCTYPE with local file entities, XML parser error detection), XInclude bypass (`<xi:include>` when DOCTYPE blocked), JSON-to-XML mutation (for `application/json` endpoints), OOB (parameter entity callback to configured domain).
 - **Scannable content types**: XML (`text/xml`, `application/xml`, etc.) and `application/json`.
 - **Dedup**: By `(host+path, param_name, location)`.
 </details>
@@ -832,7 +856,7 @@ Override ports via environment variables:
 PWNPROXY_PROXY_PORT=9090 PWNPROXY_API_PORT=9000 ./dev.sh
 ```
 
-To run services individually instead:
+To run services individually:
 ```bash
 # Terminal 1: Proxy + API
 pwnproxy start --proxy-port 8080 --api-port 8000
@@ -874,6 +898,8 @@ For detailed design docs and archived change specifications, see [`openspec/`](.
 ## Roadmap
 
 ### v1 (current) — Platform Foundation
+*Objective: complete, production-ready security platform with AI-native integration.*
+
 - [x] Intercepting proxy, 5 scanners, session manager, repeater, intruder
 - [x] REST API, CLI, WebSocket streams
 - [x] Plugin system (ScannerPlugin, HookPlugin, watchdog, PyPI discovery)
@@ -883,12 +909,16 @@ For detailed design docs and archived change specifications, see [`openspec/`](.
 - [x] MCP server (`pwnproxy-mcp`) for AI agent integration
 
 ### v1.5 — Ecosystem Maturation
+*Objective: make it frictionless for the community to build and publish plugins.*
+
 - [ ] Plugin marketplace: `pwnproxy plugin search` with rating/downloads
 - [ ] Community plugin SDK documentation site
 - [ ] Official VS Code extension (pwnproxy as background scanner)
 - [ ] `pwnproxy-mcp-enterprise` — HTTP transport, team prompts, audit logging
 
 ### v2 — Web UI + Collaboration
+*Objective: teams can share live pentest sessions from a browser.*
+
 - [ ] Astro + Tailwind dark-theme dashboard (`web-ui/`)
 - [ ] Live traffic view with WebSocket
 - [ ] Findings table with severity grouping and filtering
@@ -897,6 +927,8 @@ For detailed design docs and archived change specifications, see [`openspec/`](.
 - [ ] Plugin management UI (install, toggle, configure from browser)
 
 ### v2.5 — Advanced Automation
+*Objective: AI agents can execute complete security engagements autonomously.*
+
 - [ ] Scheduled scanning with cron-like triggers
 - [ ] Webhook notifications (Slack, Discord, email)
 - [ ] Global rate limiting and distributed scanning
@@ -904,6 +936,43 @@ For detailed design docs and archived change specifications, see [`openspec/`](.
 
 ---
 
+### Database Scaling
+
+pwnproxy uses **SQLite per session** (`~/.pwnproxy/sessions/<name>/*.db`). This is the right default for individual pentesters and small teams — zero ops, backup-friendly, entire session copies with `cp -r`.
+
+When you need **collaborative multi-user** or **large-scale CI/CD**, swap SQLite for PostgreSQL. SQLAlchemy is the abstraction layer — only the connection URL changes:
+
+```python
+# SessionManager._point_engines — current:
+traffic_url = f"sqlite+aiosqlite:///{path}/traffic.db"
+
+# Collaborative deployment:
+traffic_url = "postgresql+asyncpg://user:pass@host/db?options=-csession.id=X"
+```
+
+Session isolation switches from file-per-session to `WHERE session_id = X`. The data model (Flow, Finding, Task) is identical. See the [enterprise deployment guide](docs/deployment.md) for connection pooling, migration, and multi-tenant configuration.
+
+---
+
+## Commercial Support
+
+pwnproxy is maintained by **[NEXTECH SOLUTIONS](https://nextech.mx)** — a cybersecurity services company based in Mexico.
+
+The tool is free and open source under AGPL. NEXTECH offers professional services for organizations that need more than a self-hosted tool:
+
+| Service | Description |
+|---|---|
+| **Certified pentesting engagements** | Signed reports using pwnproxy for compliance (PCI-DSS, ISO 27001, OWASP) |
+| **Custom plugin development** | Scanners and hooks tailored to your specific stack or tech debt |
+| **Team training and onboarding** | Hands-on workshops for security and DevSecOps teams |
+| **Managed scanning** | Continuous monitoring integrated into your CI/CD pipeline |
+
+Enterprise and government inquiries: **contact@nextech.mx**
+
+---
+
 ## License
 
 GNU Affero General Public License v3.0. See [LICENSE](./LICENSE) for the full text.
+
+The AGPL license means: you can use, modify, and distribute pwnproxy freely — including running it as a service — as long as you make the source code available. Commercial use cases that require a different license arrangement can be discussed with NEXTECH SOLUTIONS.

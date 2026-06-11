@@ -1,0 +1,7 @@
+pwnproxy
+mcp<2.0.0,>=1.0.0
+
+[enterprise]
+uvicorn
+fastapi
+httpx

@@ -21,5 +21,5 @@ def test_history_help():
 def test_session_help():
     result = runner.invoke(app, ["session", "--help"])
     assert result.exit_code == 0
-    for cmd in ("list", "get", "delete"):
+    for cmd in ("list", "info", "delete"):
         assert cmd in result.output

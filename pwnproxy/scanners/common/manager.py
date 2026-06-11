@@ -2,6 +2,8 @@ import logging
 from typing import Optional
 
 from pwnproxy.core.models import Flow
+from pwnproxy.plugin.base import Finding, ScannerPlugin
+from pwnproxy.plugin.loader import PluginLoader
 from pwnproxy.scanners.common.scan_log_store import ScanLogStore
 from pwnproxy.scanners.lfi.scanner import LFIScanner
 from pwnproxy.scanners.sqli.scanner import SQLiScanner
@@ -22,6 +24,7 @@ class ScanManager:
         lfi: LFIScanner,
         xxe: XXEScanner,
         ssrf: SSRFScanner,
+        loader: Optional[PluginLoader] = None,
         scan_log_store: Optional[ScanLogStore] = None,
     ):
         self._scanners = {
@@ -31,10 +34,21 @@ class ScanManager:
             "xxe": xxe,
             "ssrf": ssrf,
         }
+        self._loader = loader or PluginLoader()
         self._scan_log_store = scan_log_store or ScanLogStore()
 
         for name, scanner in self._scanners.items():
             scanner._on_flow_complete = self._make_flow_complete_handler(name)
+
+    @property
+    def loader(self) -> PluginLoader:
+        return self._loader
+
+    def get_plugin_scanner(self, name: str) -> Optional[ScannerPlugin]:
+        return self._loader.get_scanner(name)
+
+    async def scan_flow_via_plugins(self, flow: Flow) -> list[Finding]:
+        return await self._loader.run_scan(flow)
 
     def _make_flow_complete_handler(self, scanner_name: str):
         async def handler(flow_id: str, url: str, method: str, _name: str, duration_ms: float, finding_count: int):

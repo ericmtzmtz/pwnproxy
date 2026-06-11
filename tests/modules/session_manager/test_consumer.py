@@ -32,7 +32,7 @@ async def test_consumer_processes_flow():
         status_code=200,
     )
 
-    hook_bus.publish("done", flow)
+    hook_bus.publish("response", flow)
     await asyncio.sleep(0.2)
 
     assert storage.save.called

@@ -122,14 +122,18 @@ class InterceptorController:
         for flow_id in list(self._pending.keys()):
             self.drop(flow_id)
 
-    def toggle(self) -> None:
-        new_state = not self._addon.enabled
-        self._addon.set_enabled(new_state)
-        if not new_state:
+    def set_enabled(self, value: bool) -> None:
+        if value == self._addon.enabled:
+            return
+        self._addon.set_enabled(value)
+        if not value:
             self._addon.resume_all()
             self._pending.clear()
             self._snapshots.clear()
-        logger.info(f"Interceptor toggled {'ON' if new_state else 'OFF'}")
+        logger.info(f"Interceptor {'ON' if value else 'OFF'}")
+
+    def toggle(self) -> None:
+        self.set_enabled(not self._addon.enabled)
 
     def get_snapshot(self, flow_id: str) -> Optional[FlowSnapshot]:
         return self._snapshots.get(flow_id)

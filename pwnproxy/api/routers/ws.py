@@ -39,8 +39,43 @@ class ConnectionManager:
         return len(self._connections)
 
 
+class RoomManager:
+    def __init__(self):
+        self._rooms: Dict[str, Set[WebSocket]] = {}
+
+    async def connect(self, room_id: str, ws: WebSocket) -> None:
+        await ws.accept()
+        if room_id not in self._rooms:
+            self._rooms[room_id] = set()
+        self._rooms[room_id].add(ws)
+
+    def disconnect(self, room_id: str, ws: WebSocket) -> None:
+        room = self._rooms.get(room_id)
+        if room:
+            room.discard(ws)
+            if not room:
+                del self._rooms[room_id]
+
+    async def broadcast(self, room_id: str, message: str) -> None:
+        room = self._rooms.get(room_id)
+        if not room:
+            return
+        dead: List[WebSocket] = []
+        for ws in room:
+            try:
+                await ws.send_text(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            room.discard(ws)
+        if room and not room:
+            del self._rooms[room_id]
+
+
 traffic_manager = ConnectionManager()
 findings_manager = ConnectionManager()
+events_manager = ConnectionManager()
+room_manager = RoomManager()
 
 SCANNER_TABLES: Dict[str, str] = {
     "sqli": "scan_findings",
@@ -80,40 +115,77 @@ async def ws_traffic(ws: WebSocket):
 @router.websocket("/ws/findings")
 async def ws_findings(ws: WebSocket):
     await findings_manager.connect(ws)
-    engine = ws.app.state.scanner_engine
-    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-    last_ids: Dict[str, int] = {name: 0 for name in SCANNER_TABLES}
+    hook_bus = ws.app.state.hook_bus
+    finding_queue = hook_bus.register("finding")
 
     try:
         while True:
-            await asyncio.sleep(1.0)
-
-            async with factory() as session:
-                for scanner_name, table in SCANNER_TABLES.items():
-                    try:
-                        result = await session.execute(
-                            text(
-                                f"SELECT * FROM {table} WHERE id > :last_id ORDER BY id ASC"
-                            ),
-                            {"last_id": last_ids[scanner_name]},
-                        )
-                        rows = result.mappings().all()
-                        for row in rows:
-                            item = dict(row)
-                            item["scanner"] = scanner_name
-                            last_ids[scanner_name] = max(
-                                last_ids[scanner_name], item.get("id", 0)
-                            )
-                            await ws.send_text(
-                                json.dumps(
-                                    {"type": "finding", "scanner": scanner_name, **item},
-                                    default=str,
-                                )
-                            )
-                    except Exception as exc:
-                        logger.debug(f"WS findings poll error for {table}: {exc}")
+            finding_data = await finding_queue.get()
+            payload = json.dumps({"type": "finding", **finding_data}, default=str)
+            await ws.send_text(payload)
     except WebSocketDisconnect:
         findings_manager.disconnect(ws)
+    except asyncio.CancelledError:
+        pass
+
+
+@router.websocket("/ws/events")
+async def ws_events(ws: WebSocket):
+    await events_manager.connect(ws)
+    hook_bus = ws.app.state.hook_bus
+    flow_queue = hook_bus.register("flow_stored")
+    finding_queue = hook_bus.register("finding")
+
+    try:
+        while True:
+            done, _ = await asyncio.wait(
+                [asyncio.create_task(flow_queue.get()), asyncio.create_task(finding_queue.get())],
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            for task in done:
+                result = task.result()
+                if isinstance(result, dict) and "scanner" in result:
+                    payload = json.dumps({"type": "finding", **result}, default=str)
+                elif isinstance(result, dict):
+                    payload = json.dumps(
+                        {
+                            "type": "flow",
+                            "id": result.get("id"),
+                            "method": result.get("method", ""),
+                            "url": result.get("url", ""),
+                            "status_code": result.get("status_code"),
+                        },
+                        default=str,
+                    )
+                await ws.send_text(payload)
+    except WebSocketDisconnect:
+        events_manager.disconnect(ws)
+    except asyncio.CancelledError:
+        pass
+
+
+@router.websocket("/ws/rooms/{room_id}")
+async def ws_room(ws: WebSocket, room_id: str):
+    await room_manager.connect(room_id, ws)
+    hook_bus = ws.app.state.hook_bus
+    queue = hook_bus.register("response")
+
+    try:
+        while True:
+            flow = await queue.get()
+            payload = json.dumps(
+                {
+                    "type": "flow",
+                    "room": room_id,
+                    "method": flow.method,
+                    "url": flow.url,
+                    "id": flow.id,
+                    "status_code": flow.status_code,
+                },
+                default=str,
+            )
+            await ws.send_text(payload)
+    except WebSocketDisconnect:
+        room_manager.disconnect(room_id, ws)
     except asyncio.CancelledError:
         pass

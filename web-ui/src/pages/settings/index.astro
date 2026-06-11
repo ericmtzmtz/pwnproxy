@@ -1,0 +1,135 @@
+---
+import Base from "@/layouts/Base.astro";
+import Card from "@/ui/Card.astro";
+---
+
+<Base title="Settings" page="/settings">
+  <div class="mb-6">
+    <h1 class="text-xl font-bold text-neutral-50">Settings</h1>
+    <p class="mt-0.5 text-sm text-neutral-400">Proxy configuration and plugin management</p>
+  </div>
+
+  <Card>
+    <div slot="title">Plugins</div>
+    <p class="mb-4 text-xs text-neutral-500">Active scanner plugins. Click to toggle on/off.</p>
+    <div id="plugin-list" class="space-y-2">
+      <div class="py-8 text-center text-sm text-neutral-600">Loading plugins...</div>
+    </div>
+  </Card>
+
+  <div class="mt-6 grid grid-cols-2 gap-4">
+    <Card>
+      <div slot="title">Proxy</div>
+      <div class="space-y-3">
+        <div>
+          <label class="mb-1 block text-xs text-neutral-400">Listen address</label>
+          <input value="127.0.0.1" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" readonly />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs text-neutral-400">Port</label>
+          <input value="8080" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" readonly />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs text-neutral-400">Mode</label>
+          <input value="Transparent" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" readonly />
+        </div>
+      </div>
+    </Card>
+    <Card>
+      <div slot="title">Upstream Proxy</div>
+      <div class="space-y-3">
+        <div>
+          <label for="upstream" class="mb-1 block text-xs text-neutral-400">Upstream proxy URL</label>
+          <input id="upstream" placeholder="http://proxy:8080" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs text-neutral-400">Timeout (s)</label>
+          <input id="timeout" value="30" type="number" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" />
+        </div>
+      </div>
+    </Card>
+  </div>
+</Base>
+
+<script>
+  import { listPlugins, togglePlugin } from "@/api/plugins/calls";
+
+  const pluginList = document.getElementById("plugin-list") as HTMLDivElement;
+
+  async function loadPlugins() {
+    try {
+      const data = await listPlugins();
+      const plugins = data.plugins ?? [];
+
+      if (plugins.length === 0) {
+        pluginList.innerHTML = `<div class="py-8 text-center text-sm text-neutral-600">No plugins found</div>`;
+        return;
+      }
+
+      pluginList.innerHTML = plugins.map((p: any) => {
+        const enabled = !p.disabled;
+        return `<div class="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-950 px-3 py-2.5">
+          <div class="flex items-center gap-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold uppercase ${
+              enabled ? "bg-primary-900 text-primary-300" : "bg-neutral-800 text-neutral-500"
+            }">${p.name?.charAt(0) ?? "?"}</span>
+            <div>
+              <p class="text-sm font-medium ${enabled ? "text-neutral-200" : "text-neutral-500"}">${p.name}</p>
+              <p class="text-[11px] text-neutral-500">v${p.version ?? "?"} · ${p.category ?? "scanner"} · <span class="${enabled ? "text-success-500" : "text-neutral-500"}">${enabled ? "ON" : "OFF"}</span></p>
+            </div>
+          </div>
+          <button
+            data-plugin="${p.name}"
+            data-enabled="${enabled}"
+            class="toggle-btn relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full transition-colors duration-200 focus:outline-none ${
+              enabled ? "bg-primary-500" : "bg-neutral-700"
+            }"
+          >
+            <span class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200 ${
+              enabled ? "translate-x-6" : "translate-x-1"
+            }" />
+          </button>
+        </div>`;
+      }).join("");
+
+      document.querySelectorAll(".toggle-btn").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const name = (btn as HTMLElement).dataset.plugin;
+          if (!name) return;
+
+          const wasEnabled = (btn as HTMLElement).dataset.enabled === "true";
+
+          // Optimistic: show loading state
+          (btn as HTMLButtonElement).disabled = true;
+
+          try {
+            const res = await togglePlugin(name);
+            const isEnabled = res.status === "enabled";
+            window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+              detail: {
+                title: `${name} ${isEnabled ? "enabled" : "disabled"}`,
+                message: `${name} scanner is now ${isEnabled ? "ON" : "OFF"}`,
+                severity: "info",
+              },
+            }));
+            await loadPlugins();
+          } catch (err: any) {
+            // Revert on failure — reload to show original state
+            window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+              detail: {
+                title: "Toggle failed",
+                message: `Could not toggle ${name}: ${err.message ?? "API error"}`,
+                severity: "error",
+              },
+            }));
+            await loadPlugins();
+          }
+        });
+      });
+    } catch {
+      pluginList.innerHTML = `<div class="py-8 text-center text-sm text-neutral-600">Could not connect to API</div>`;
+    }
+  }
+
+  loadPlugins();
+</script>

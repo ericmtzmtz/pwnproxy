@@ -1,0 +1,101 @@
+---
+import "@/style.css";
+import Sidebar from "@/ui/Sidebar.astro";
+import { NotificationLayer } from "@/components/notification/NotificationLayer";
+
+export interface Props {
+  title: string;
+  page: string;
+}
+
+const { title, page } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>{title} — pwnproxy</title>
+    <style>
+      html.needs-session main { visibility: hidden; }
+    </style>
+    <script>
+      if (!localStorage.getItem("session-active")) {
+        if (location.pathname !== "/") {
+          sessionStorage.setItem("redirect-after-session", location.pathname);
+          location.replace("/");
+        } else {
+          document.documentElement.classList.add("needs-session");
+          window.__sessionReady = function() {
+            document.documentElement.classList.remove("needs-session");
+          };
+        }
+      }
+    </script>
+  </head>
+  <body class="flex h-dvh overflow-hidden bg-neutral-950 text-neutral-100">
+    <Sidebar current={page} open={false} />
+
+    <!-- Backdrop for mobile -->
+    <div id="backdrop" class="fixed inset-0 z-30 hidden bg-black/50 max-lg:data-[open=true]:block" />
+
+    <main class="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <!-- Top bar with hamburger -->
+      <header class="flex h-12 items-center gap-3 border-b border-neutral-800 bg-neutral-900 px-4 lg:hidden">
+        <button id="menu-btn" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-5 w-5"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+        </button>
+        <span class="text-sm font-bold text-neutral-50">pwnproxy</span>
+      </header>
+
+      <div class="flex-1 overflow-y-auto p-6">
+        <slot />
+      </div>
+    </main>
+    <NotificationLayer client:load />
+  </body>
+</html>
+
+<script>
+  const sidebar = document.getElementById("sidebar") as HTMLElement;
+  const backdrop = document.getElementById("backdrop") as HTMLElement;
+  const menuBtn = document.getElementById("menu-btn") as HTMLButtonElement;
+
+  function openSidebar() {
+    sidebar.dataset.open = "true";
+    if (backdrop) {
+      backdrop.dataset.open = "true";
+      backdrop.classList.remove("hidden");
+    }
+  }
+
+  function closeSidebar() {
+    sidebar.dataset.open = "false";
+    if (backdrop) {
+      backdrop.dataset.open = "false";
+      backdrop.classList.add("hidden");
+    }
+  }
+
+  menuBtn?.addEventListener("click", openSidebar);
+  backdrop?.addEventListener("click", closeSidebar);
+
+  // Close sidebar on nav link click (mobile)
+  sidebar.querySelectorAll("a").forEach((a) => {
+    a.addEventListener("click", () => {
+      if (window.innerWidth < 1024) closeSidebar();
+    });
+  });
+
+  // Close on Escape
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && sidebar.dataset.open === "true") closeSidebar();
+  });
+</script>

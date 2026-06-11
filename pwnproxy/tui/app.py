@@ -85,12 +85,84 @@ class ConfirmDialog(ModalScreen[bool]):
             self.dismiss(False)
 
 
+class SessionPicker(ModalScreen[str]):
+    def compose(self) -> ComposeResult:
+        yield Container(
+            Label("[bold]Select Session[/]"),
+            Static("Choose a session to load or create a new one.", id="picker-subtitle"),
+            Static("", id="session-list"),
+            Input(placeholder="Session number or name...", id="picker-input"),
+            Horizontal(
+                Button("Load / New", variant="primary", id="picker-load"),
+                Button("Start Empty", id="picker-empty"),
+            ),
+            id="dialog-content",
+        )
+
+    def on_mount(self) -> None:
+        asyncio.create_task(self._fetch_sessions())
+        self.query_one("#picker-input", Input).focus()
+
+    async def _fetch_sessions(self) -> None:
+        url = f"http://{self.app._host}:{self.app._api_port}/api/v1/sessions"
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, timeout=5)
+            if resp.status_code == 200:
+                sessions = resp.json()
+                if not sessions:
+                    self.query_one("#session-list", Static).update("[dim]No sessions found. Type a name and press Load / New to create one.[/]")
+                    self._sessions = []
+                    return
+                lines = []
+                for i, s in enumerate(sessions, 1):
+                    tag = " [green]*[/]" if s.get("last_active") else ""
+                    lines.append(f"  {i}. {s['name']}{tag}")
+                self.query_one("#session-list", Static).update("\n".join(lines))
+                self._sessions = sessions
+        except Exception as e:
+            self.query_one("#session-list", Static).update(f"[red]Error: {e}[/]")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "picker-load":
+            val = self.query_one("#picker-input", Input).value.strip()
+            if not val:
+                self.query_one("#picker-input", Input).focus()
+                return
+            if hasattr(self, "_sessions"):
+                try:
+                    idx = int(val) - 1
+                    if 0 <= idx < len(self._sessions):
+                        self.dismiss(self._sessions[idx]["name"])
+                        return
+                except ValueError:
+                    pass
+            self.dismiss(val)
+        elif event.button.id == "picker-empty":
+            self.dismiss("__empty__")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id == "picker-input":
+            val = event.value.strip()
+            if not val:
+                return
+            if hasattr(self, "_sessions"):
+                try:
+                    idx = int(val) - 1
+                    if 0 <= idx < len(self._sessions):
+                        self.dismiss(self._sessions[idx]["name"])
+                        return
+                except ValueError:
+                    pass
+            self.dismiss(val)
+
+
 class DashboardApp(App):
     CSS = """
     TabbedContent { height: 1fr; }
     TabPane { height: 1fr; }
     #dialog-content {
-        width: 50;
+        width: 60;
         height: auto;
         padding: 2;
         border: solid $primary;
@@ -100,9 +172,22 @@ class DashboardApp(App):
     #dialog-content Input {
         width: 40;
     }
+    #picker-input {
+        margin: 1 0;
+    }
     #dialog-content Horizontal {
         height: 3;
         align: center middle;
+    }
+    #dialog-content Static {
+        margin: 1 0;
+    }
+    #picker-subtitle {
+        text-style: dim;
+    }
+    #session-list {
+        height: auto;
+        max-height: 12;
     }
     .tool-launcher {
         height: 100%;
@@ -140,7 +225,7 @@ class DashboardApp(App):
         self._hook_bus = hook_bus
         self._interceptor_controller = interceptor_controller
         self._scan_manager = scan_manager
-        self._active_session: str = "default"
+        self._active_session: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -172,7 +257,7 @@ class DashboardApp(App):
 
     def on_mount(self) -> None:
         self.set_timer(2.0, self._start_streams)
-        asyncio.create_task(self._load_session_info())
+        self.push_screen(SessionPicker(), self._on_session_picked)
         if self._interceptor_controller:
             widget = self.query_one("#interceptor-widget", InterceptorWidget)
             self._interceptor_controller.set_on_intercepted(
@@ -181,6 +266,27 @@ class DashboardApp(App):
                 )
             )
 
+    def _on_session_picked(self, result: Optional[str]) -> None:
+        if result is None or result == "__empty__":
+            self.sub_title = "Session: (none)"
+            return
+        if result == "__new__":
+            self.push_screen(SessionNameDialog(), self._on_session_created)
+            return
+        asyncio.create_task(self._load_session_by_name(result))
+
+    async def _load_session_by_name(self, name: str) -> None:
+        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(url, json={"action": "load", "name": name}, timeout=5)
+            self._active_session = name
+            self.sub_title = f"Session: {name}"
+            self.notify(f"Loaded session: {name}")
+        except Exception as e:
+            self.notify(f"Failed to load session: {e}", severity="error")
+            self.sub_title = "Session: (none)"
+
     async def _load_session_info(self) -> None:
         url = f"http://{self._host}:{self._api_port}/api/v1/sessions/active"
         try:
@@ -188,12 +294,13 @@ class DashboardApp(App):
                 resp = await client.get(url, timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
-                self._active_session = data.get("name", "default")
-                if scope_enabled := data.get("scope_enabled"):
-                    self._active_session += " [scope]"
-                self.sub_title = f"Session: {self._active_session}"
+                name = data.get("name")
+                self._active_session = name
+                self.sub_title = f"Session: {name or '(none)'}"
+                if name and data.get("scope_enabled"):
+                    self.sub_title += " [scope]"
         except Exception:
-            self.sub_title = "Session: default"
+            self.sub_title = "Session: (none)"
 
     async def _start_streams(self) -> None:
         asyncio.create_task(self._consume_traffic())
@@ -247,7 +354,7 @@ class DashboardApp(App):
         if not name:
             self.notify("Select a session first", severity="warning")
             return
-        if name == self._active_session and not self._active_session.startswith("default"):
+        if self._active_session and name == self._active_session and not self._active_session.startswith("default"):
             self.notify(f"Session '{name}' is already active")
             return
         self.push_screen(
@@ -276,7 +383,7 @@ class DashboardApp(App):
             async with httpx.AsyncClient() as client:
                 resp = await client.post(url, json={"action": "save"}, timeout=10)
             if resp.status_code == 200:
-                self.notify(f"Saved session '{self._active_session}'")
+                self.notify(f"Saved session '{self._active_session or '(none)'}'")
             else:
                 self.notify(f"[red]Failed to save: {resp.text}[/]", severity="error")
         except Exception as e:
@@ -304,8 +411,8 @@ class DashboardApp(App):
             if resp.status_code == 200:
                 self.notify(f"Deleted session '{name}'")
                 if name == self._active_session:
-                    self._active_session = "default"
-                    self.sub_title = "Session: default"
+                    self._active_session = None
+                    self.sub_title = "Session: (none)"
                 await self._refresh_sessions()
             else:
                 self.notify(f"[red]Failed to delete: {resp.text}[/]", severity="error")

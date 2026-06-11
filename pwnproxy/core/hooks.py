@@ -8,7 +8,7 @@ logger = logging.getLogger(__name__)
 class HookBus:
     """Async event bus for proxy lifecycle events."""
     
-    ALLOWED_HOOK_TYPES = {"request", "response", "error", "done"}
+    ALLOWED_HOOK_TYPES = {"request", "response", "error", "done", "finding", "flow_stored"}
     
     def __init__(self, maxsize: int = 1000):
         self.maxsize = maxsize
@@ -34,7 +34,9 @@ class HookBus:
         if hook_type not in self.ALLOWED_HOOK_TYPES:
             raise ValueError(f"Unknown hook type: {hook_type}")
 
-        if self._scope_filter and not self._scope_filter(flow):
+        # scope filter only applies to Flow objects (hook_type in flow types),
+        # not to dict payloads (finding, flow_stored)
+        if self._scope_filter and hook_type in {"request", "response", "error", "done"} and not self._scope_filter(flow):
             return
             
         for queue in self._subscribers[hook_type]:

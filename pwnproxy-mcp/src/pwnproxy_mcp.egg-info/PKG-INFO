@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: pwnproxy-mcp
+Version: 0.1.0
+Summary: MCP server for pwnproxy — AI agent integration for security scanning
+Author: NEXTECH
+License: AGPL-3.0-or-later
+Requires-Python: >=3.12
+Requires-Dist: pwnproxy
+Requires-Dist: mcp<2.0.0,>=1.0.0
+Provides-Extra: enterprise
+Requires-Dist: uvicorn; extra == "enterprise"
+Requires-Dist: fastapi; extra == "enterprise"
+Requires-Dist: httpx; extra == "enterprise"

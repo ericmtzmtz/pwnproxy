@@ -1,0 +1,111 @@
+---
+import Base from "@/layouts/Base.astro";
+import Card from "@/ui/Card.astro";
+---
+
+<Base title="Reports" page="/reports">
+  <div class="mb-6">
+    <h1 class="text-xl font-bold text-neutral-50">Reports</h1>
+    <p class="mt-0.5 text-sm text-neutral-400">Export findings as SARIF or JSON</p>
+  </div>
+
+  <div class="mb-4 flex items-center gap-2">
+    {["sqli", "xss", "lfi", "xxe", "ssrf", "all"].map((s) => (
+      <button
+        data-scanner={s}
+        class={`scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${s === "all" ? "bg-primary-600 text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"}`}
+      >{s === "all" ? "All" : s.toUpperCase()}</button>
+    ))}
+  </div>
+
+  <Card>
+    <div slot="title">Findings</div>
+    <div id="findings-content">
+      <div class="flex items-center justify-center py-16 text-sm text-neutral-600">
+        Select a scanner to view findings
+      </div>
+    </div>
+  </Card>
+</Base>
+
+<script>
+  import { listFindings } from "@/api/findings/calls";
+
+  const findingsDiv = document.getElementById("findings-content") as HTMLDivElement;
+  const filters = document.querySelectorAll(".scanner-filter") as NodeListOf<HTMLButtonElement>;
+
+  filters.forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      filters.forEach((b) => {
+        b.className = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-neutral-800 text-neutral-400 hover:bg-neutral-700";
+      });
+      btn.className = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-primary-600 text-white";
+      const scanner = btn.dataset.scanner ?? "all";
+      await loadFindings(scanner);
+    });
+  });
+
+  async function loadFindings(scanner: string) {
+    findingsDiv.innerHTML = `
+      <div class="flex items-center justify-center py-8">
+        <svg class="h-5 w-5 animate-spin text-primary-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+        <span class="ml-2 text-xs text-neutral-500">Loading...</span>
+      </div>`;
+
+    try {
+      const data = await listFindings(1, 100);
+      let items = data.items ?? [];
+
+      if (scanner !== "all") {
+        items = items.filter((f) => f.scanner === scanner);
+      }
+
+      if (items.length === 0) {
+        findingsDiv.innerHTML = `
+          <div class="flex flex-col items-center justify-center py-16 text-sm text-neutral-600">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3 h-10 w-10"><path d="M20 6 9 17l-5-5"/></svg>
+            <p>No findings</p>
+          </div>`;
+        return;
+      }
+
+      findingsDiv.innerHTML = `
+        <div class="mb-2 text-xs text-neutral-500">${items.length} finding${items.length !== 1 ? "s" : ""}</div>
+        <div class="overflow-x-auto rounded-md border border-neutral-800">
+          <table class="w-full text-xs">
+            <thead>
+              <tr class="border-b border-neutral-800 bg-neutral-900">
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Scanner</th>
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Severity</th>
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">URL</th>
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Param</th>
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Technique</th>
+                <th class="px-2 py-1.5 text-left font-semibold uppercase tracking-wider text-neutral-400">Payload</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-neutral-800">
+              ${items.map((f: any) => {
+                const sevColor: Record<string, string> = { critical: "text-red-400", high: "text-orange-400", medium: "text-yellow-400", low: "text-blue-400", info: "text-neutral-400" };
+                return `<tr class="bg-neutral-950 hover:bg-neutral-900/50">
+                  <td class="px-2 py-1.5 font-mono uppercase text-neutral-300">${f.scanner ?? "-"}</td>
+                  <td class="px-2 py-1.5 font-semibold ${sevColor[f.severity] ?? "text-neutral-400"}">${f.severity ?? "-"}</td>
+                  <td class="max-w-[250px] truncate px-2 py-1.5 text-neutral-400" title="${f.url}">${f.url ?? "-"}</td>
+                  <td class="px-2 py-1.5 font-mono text-neutral-300">${f.param_name ?? "-"}</td>
+                  <td class="px-2 py-1.5 text-neutral-400">${f.technique ?? "-"}</td>
+                  <td class="max-w-[150px] truncate px-2 py-1.5 font-mono text-neutral-400" title="${f.payload}">${f.payload ?? "-"}</td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>`;
+    } catch (err: any) {
+      findingsDiv.innerHTML = `
+        <div class="rounded-md border border-red-800 bg-red-900/20 p-3">
+          <p class="text-sm font-medium text-danger-500">Error loading findings</p>
+          <p class="mt-1 text-xs text-neutral-400">${err.message}</p>
+        </div>`;
+    }
+  }
+
+  loadFindings("all");
+</script>

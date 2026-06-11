@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pwnproxy-mcp"
+version = "0.1.0"
+description = "MCP server for pwnproxy — AI agent integration for security scanning"
+authors = [{name = "NEXTECH"}]
+license = {text = "AGPL-3.0-or-later"}
+requires-python = ">=3.12"
+dependencies = [
+    "mcp>=1.0.0,<2.0.0",
+]
+
+[project.optional-dependencies]
+enterprise = [
+    "uvicorn",
+    "fastapi",
+    "httpx",
+]
+
+[project.scripts]
+pwnproxy-mcp = "pwnproxy_mcp.server:main"
+pwnproxy-mcp-enterprise = "pwnproxy_mcp.enterprise:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pwnproxy_mcp*"]
+
+[tool.pwnproxy]
+category = "mcp"

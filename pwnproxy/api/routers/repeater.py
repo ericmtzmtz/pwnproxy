@@ -1,9 +1,11 @@
+import time
 from typing import Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from pwnproxy.repeater.parser import parse_raw_request
+from pwnproxy.intruder.engine import _parse_raw_from_template
 
 router = APIRouter(prefix="/api/v1", tags=["repeater"])
 
@@ -13,6 +15,7 @@ class RepeaterSendRequest(BaseModel):
 
 
 class RepeaterSendResponse(BaseModel):
+    task_id: str
     status_code: int
     headers: dict
     body_preview: str
@@ -21,26 +24,47 @@ class RepeaterSendResponse(BaseModel):
 
 @router.post("/repeater/send")
 async def repeater_send(request: Request, body: RepeaterSendRequest):
-    engine = request.app.state.repeater_engine
-    if not engine:
-        raise HTTPException(status_code=503, detail="Repeater engine not available")
+    store = getattr(request.app.state, "task_store", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="Task store not available")
 
-    import time
+    session_mgr = getattr(request.app.state, "session_manager", None)
+    session_name = session_mgr.active_name if session_mgr else ""
+
+    config = {"raw_request": body.raw_request}
+    task_id = await store.create("repeater", config, session_name=session_name)
+
+    await store.update(task_id, status="running", total=1)
+    start = time.monotonic()
     try:
-        parsed = parse_raw_request(body.raw_request)
-        start = time.monotonic()
-        response = await engine.send(parsed)
+        parsed = _parse_raw_from_template(body.raw_request)
+        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+            resp = await client.request(
+                method=parsed["method"],
+                url=parsed["url"],
+                headers=parsed["headers"],
+                content=parsed["body"],
+            )
         elapsed = (time.monotonic() - start) * 1000
+        result = {
+            "status_code": resp.status_code,
+            "headers": dict(resp.headers),
+            "body": resp.text,
+            "duration_ms": round(elapsed, 1),
+        }
+        await store.update(task_id, status="completed", progress=1, result=result)
 
-        raw_body = response.content
-        body_preview = (raw_body.decode("utf-8", "replace")[:500]
-                        + ("..." if len(raw_body) > 500 else "")) if raw_body else ""
-
+        body_text = resp.text or ""
+        body_preview = body_text[:500] + ("..." if len(body_text) > 500 else "")
         return RepeaterSendResponse(
-            status_code=response.status_code,
-            headers=dict(response.headers),
+            task_id=task_id,
+            status_code=resp.status_code,
+            headers=dict(resp.headers),
             body_preview=body_preview,
             timing_ms=round(elapsed, 1),
         )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as e:
+        elapsed = (time.monotonic() - start) * 1000
+        error_result = {"status_code": 0, "headers": {}, "body": "", "duration_ms": round(elapsed, 1), "error": str(e)}
+        await store.update(task_id, status="completed", progress=1, result=error_result)
+        raise HTTPException(status_code=500, detail=str(e))

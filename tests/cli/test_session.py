@@ -1,95 +1,129 @@
-import asyncio
+import json
+import tempfile
 from pathlib import Path
+from unittest.mock import patch
 
-import pytest
+from typer.testing import CliRunner
 
-from pwnproxy.modules.session_manager.storage import TokenStorage
-from pwnproxy.modules.session_manager.models import TokenCandidate
+from pwnproxy.cli import app as cli_app
 
-
-async def _seed(db_path: Path):
-    storage = TokenStorage(db_path=str(db_path))
-    await storage.init()
-    candidates = [
-        TokenCandidate(
-            token_type="jwt",
-            token_value="eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiYWRtaW4ifQ.test",
-            label="admin jwt",
-            status="valid",
-            source_url="http://test.com/login",
-        ),
-        TokenCandidate(
-            token_type="cookie",
-            token_value="session=abc123",
-            label="session cookie",
-            status="unknown",
-            source_url="http://test.com/",
-        ),
-    ]
-    await storage.save(candidates)
-    await storage.close()
+runner = CliRunner()
 
 
-@pytest.fixture
-def session_dir(tmp_path):
-    db_dir = tmp_path / ".pwnproxy"
-    db_dir.mkdir(parents=True, exist_ok=True)
-    return tmp_path
+def _create_workspace(base: Path, name: str):
+    path = base / name
+    path.mkdir(parents=True, exist_ok=True)
+    meta = {"name": name, "created_at": "2026-01-01T00:00:00", "last_modified": "2026-01-01T00:00:00", "version": 1}
+    (path / "session.json").write_text(json.dumps(meta))
+    (path / "scope.json").write_text(json.dumps({"enabled": True, "in_scope": ["*.example.com"], "out_of_scope": []}))
+    return base
 
 
-def test_session_list(session_dir):
-    db_path = session_dir / ".pwnproxy" / "sessions.db"
-    asyncio.run(_seed(db_path))
-
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _list_sessions
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        asyncio.run(_list_sessions(None))
-
-
-def test_session_list_filtered(session_dir):
-    db_path = session_dir / ".pwnproxy" / "sessions.db"
-    asyncio.run(_seed(db_path))
-
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _list_sessions
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        asyncio.run(_list_sessions("jwt"))
-
-
-def test_session_get_found(session_dir):
-    db_path = session_dir / ".pwnproxy" / "sessions.db"
-    asyncio.run(_seed(db_path))
-
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _get_session
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        asyncio.run(_get_session(1))
+def test_session_list():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        _create_workspace(base, "alpha")
+        _create_workspace(base, "beta")
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "list"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code == 0
+        assert "alpha" in result.output
+        assert "beta" in result.output
 
 
-def test_session_get_not_found(session_dir):
-    import typer
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _get_session
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        with pytest.raises(typer.Exit):
-            asyncio.run(_get_session(999))
+def test_session_list_empty():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "list"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code == 0
 
 
-def test_session_delete_found(session_dir):
-    db_path = session_dir / ".pwnproxy" / "sessions.db"
-    asyncio.run(_seed(db_path))
+def test_session_info_found():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        _create_workspace(base, "my-session")
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "info", "my-session"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code == 0
+        assert "my-session" in result.output
 
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _delete_session
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        asyncio.run(_delete_session(1))
+
+def test_session_info_not_found():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "info", "nonexistent"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code != 0
 
 
-def test_session_delete_not_found(session_dir):
-    import typer
-    from unittest.mock import patch
-    from pwnproxy.cli.session import _delete_session
-    with patch("pwnproxy.modules.session_manager.storage.Path.home", return_value=session_dir):
-        with pytest.raises(typer.Exit):
-            asyncio.run(_delete_session(999))
+def test_session_delete_found():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        _create_workspace(base, "to-delete")
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "delete", "to-delete"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code == 0
+        assert not (base / "to-delete").exists()
+
+
+def test_session_delete_not_found():
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        base = Path(tmp)
+        patches = (
+            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+        )
+        for p in patches:
+            p.start()
+        try:
+            result = runner.invoke(cli_app, ["session", "delete", "nonexistent"])
+        finally:
+            for p in patches:
+                p.stop()
+        assert result.exit_code != 0

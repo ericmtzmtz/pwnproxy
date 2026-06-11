@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@theme {
+  --color-neutral-50: hsl(220, 15%, 95%);
+  --color-neutral-100: hsl(220, 12%, 88%);
+  --color-neutral-200: hsl(220, 10%, 78%);
+  --color-neutral-300: hsl(220, 8%, 65%);
+  --color-neutral-400: hsl(220, 6%, 52%);
+  --color-neutral-500: hsl(220, 5%, 40%);
+  --color-neutral-600: hsl(220, 5%, 30%);
+  --color-neutral-700: hsl(220, 6%, 22%);
+  --color-neutral-800: hsl(220, 8%, 15%);
+  --color-neutral-900: hsl(220, 10%, 10%);
+  --color-neutral-950: hsl(220, 12%, 6%);
+
+  --color-primary-50: hsl(210, 90%, 95%);
+  --color-primary-100: hsl(210, 85%, 85%);
+  --color-primary-200: hsl(210, 80%, 72%);
+  --color-primary-300: hsl(210, 75%, 60%);
+  --color-primary-400: hsl(210, 70%, 50%);
+  --color-primary-500: hsl(210, 72%, 42%);
+  --color-primary-600: hsl(210, 75%, 35%);
+  --color-primary-700: hsl(210, 78%, 28%);
+  --color-primary-800: hsl(210, 80%, 20%);
+  --color-primary-900: hsl(210, 85%, 14%);
+  --color-primary-950: hsl(210, 90%, 8%);
+
+  --color-danger-500: hsl(0, 75%, 50%);
+  --color-warning-500: hsl(40, 85%, 50%);
+  --color-success-500: hsl(145, 60%, 45%);
+  --color-info-500: hsl(210, 70%, 50%);
+
+  --font-family-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
+  --text-6xl: 3.75rem;
+
+  --font-weight-normal: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.4);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px rgba(0, 0, 0, 0.3);
+
+  --animate-pulse-slow: pulse-slow 3s ease-in-out infinite;
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+  html {
+    color-scheme: dark;
+    background-color: var(--color-neutral-950);
+    color: var(--color-neutral-100);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    font-family: var(--font-family-sans);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    margin: 0;
+  }
+  ::selection {
+    background-color: var(--color-primary-700);
+    color: var(--color-primary-50);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-neutral-900);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-neutral-600);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-neutral-500);
+  }
+
+  /* Syntax highlighting for code blocks */
+  pre code {
+    font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    color: var(--color-neutral-200);
+  }
+
+  /* JSON keys */
+  pre code.language-json .json-key,
+  pre code.language-json span:first-child:matches([style*="color"]) {
+    color: var(--color-primary-300);
+  }
+  /* JSON strings */
+  pre code.language-json .json-string,
+  pre code.language-json span:matches([style*="string"]) {
+    color: var(--color-success-400);
+  }
+  /* JSON numbers */
+  pre code.language-json .json-number,
+  pre code.language-json span:matches([style*="number"]) {
+    color: var(--color-warning-400);
+  }
+  /* JSON booleans/null */
+  pre code.language-json .json-boolean,
+  pre code.language-json .json-null {
+    color: var(--color-danger-400);
+  }
+
+  /* HTML tags */
+  pre code.language-html .html-tag {
+    color: var(--color-primary-300);
+  }
+  /* HTML attributes */
+  pre code.language-html .html-attr {
+    color: var(--color-warning-400);
+  }
+  /* HTML strings */
+  pre code.language-html .html-string {
+    color: var(--color-success-400);
+  }
+  /* HTML comments */
+  pre code.language-html .html-comment {
+    color: var(--color-neutral-500);
+    font-style: italic;
+  }
+}

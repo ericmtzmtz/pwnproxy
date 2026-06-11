@@ -45,7 +45,7 @@ async def test_websocket_receives_events(test_app):
             request_headers={}, request_body=None,
             status_code=200, response_headers={}, response_body=None,
         )
-        hook_bus.publish("done", flow)
+        hook_bus.publish("response", flow)
         await asyncio.sleep(0.2)
 
         data = ws.receive_text()

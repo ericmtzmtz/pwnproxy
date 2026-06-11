@@ -25,6 +25,9 @@ async def interceptor_status(request: Request):
 async def interceptor_toggle(request: Request):
     controller = _get_controller(request)
     controller.toggle()
+    mgr = getattr(request.app.state, "session_manager", None)
+    if mgr:
+        mgr.mark_unsaved()
     return {"enabled": controller.enabled, "pending_count": controller.pending_count}
 
 

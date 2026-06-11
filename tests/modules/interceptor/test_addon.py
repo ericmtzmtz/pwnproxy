@@ -30,6 +30,13 @@ def _make_mock_httpflow(flow_id: str = "test1") -> MagicMock:
 
 
 @pytest.mark.asyncio
+async def test_default_enabled():
+    q: asyncio.Queue = asyncio.Queue()
+    addon = InterceptorAddon(q)
+    assert addon.enabled is True
+
+
+@pytest.mark.asyncio
 async def test_intercept_resume_lifecycle():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)

@@ -50,32 +50,32 @@ def test_app():
         asyncio.run(scanner_engine.dispose())
 
 
-class TestSessions:
-    def test_list_sessions(self, test_app):
-        r = test_app.get("/api/v1/sessions")
+class TestTokens:
+    def test_list_tokens(self, test_app):
+        r = test_app.get("/api/v1/tokens")
         assert r.status_code == 200
         data = r.json()
         assert len(data) >= 2
 
     def test_filter_by_type(self, test_app):
-        r = test_app.get("/api/v1/sessions?token_type=jwt")
+        r = test_app.get("/api/v1/tokens?token_type=jwt")
         assert r.status_code == 200
         data = r.json()
         assert all(t["token_type"] == "jwt" for t in data)
 
     def test_get_by_id(self, test_app):
-        r = test_app.get("/api/v1/sessions/1")
+        r = test_app.get("/api/v1/tokens/1")
         assert r.status_code == 200
         assert r.json()["id"] == 1
 
     def test_get_not_found(self, test_app):
-        r = test_app.get("/api/v1/sessions/9999")
+        r = test_app.get("/api/v1/tokens/9999")
         assert r.status_code == 404
 
     def test_delete(self, test_app):
-        r = test_app.delete("/api/v1/sessions/1")
+        r = test_app.delete("/api/v1/tokens/1")
         assert r.status_code == 204
 
     def test_delete_not_found(self, test_app):
-        r = test_app.delete("/api/v1/sessions/9999")
+        r = test_app.delete("/api/v1/tokens/9999")
         assert r.status_code == 404

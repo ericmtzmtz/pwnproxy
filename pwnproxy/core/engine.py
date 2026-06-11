@@ -22,6 +22,15 @@ class ProxyEngine:
         self._master: Optional[DumpMaster] = None
         self._task: Optional[asyncio.Task] = None
         self._extra_addons: list[object] = []
+        self._capture_enabled = False
+
+    @property
+    def capture_enabled(self) -> bool:
+        return self._capture_enabled
+
+    def set_capture_enabled(self, value: bool) -> None:
+        self._capture_enabled = value
+        logger.info(f"Proxy capture {'enabled' if value else 'disabled'}")
 
     async def register_addon(self, addon: object) -> None:
         self._extra_addons.append(addon)
@@ -52,7 +61,12 @@ class ProxyEngine:
         # Register addons
         self._master.addons.add(HookRelayAddon(self.hook_bus))
         if self.db_engine:
-            self._master.addons.add(StorageAddon(self.db_engine, scope_filter=self._scope_filter))
+            self._master.addons.add(StorageAddon(
+                self.db_engine,
+                scope_filter=self._scope_filter,
+                hook_bus=self.hook_bus,
+                capture_enabled_fn=lambda: self._capture_enabled,
+            ))
         for addon in self._extra_addons:
             self._master.addons.add(addon)
 
