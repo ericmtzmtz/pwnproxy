@@ -23,12 +23,14 @@ class RepeaterTabCreate(BaseModel):
 class RepeaterTabUpdate(BaseModel):
     name: Optional[str] = None
     raw_request: Optional[str] = None
+    last_task_id: Optional[str] = None
 
 
 class RepeaterTabOut(BaseModel):
     id: int
     name: str
     raw_request: str
+    last_task_id: Optional[str] = None
     created_at: str
     updated_at: str
 
@@ -137,6 +139,7 @@ async def delete_tab(request: Request, tab_id: int):
 
 class RepeaterSendRequest(BaseModel):
     raw_request: str
+    tab_id: Optional[int] = None
 
 
 class RepeaterSendResponse(BaseModel):
@@ -157,6 +160,14 @@ async def repeater_send(request: Request, body: RepeaterSendRequest):
 
     config = {"raw_request": body.raw_request}
     task_id = await store.create("repeater", config, session_name=session_name)
+
+    if body.tab_id is not None:
+        session = _get_session_name(request)
+        tabs = _load_tabs(session)
+        if body.tab_id in tabs:
+            tabs[body.tab_id]["last_task_id"] = task_id
+            tabs[body.tab_id]["updated_at"] = datetime.now().isoformat()
+            _save_tabs(session, tabs)
 
     await store.update(task_id, status="running", total=1)
     start = time.monotonic()

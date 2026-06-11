@@ -12,6 +12,8 @@ export interface IntruderResult {
   status_code: number;
   response_length: number;
   timing_ms: number;
+  response_headers: Record<string, string>;
+  response_body: string;
   error: string | null;
 }
 
@@ -20,19 +22,6 @@ export interface IntruderRunResponse {
   task_id: string;
   status: string;
   total: number;
-}
-
-export interface ReplayRequest {
-  raw_request: string;
-  payload: string;
-}
-
-export interface ReplayResponse {
-  status_code: number;
-  headers: Record<string, string>;
-  body: string;
-  timing_ms: number;
-  error: string | null;
 }
 
 export interface WordlistEntry {

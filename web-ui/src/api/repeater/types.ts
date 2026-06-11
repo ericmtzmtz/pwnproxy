@@ -1,5 +1,6 @@
 export interface RepeaterRequest {
   raw_request: string;
+  tab_id?: number;
 }
 
 export interface RepeaterResponse {
@@ -14,6 +15,7 @@ export interface RepeaterTab {
   id: number;
   name: string;
   raw_request: string;
+  last_task_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -26,4 +28,5 @@ export interface CreateRepeaterTab {
 export interface UpdateRepeaterTab {
   name?: string;
   raw_request?: string;
+  last_task_id?: string;
 }

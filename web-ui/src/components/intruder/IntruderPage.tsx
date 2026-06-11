@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { runIntruder, replayPayload, listWordlists } from "@/api/intruder/calls";
-import type { IntruderResult, ReplayResponse, WordlistEntry } from "@/api/intruder/types";
+import { runIntruder, listWordlists } from "@/api/intruder/calls";
+import type { IntruderResult, WordlistEntry } from "@/api/intruder/types";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 
@@ -42,8 +42,7 @@ export function IntruderPage() {
   const [concurrency, setConcurrency] = useState(10);
   const [maxResults, setMaxResults] = useState(100);
   const [running, setRunning] = useState(false);
-  const [preview, setPreview] = useState<ReplayResponse | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [preview, setPreview] = useState<IntruderResult | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("request_id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [filterText, setFilterText] = useState("");
@@ -228,19 +227,12 @@ export function IntruderPage() {
     }));
   }
 
-  async function handleReplay(payload: string) {
-    setPreviewLoading(true);
-    setPreview(null);
-    try {
-      const resp = await replayPayload(rawRequest, payload);
-      setPreview(resp);
-      setShowFullBody(false);
-      setRenderMode("raw");
-    } catch {
-      setPreview({ status_code: 0, headers: {}, body: "", timing_ms: 0, error: "Replay failed" });
-    } finally {
-      setPreviewLoading(false);
-    }
+  function handlePreview(payload: string) {
+    const row = results.find((r) => r.payload === payload);
+    if (!row) return;
+    setPreview(row);
+    setShowFullBody(false);
+    setRenderMode("raw");
   }
 
   function toggleSort(col: SortKey) {
@@ -266,9 +258,9 @@ export function IntruderPage() {
 
   const selectedAttack = attacks.find((a) => a.id === selectedId);
 
-  const previewBody = preview?.body ?? "";
+  const previewBody = preview?.response_body ?? "";
   const truncatedBody = showFullBody ? previewBody : previewBody.slice(0, 5000);
-  const isHtml = preview && (preview.headers["content-type"] ?? "").includes("text/html");
+  const isHtml = preview && (preview.response_headers["content-type"] ?? "").includes("text/html");
 
   return (
     <div class="flex h-full flex-col">
@@ -542,15 +534,11 @@ export function IntruderPage() {
                               <td class="px-3 py-1 text-neutral-400 lg:px-2">{fmtBytes(r.response_length)}</td>
                               <td class="px-3 py-1 text-neutral-500 lg:px-2">{r.timing_ms?.toFixed(0)}ms</td>
                               <td class="px-3 py-1 lg:px-2">
-                                <button onClick={() => handleReplay(r.payload)}
+                                <button onClick={() => handlePreview(r.payload)}
                                   class="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
                                   title="Preview response"
                                 >
-                                  {previewLoading ? (
-                                    <svg class="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                                  ) : (
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                  )}
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                 </button>
                               </td>
                             </tr>
@@ -565,18 +553,11 @@ export function IntruderPage() {
               {/* Response preview */}
               <div class="shrink-0 border-t border-neutral-800" style={{ height: "240px" }}>
                 <div class="flex h-full flex-col">
-                  {!preview && !previewLoading && (
+                  {!preview ? (
                     <div class="flex h-full items-center justify-center text-xs text-neutral-500">
                       Click <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="mx-1 h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg> on a result row to preview the response
                     </div>
-                  )}
-                  {previewLoading && (
-                    <div class="flex h-full items-center justify-center gap-2 text-xs text-neutral-500">
-                      <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                      Loading...
-                    </div>
-                  )}
-                  {preview && !previewLoading && (
+                  ) : (
                     <>
                       <div class={`flex items-center justify-between border-b border-neutral-800 px-3 py-1.5 ${
                         preview.status_code >= 200 && preview.status_code < 300 ? "bg-success-900/20" :
@@ -602,7 +583,7 @@ export function IntruderPage() {
                         )}
                         {renderMode === "raw" && (
                           <pre class="whitespace-pre-wrap text-xs text-neutral-300">
-                            {Object.entries(preview.headers).map(([k, v]) => `${k}: ${v}`).join("\n")}
+                            {Object.entries(preview.response_headers).map(([k, v]) => `${k}: ${v}`).join("\n")}
                             {"\n\n"}
                             {truncatedBody}
                             {!showFullBody && previewBody.length > 5000 && (

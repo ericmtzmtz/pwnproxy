@@ -1,5 +1,5 @@
 import { API_BASE } from "@/core";
-import type { IntruderRunRequest, IntruderRunResponse, ReplayResponse, WordlistEntry } from "./types";
+import type { IntruderRunRequest, IntruderRunResponse, WordlistEntry } from "./types";
 
 export async function runIntruder(body: IntruderRunRequest): Promise<IntruderRunResponse> {
   const res = await fetch(`${API_BASE}/intruder/run`, {
@@ -11,16 +11,6 @@ export async function runIntruder(body: IntruderRunRequest): Promise<IntruderRun
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Failed to run intruder");
   }
-  return res.json();
-}
-
-export async function replayPayload(raw_request: string, payload: string): Promise<ReplayResponse> {
-  const res = await fetch(`${API_BASE}/intruder/replay`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ raw_request, payload }),
-  });
-  if (!res.ok) throw new Error("Failed to replay request");
   return res.json();
 }
 

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import { sendRequest, listTabs, createTab, updateTab, deleteTab } from "@/api/repeater/calls";
 import type { RepeaterTab } from "@/api/repeater/types";
+import { pollTask } from "@/api/task/calls";
 
 interface ResponseData {
   status_code: number;
@@ -58,7 +59,26 @@ export function RepeaterPage() {
       try {
         const tabsData = await listTabs();
         if (tabsData.length > 0) {
-          setTabs(tabsData.map((t) => ({ meta: t, response: null })));
+          const mapped = await Promise.all(tabsData.map(async (t) => {
+            let resp: ResponseData | null = null;
+            if (t.last_task_id) {
+              try {
+                const task = await pollTask(t.last_task_id);
+                const r = task.result;
+                if (r && r.status_code !== undefined) {
+                  const body = r.body ?? "";
+                  resp = {
+                    status_code: r.status_code,
+                    headers: r.headers ?? {},
+                    body_preview: body.slice(0, 500) + (body.length > 500 ? "..." : ""),
+                    timing_ms: r.duration_ms ?? 0,
+                  };
+                }
+              } catch { /* task gone, ignore */ }
+            }
+            return { meta: t, response: resp };
+          }));
+          setTabs(mapped);
           setActiveId(tabsData[0].id);
         }
       } catch {
@@ -171,11 +191,12 @@ export function RepeaterPage() {
 
     setSending((prev) => ({ ...prev, [id]: true }));
     try {
-      const data = await sendRequest({ raw_request: tab.meta.raw_request });
+      const data = await sendRequest({ raw_request: tab.meta.raw_request, tab_id: id });
+      await updateTab(id, { last_task_id: data.task_id });
       setTabs((prev) =>
         prev.map((t) =>
           t.meta.id === id
-            ? { ...t, response: { status_code: data.status_code, headers: data.headers, body_preview: data.body_preview, timing_ms: data.timing_ms } }
+            ? { ...t, meta: { ...t.meta, last_task_id: data.task_id }, response: { status_code: data.status_code, headers: data.headers, body_preview: data.body_preview, timing_ms: data.timing_ms } }
             : t,
         ),
       );

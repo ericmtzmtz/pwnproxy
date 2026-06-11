@@ -13,6 +13,8 @@ class IntruderResult:
     status_code: int
     response_length: int
     timing_ms: float
+    response_headers: dict[str, str] = field(default_factory=dict)
+    response_body: str = ""
     error: Optional[str] = None
 
 
@@ -53,12 +55,15 @@ class IntruderEngine:
                         content=parsed["body"],
                     )
                     elapsed = (time.monotonic() - start) * 1000
+                    body = response.text[:5000]
                     return IntruderResult(
                         request_id=rid,
                         payload=payload,
                         status_code=response.status_code,
                         response_length=len(response.content),
                         timing_ms=round(elapsed, 1),
+                        response_headers=dict(response.headers),
+                        response_body=body,
                     )
                 except Exception as exc:
                     elapsed = (time.monotonic() - start) * 1000

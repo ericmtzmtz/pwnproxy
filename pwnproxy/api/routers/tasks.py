@@ -125,6 +125,8 @@ async def _run_intruder(config: dict, task_id: str, store: TaskStore, request: R
             "status_code": result.status_code,
             "response_length": result.response_length,
             "timing_ms": result.timing_ms,
+            "response_headers": result.response_headers,
+            "response_body": result.response_body,
             "error": result.error,
         })
         await store.update(task_id, progress=len(results))

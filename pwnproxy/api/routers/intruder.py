@@ -1,13 +1,10 @@
 import logging
-import time
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from pwnproxy.intruder.engine import _parse_raw_from_template
 from pwnproxy.intruder.generator import read_wordlist
 
 router = APIRouter(prefix="/api/v1", tags=["intruder"])
@@ -28,19 +25,8 @@ class IntruderResultItem(BaseModel):
     status_code: int
     response_length: int
     timing_ms: float
-    error: Optional[str] = None
-
-
-class IntruderReplayRequest(BaseModel):
-    raw_request: str
-    payload: str
-
-
-class IntruderReplayResponse(BaseModel):
-    status_code: int
-    headers: dict[str, str]
-    body: str
-    timing_ms: float
+    response_headers: dict[str, str] = {}
+    response_body: str = ""
     error: Optional[str] = None
 
 
@@ -108,41 +94,6 @@ async def poll_attack(attack_id: str, request: Request):
         "results": task["result"].get("results", []) if task["result"] else [],
         "error": task["error"],
     }
-
-
-@router.post("/intruder/replay", response_model=IntruderReplayResponse)
-async def intruder_replay(body: IntruderReplayRequest):
-    raw = body.raw_request.replace("§", body.payload, 1)
-    try:
-        parsed = _parse_raw_from_template(raw)
-    except ValueError as exc:
-        return IntruderReplayResponse(
-            status_code=0, headers={}, body="", timing_ms=0, error=str(exc)
-        )
-    try:
-        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
-            start = time.monotonic()
-            resp = await client.request(
-                method=parsed["method"],
-                url=parsed["url"],
-                headers=parsed["headers"],
-                content=parsed["body"],
-            )
-            elapsed = (time.monotonic() - start) * 1000
-            return IntruderReplayResponse(
-                status_code=resp.status_code,
-                headers=dict(resp.headers),
-                body=resp.text,
-                timing_ms=round(elapsed, 1),
-            )
-    except httpx.TimeoutException:
-        return IntruderReplayResponse(
-            status_code=0, headers={}, body="", timing_ms=30000, error="Request timed out"
-        )
-    except Exception as exc:
-        return IntruderReplayResponse(
-            status_code=0, headers={}, body="", timing_ms=0, error=str(exc)
-        )
 
 
 @router.get("/intruder/wordlists", response_model=list[WordlistEntry])
