@@ -893,49 +893,6 @@ All 235 tests pass.
 
 For detailed design docs and archived change specifications, see [`openspec/`](./openspec) and [`openspec/changes/archive/`](./openspec/changes/archive/).
 
----
-
-## Roadmap
-
-### v1 (current) — Platform Foundation
-*Objective: complete, production-ready security platform with AI-native integration.*
-
-- [x] Intercepting proxy, 5 scanners, session manager, repeater, intruder
-- [x] REST API, CLI, WebSocket streams
-- [x] Plugin system (ScannerPlugin, HookPlugin, watchdog, PyPI discovery)
-- [x] Headless `pwnproxy scan url` with JSON/SARIF export and CI/CD exit codes
-- [x] Headless proxy mode (`--no-tui`)
-- [x] Burp Suite config import
-- [x] MCP server (`pwnproxy-mcp`) for AI agent integration
-
-### v1.5 — Ecosystem Maturation
-*Objective: make it frictionless for the community to build and publish plugins.*
-
-- [ ] Plugin marketplace: `pwnproxy plugin search` with rating/downloads
-- [ ] Community plugin SDK documentation site
-- [ ] Official VS Code extension (pwnproxy as background scanner)
-- [ ] `pwnproxy-mcp-enterprise` — HTTP transport, team prompts, audit logging
-
-### v2 — Web UI + Collaboration
-*Objective: teams can share live pentest sessions from a browser.*
-
-- [ ] Astro + Tailwind dark-theme dashboard (`web-ui/`)
-- [ ] Live traffic view with WebSocket
-- [ ] Findings table with severity grouping and filtering
-- [ ] Team rooms: shared proxy sessions with granular permissions
-- [ ] Export engine: PDF reports with templating
-- [ ] Plugin management UI (install, toggle, configure from browser)
-
-### v2.5 — Advanced Automation
-*Objective: AI agents can execute complete security engagements autonomously.*
-
-- [ ] Scheduled scanning with cron-like triggers
-- [ ] Webhook notifications (Slack, Discord, email)
-- [ ] Global rate limiting and distributed scanning
-- [ ] AI-assisted payload generation via MCP prompts
-
----
-
 ### Database Scaling
 
 pwnproxy uses **SQLite per session** (`~/.pwnproxy/sessions/<name>/*.db`). This is the right default for individual pentesters and small teams — zero ops, backup-friendly, entire session copies with `cp -r`.
@@ -951,6 +908,24 @@ traffic_url = "postgresql+asyncpg://user:pass@host/db?options=-csession.id=X"
 ```
 
 Session isolation switches from file-per-session to `WHERE session_id = X`. The data model (Flow, Finding, Task) is identical. See the [enterprise deployment guide](docs/deployment.md) for connection pooling, migration, and multi-tenant configuration.
+
+---
+
+## Roadmap
+
+### 🔴 High Priority
+
+1. **Proxy session-scoped capture** — proxy currently captures all traffic at startup (no session or default session without out-of-scope). On session switch, previously captured traffic persists in the new session. Scope filtering must be enforced at capture time, and traffic must be stored per-session.
+
+2. **Scanner plugins v2 (Premium)** — upgrade all 5 scanner adapters (SQLi, XSS, LFI, XXE, SSRF) to premium tier: advanced payload chains, WAF evasion, blind detection, out-of-band callbacks, second-order injection, and context-aware encoding. Define and document the plugin/module architecture if not already formalized.
+
+3. **Premium Crawler** — Burp-suite-grade crawler with passive mode (extract URLs from proxy traffic matching scope, auto-map directories and files) and active mode (discover hidden endpoints, parameters, and forms). Dedicated page in Web UI.
+
+### 🟡 Medium Priority
+
+4. **Repeater — Render HTML toggle** — raw response view works but the Render HTML button disappeared. Restore it so users can preview rendered responses inline.
+
+5. **Export report — templates + AI** — extend report export with customizable templates (PDF, HTML, Markdown, SARIF) and optional AI-assisted finding descriptions and remediation suggestions.
 
 ---
 
