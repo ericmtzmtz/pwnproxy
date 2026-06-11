@@ -260,7 +260,7 @@ export function IntruderPage() {
 
   const previewBody = preview?.response_body ?? "";
   const truncatedBody = showFullBody ? previewBody : previewBody.slice(0, 5000);
-  const isHtml = preview && (preview.response_headers["content-type"] ?? "").includes("text/html");
+  const isHtml = preview && (preview.response_headers?.["content-type"] ?? "").includes("text/html");
 
   return (
     <div class="flex h-full flex-col">
@@ -583,13 +583,17 @@ export function IntruderPage() {
                         )}
                         {renderMode === "raw" && (
                           <pre class="whitespace-pre-wrap text-xs text-neutral-300">
-                            {Object.entries(preview.response_headers).map(([k, v]) => `${k}: ${v}`).join("\n")}
-                            {"\n\n"}
-                            {truncatedBody}
-                            {!showFullBody && previewBody.length > 5000 && (
-                              <button onClick={() => setShowFullBody(true)}
-                                class="mt-1 text-primary-400 hover:text-primary-300"
-                              >Show full response ({previewBody.length - 5000} more chars)</button>
+                            {previewBody || Object.keys(preview.response_headers ?? {}).length > 0 ? (
+                              <>{Object.entries(preview.response_headers ?? {}).map(([k, v]) => `${k}: ${v}`).join("\n")}
+                              {"\n\n"}
+                              {truncatedBody}
+                              {!showFullBody && previewBody.length > 5000 && (
+                                <button onClick={() => setShowFullBody(true)}
+                                  class="mt-1 text-primary-400 hover:text-primary-300"
+                                >Show full response ({previewBody.length - 5000} more chars)</button>
+                              )}</>
+                            ) : (
+                              <span class="text-neutral-500 italic">Response body not captured (attack run before this feature was added)</span>
                             )}
                           </pre>
                         )}
