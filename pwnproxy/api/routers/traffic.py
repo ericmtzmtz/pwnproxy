@@ -11,6 +11,26 @@ from pwnproxy.core.db import FlowRecord
 router = APIRouter(prefix="/api/v1", tags=["traffic"])
 
 
+def _flow_to_dict(f: FlowRecord) -> dict:
+    """Convert FlowRecord to JSON-safe dict, encoding binary fields."""
+    return {
+        "id": f.id,
+        "method": f.method,
+        "url": f.url,
+        "request_headers": f.request_headers,
+        "request_body": f.request_body.decode("utf-8", errors="replace") if f.request_body else None,
+        "request_body_truncated": f.request_body_truncated,
+        "status_code": f.status_code,
+        "response_headers": f.response_headers,
+        "response_body": f.response_body.decode("utf-8", errors="replace") if f.response_body else None,
+        "response_body_truncated": f.response_body_truncated,
+        "timestamp": f.timestamp.isoformat() if f.timestamp else None,
+        "duration_ms": f.duration_ms,
+        "error": f.error,
+        "tls": f.tls,
+    }
+
+
 @router.get("/flows")
 async def list_flows(
     request: Request,
@@ -31,7 +51,7 @@ async def list_flows(
             result = await session.execute(
                 select(FlowRecord).order_by(FlowRecord.id.desc()).limit(limit).offset(offset)
             )
-        return result.scalars().all()
+        return [_flow_to_dict(f) for f in result.scalars().all()]
 
 
 @router.get("/flows/{flow_id}")
@@ -43,7 +63,7 @@ async def get_flow(request: Request, flow_id: int):
         flow = result.scalar_one_or_none()
         if not flow:
             raise HTTPException(status_code=404, detail="Flow not found")
-        return flow
+        return _flow_to_dict(flow)
 
 
 @router.delete("/flows/{flow_id}", status_code=204)

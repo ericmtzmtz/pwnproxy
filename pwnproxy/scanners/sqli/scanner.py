@@ -153,7 +153,13 @@ class SQLiScanner:
         self._flow_method.pop(flow_id, None)
         self._flow_findings_before.pop(flow_id, None)
 
-    async def _scan_point(self, point: InjectionPoint) -> None:
+    async def _scan_point(self, point: InjectionPoint, depth: str = "fast") -> None:
+        """Scan an injection point with configurable detection depth.
+        
+        fast:     error-based only
+        standard: error + boolean-blind + time-based
+        deep:     all stages
+        """
         async with self._global_sem:
             await self._rate_limit_host(point.host)
 
@@ -161,7 +167,9 @@ class SQLiScanner:
             clean_resp = await self._replayer.send_clean(point, timeout=10.0)
             baseline_ms = (time.monotonic() - baseline_start) * 1000
 
+            # Stage 1: Error-based (always runs)
             err_detector = ErrorBasedDetector()
+            found = False
             for payload in get_error_payloads():
                 self.params_scanned += 1
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0)
@@ -175,8 +183,13 @@ class SQLiScanner:
                     finding.param_location = point.location
                     finding.payload = payload.value
                     await self._save_finding(finding)
-                    return
-
+                    found = True
+                    break
+            
+            if found or depth == "fast":
+                return
+            
+            # Stage 2: Time-based blind (standard + deep)
             time_detector = TimeBasedDetector(self._replayer)
             if clean_resp is not None:
                 self.params_scanned += 1

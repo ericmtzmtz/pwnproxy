@@ -25,7 +25,8 @@ class LfiDetector:
         results = await self._replayer.replay_methods(point, payload.value)
         for method, resp in results:
             body = resp.text or ""
-            os_type, evidence = detect_os(body)
+            # Require at least 2 distinct signatures for confirmation
+            os_type, evidence = detect_os(body, min_matches=2)
             if os_type is not None:
                 return self._make_finding(point, method, payload, os_type, evidence)
         return None

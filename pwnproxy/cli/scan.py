@@ -88,7 +88,13 @@ async def _build_scan_loader() -> PluginLoader:
     return loader
 
 
-async def _scan_target(loader: PluginLoader, target: str, timeout: int) -> list[Finding]:
+async def _scan_target(
+    loader: PluginLoader,
+    target: str,
+    timeout: int,
+    detection_depth: str = "fast",
+    evasion_level: str = "none",
+) -> list[Finding]:
     console.print(f"[cyan]Scanning:[/cyan] {target}")
     start = time.monotonic()
 
@@ -113,7 +119,7 @@ async def _scan_target(loader: PluginLoader, target: str, timeout: int) -> list[
         tls=target.startswith("https"),
     )
 
-    all_findings = await loader.run_scan(flow)
+    all_findings = await loader.run_scan(flow, depth=detection_depth, evasion_level=evasion_level)
     elapsed = time.monotonic() - start
     console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(all_findings)}[/bold] finding(s)")
     return all_findings

@@ -150,7 +150,7 @@ class LFIScanner:
         self._flow_method.pop(flow_id, None)
         self._flow_findings_before.pop(flow_id, None)
 
-    async def _scan_point(self, point: InjectionPoint) -> None:
+    async def _scan_point(self, point: InjectionPoint, depth: str = "fast") -> None:
         await self._rate_limiter.acquire(point.host)
         try:
             await self._rate_limiter.rate_limit(point.host)

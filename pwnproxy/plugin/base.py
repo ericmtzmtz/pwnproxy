@@ -1,4 +1,5 @@
 import logging
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -40,8 +41,24 @@ class PwnPlugin:
 class ScannerPlugin(PwnPlugin):
     category: str = "scanner"
 
-    async def scan(self, flow: Flow) -> Optional[Finding]:
+    async def scan(
+        self,
+        flow: Flow,
+        depth: str = "fast",
+        evasion_level: str = "none",
+    ) -> AsyncGenerator[Finding, None]:
+        """Scan a flow for vulnerabilities and yield findings as they are confirmed.
+        
+        Args:
+            flow: The HTTP flow to scan
+            depth: Detection depth ("fast", "standard", "deep")
+            evasion_level: WAF evasion level ("none", "light", "aggressive")
+        
+        New-style plugins use async generators to stream findings.
+        Old-style plugins returning Optional[Finding] are wrapped by PluginLoader.
+        """
         raise NotImplementedError
+        yield  # Make this a generator (never reached but required for type)
 
 
 class HookPlugin(PwnPlugin):

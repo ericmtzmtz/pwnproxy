@@ -38,6 +38,7 @@ if ($KillPort) {
 
 $ProxyPort = if ($env:PWNPROXY_PROXY_PORT) { $env:PWNPROXY_PROXY_PORT } else { 8080 }
 $ApiPort   = if ($env:PWNPROXY_API_PORT)   { $env:PWNPROXY_API_PORT   } else { 8000 }
+$ApiHost   = if ($env:PWNPROXY_API_HOST)   { $env:PWNPROXY_API_HOST   } else { "127.0.0.1" }
 $WebPort   = 4321
 $HealthUrl = "http://127.0.0.1:${ApiPort}/api/v1/health"
 
@@ -69,14 +70,14 @@ if (-not (Get-Command "pwnproxy" -ErrorAction SilentlyContinue)) {
 Write-Host "`n[dev] Starting pwnproxy dev environment..." -ForegroundColor Cyan
 
 # -- Start Proxy --
-Write-Host "[dev] Starting proxy on port ${ProxyPort}..." -ForegroundColor Yellow
+Write-Host "[dev] Starting proxy on port ${ProxyPort} (API: ${ApiHost}:${ApiPort})..." -ForegroundColor Yellow
 if ($PwnCmd -eq "poetry") {
     $proxyJob = Start-Process -NoNewWindow -PassThru -FilePath "poetry" -ArgumentList @(
-        "run", "pwnproxy", "start", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--no-restore-session"
+        "run", "pwnproxy", "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--no-restore-session"
     )
 } else {
     $proxyJob = Start-Process -NoNewWindow -PassThru -FilePath "pwnproxy" -ArgumentList @(
-        "start", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--no-restore-session"
+        "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--no-restore-session"
     )
 }
 
@@ -116,16 +117,19 @@ if (-not $ready) {
 Write-Host "[dev] API is ready!" -ForegroundColor Green
 
 # -- Set env for Web UI --
-$env:PUBLIC_API_BASE = "http://127.0.0.1:${ApiPort}/api/v1"
+$env:PUBLIC_API_BASE = "http://${ApiHost}:${ApiPort}/api/v1"
 
 # -- Print URLs --
 Write-Host ""
 Write-Host "--- pwnproxy Dev Environment ---" -ForegroundColor Cyan
-Write-Host "  Proxy -> http://127.0.0.1:$ProxyPort" -ForegroundColor Green
-Write-Host "  API   -> http://127.0.0.1:$ApiPort" -ForegroundColor Green
-Write-Host "  Docs  -> http://127.0.0.1:${ApiPort}/docs" -ForegroundColor Green
+Write-Host "  Proxy -> http://${ApiHost}:$ProxyPort" -ForegroundColor Green
+Write-Host "  API   -> http://${ApiHost}:$ApiPort" -ForegroundColor Green
+Write-Host "  Docs  -> http://${ApiHost}:${ApiPort}/docs" -ForegroundColor Green
 Write-Host "  Web UI -> http://127.0.0.1:$WebPort" -ForegroundColor Green
 Write-Host "---------------------------------" -ForegroundColor Cyan
+if ($ApiHost -eq "0.0.0.0") {
+    Write-Host "Remote access: http://<this-machine-ip>:$ApiPort" -ForegroundColor Yellow
+}
 Write-Host "Press Ctrl+C to stop all services" -ForegroundColor DarkGray
 Write-Host ""
 

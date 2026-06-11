@@ -80,7 +80,9 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
 
     await store.update(task_id, status="running", total=1)
     url = config.get("url", "")
-    findings = await _scan_target(loader, url, 60)
+    detection_depth = config.get("detection_depth", "fast")
+    evasion_level = config.get("evasion_level", "none")
+    findings = await _scan_target(loader, url, 60, detection_depth=detection_depth, evasion_level=evasion_level)
     result_data = ExportEngine(findings).to_dicts() if findings else []
     await store.update(
         task_id,

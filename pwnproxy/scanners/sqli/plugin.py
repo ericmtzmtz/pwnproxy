@@ -1,4 +1,4 @@
-from typing import Optional
+from collections.abc import AsyncGenerator
 
 from pwnproxy.core.models import Flow
 from pwnproxy.plugin.base import Finding, ScannerPlugin
@@ -7,13 +7,18 @@ from pwnproxy.scanners.common.params import extract as extract_params
 
 class SQLiScannerPlugin(ScannerPlugin):
     name = "sqli"
-    version = "0.1.0"
+    version = "0.2.0"
     author = "pwnproxy"
 
     def __init__(self, scanner):
         self._scanner = scanner
 
-    async def scan(self, flow: Flow) -> Optional[Finding]:
+    async def scan(
+        self,
+        flow: Flow,
+        depth: str = "fast",
+        evasion_level: str = "none",
+    ) -> AsyncGenerator[Finding, None]:
         old_count = self._scanner.finding_count
         points = extract_params(flow)
         seen = set()
@@ -22,9 +27,9 @@ class SQLiScannerPlugin(ScannerPlugin):
             if key in seen:
                 continue
             seen.add(key)
-            await self._scanner._scan_point(point)
+            await self._scanner._scan_point(point, depth=depth)
         if self._scanner.finding_count > old_count:
-            return Finding(
+            yield Finding(
                 scanner="sqli",
                 url=flow.url,
                 method=flow.method,
@@ -35,4 +40,3 @@ class SQLiScannerPlugin(ScannerPlugin):
                 confidence="confirmed",
                 payload="",
             )
-        return None

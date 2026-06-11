@@ -17,12 +17,6 @@ interface TabWithResp {
 
 const CHANNEL = new BroadcastChannel("pwnproxy-repeater");
 
-function escapeHtml(s: string): string {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-
 function parseUrlParams(): string | null {
   const params = new URLSearchParams(window.location.search);
   const url = params.get("url");
@@ -358,7 +352,7 @@ export function RepeaterPage() {
                       {renderHtml && resp.headers?.["content-type"]?.includes("text/html") ? (
                         <iframe class="h-96 w-full rounded border border-neutral-700 bg-white" srcdoc={resp.body_preview} />
                       ) : (
-                        <pre class="overflow-x-auto font-mono text-xs text-neutral-300">{escapeHtml(resp.body_preview)}</pre>
+                        <pre class="overflow-x-auto font-mono text-xs text-neutral-300 whitespace-pre-wrap">{resp.body_preview}</pre>
                       )}
                     </div>
                   </details>

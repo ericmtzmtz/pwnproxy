@@ -1,5 +1,7 @@
 import asyncio
+import inspect
 import logging
+from collections.abc import AsyncGenerator
 from typing import Optional
 
 from pwnproxy.core.models import Flow
@@ -57,18 +59,43 @@ class PluginLoader:
         logger.info("Deactivated plugin: %s", name)
         return True
 
-    async def run_scan(self, flow: Flow) -> list[Finding]:
+    async def run_scan(
+        self,
+        flow: Flow,
+        depth: str = "fast",
+        evasion_level: str = "none",
+    ) -> list[Finding]:
         results: list[Finding] = []
         for name, plugin in list(self._scanner_plugins.items()):
             if self._watchdog.is_disabled(name):
                 continue
             try:
-                finding = await asyncio.wait_for(
-                    plugin.scan(flow),
-                    timeout=self._timeout,
-                )
-                if finding is not None:
-                    results.append(finding)
+                # Call scan() with depth and evasion_level params
+                scan_result = plugin.scan(flow, depth=depth, evasion_level=evasion_level)
+                
+                # Check if it's an async generator (new-style)
+                if inspect.isasyncgen(scan_result):
+                    # Iterate async generator with timeout
+                    async def _collect_findings():
+                        findings = []
+                        async for finding in scan_result:
+                            findings.append(finding)
+                        return findings
+                    
+                    findings = await asyncio.wait_for(
+                        _collect_findings(),
+                        timeout=self._timeout,
+                    )
+                    results.extend(findings)
+                else:
+                    # Old-style coroutine returning Optional[Finding]
+                    result = await asyncio.wait_for(
+                        scan_result,
+                        timeout=self._timeout,
+                    )
+                    if isinstance(result, Finding):
+                        results.append(result)
+                
                 self._watchdog.report_success(name)
             except asyncio.TimeoutError:
                 self._watchdog.report_failure(name, "timeout")

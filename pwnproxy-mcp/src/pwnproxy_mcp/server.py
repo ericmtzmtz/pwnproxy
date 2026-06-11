@@ -1,317 +1,315 @@
 import asyncio
-import builtins
 import json
 import logging
+import os
 import sys
-import uuid
-from pathlib import Path
 from typing import Any, Optional
 
 import httpx
 
-from pwnproxy.core.models import Flow
-from pwnproxy.plugin.base import Finding
-from pwnproxy.plugin.loader import PluginLoader
-
 logger = logging.getLogger(__name__)
 
-
-async def _build_loader() -> PluginLoader:
-    from pwnproxy.scanners.sqli.plugin import SQLiScannerPlugin
-    from pwnproxy.scanners.xss.plugin import XSSScannerPlugin
-    from pwnproxy.scanners.lfi.plugin import LFIScannerPlugin
-    from pwnproxy.scanners.xxe.plugin import XXEScannerPlugin
-    from pwnproxy.scanners.ssrf.plugin import SSRFScannerPlugin
-
-    from pwnproxy.scanners.sqli.scanner import SQLiScanner
-    from pwnproxy.scanners.xss.scanner import XSSScanner
-    from pwnproxy.scanners.lfi.scanner import LFIScanner
-    from pwnproxy.scanners.xxe.scanner import XXEScanner
-    from pwnproxy.scanners.ssrf.scanner import SSRFScanner
-    from pwnproxy.scanners.sqli.storage import FindingStorage as SqliStorage
-    from pwnproxy.scanners.xss.storage import XssFindingStorage as XssStorage
-    from pwnproxy.scanners.lfi.storage import LfiFindingStorage as LfiStorage
-    from pwnproxy.scanners.xxe.storage import XxeFindingStorage as XxeStorage
-    from pwnproxy.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
-
-    import tempfile
-    tmp = tempfile.mkdtemp(prefix="pwnproxy_mcp_")
-    db_path = str(Path(tmp) / "results.db")
-
-    sqli = SQLiScanner(None, storage=SqliStorage(db_path))
-    xss = XSSScanner(None, storage=XssStorage(db_path))
-    lfi = LFIScanner(None, storage=LfiStorage(db_path))
-    xxe = XXEScanner(None, storage=XxeStorage(db_path))
-    ssrf = SSRFScanner(None, storage=SsrfStorage(db_path))
-
-    await sqli._storage.create_tables()
-    await xss._storage.create_tables()
-    await lfi._storage.create_tables()
-    await xxe._storage.create_tables()
-    await ssrf._storage.create_tables()
-
-    loader = PluginLoader()
-
-    await loader.load_builtin(SQLiScannerPlugin(sqli))
-    await loader.load_builtin(XSSScannerPlugin(xss))
-    await loader.load_builtin(LFIScannerPlugin(lfi))
-    await loader.load_builtin(XXEScannerPlugin(xxe))
-    await loader.load_builtin(SSRFScannerPlugin(ssrf))
-
-    return loader
+API_BASE = os.environ.get("PUBLIC_API_BASE", "http://127.0.0.1:8000/api/v1")
+SESSION_NAME = os.environ.get("PWNPROXY_SESSION")
+TIMEOUT = 30.0
 
 
-class PwnProxyMCPServer:
-    def __init__(self, loader: PluginLoader):
-        self._loader = loader
-        self._flows: dict[str, dict] = {}
-        self._findings_by_flow: dict[str, list[dict]] = {}
-
-    async def handle_scan_url(self, url: str, scanners: str = "", timeout: int = 60) -> list[dict]:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
-            resp = await client.get(url)
-
-        parsed = httpx.URL(url)
-        flow = Flow(
-            id=str(uuid.uuid4()),
-            method="GET",
-            url=url,
-            request_headers={"host": parsed.host or ""},
-            request_body=None,
-            status_code=resp.status_code,
-            response_headers=dict(resp.headers),
-            response_body=resp.content,
-            tls=url.startswith("https"),
+class MCPApiClient:
+    def __init__(self, base_url: str = API_BASE, session: Optional[str] = SESSION_NAME):
+        headers = {}
+        if session:
+            headers["X-Pwnproxy-Session"] = session
+        self._client = httpx.AsyncClient(
+            base_url=base_url,
+            headers=headers,
+            timeout=httpx.Timeout(TIMEOUT),
         )
 
-        flow_dict = _flow_to_dict(flow)
-        self._flows[flow.id] = flow_dict
+    async def close(self):
+        await self._client.aclose()
 
-        findings = await self._loader.run_scan(flow)
-        finding_dicts = [_finding_to_dict(f) for f in findings]
-        self._findings_by_flow[flow.id] = finding_dicts
-        return finding_dicts
+    async def _request(self, method: str, path: str, **kwargs) -> Any:
+        try:
+            resp = await self._client.request(method, path, **kwargs)
+            if resp.status_code == 204:
+                return {"ok": True}
+            if resp.status_code >= 400:
+                try:
+                    detail = resp.json().get("detail", resp.text)
+                except Exception:
+                    detail = resp.text
+                return {"error": str(detail), "status_code": resp.status_code}
+            return resp.json()
+        except httpx.ConnectError:
+            return {"error": "Connection refused — is pwnproxy API running?", "status_code": 0}
+        except httpx.TimeoutException:
+            return {"error": f"Request timed out after {TIMEOUT}s", "status_code": 0}
+        except Exception as e:
+            return {"error": str(e), "status_code": 0}
 
-    async def handle_get_flow(self, flow_id: str) -> Optional[dict]:
-        return self._flows.get(flow_id)
+    def get(self, path: str, **kwargs):
+        return self._request("GET", path, **kwargs)
 
-    async def handle_list_flows(self) -> list[dict]:
-        return builtins.list(self._flows.values())
+    def post(self, path: str, **kwargs):
+        return self._request("POST", path, **kwargs)
 
-    async def handle_list_findings(self) -> list[dict]:
-        active = self._loader.list_active()
-        return [p for p in active if p.get("category") == "scanner"]
+    def put(self, path: str, **kwargs):
+        return self._request("PUT", path, **kwargs)
 
-    async def handle_get_status(self) -> dict:
-        active = self._loader.list_active()
-        stats = self._loader.watchdog_stats()
-        return {
-            "plugins": active,
-            "watchdog": stats,
-        }
-
-
-def _flow_to_dict(f: Flow) -> dict:
-    return {
-        "id": f.id,
-        "method": f.method,
-        "url": f.url,
-        "status_code": f.status_code,
-        "request_headers": dict(f.request_headers),
-        "response_headers": dict(f.response_headers) if f.response_headers else None,
-        "duration_ms": f.duration_ms,
-        "tls": f.tls,
-        "error": f.error,
-    }
+    def delete(self, path: str, **kwargs):
+        return self._request("DELETE", path, **kwargs)
 
 
-def _finding_to_dict(f: Finding) -> dict:
-    return {
-        "scanner": f.scanner,
-        "url": f.url,
-        "method": f.method,
-        "param_name": f.param_name,
-        "param_location": f.param_location,
-        "technique": f.technique,
-        "severity": f.severity,
-        "confidence": f.confidence,
-        "payload": f.payload,
-        "evidence": f.evidence,
-        "timestamp": f.timestamp,
-    }
+_client: Optional[MCPApiClient] = None
 
 
-_server: Optional[PwnProxyMCPServer] = None
+def get_client() -> MCPApiClient:
+    global _client
+    if _client is None:
+        _client = MCPApiClient()
+    return _client
 
 
-async def _ensure_initialized() -> PwnProxyMCPServer:
-    global _server
-    if _server is None:
-        loader = await _build_loader()
-        _server = PwnProxyMCPServer(loader)
-    return _server
-
-
-async def handle_call(tool_name: str, arguments: dict) -> Any:
-    srv = await _ensure_initialized()
-    if tool_name == "scan_url":
-        return await srv.handle_scan_url(
-            url=arguments["url"],
-            scanners=arguments.get("scanners", ""),
-            timeout=arguments.get("timeout", 60),
-        )
-    elif tool_name == "get_flow":
-        return await srv.handle_get_flow(flow_id=arguments["flow_id"])
-    elif tool_name == "list_flows":
-        return await srv.handle_list_flows()
-    elif tool_name == "list_findings":
-        return await srv.handle_list_findings()
-    elif tool_name == "get_status":
-        return await srv.handle_get_status()
-    else:
-        raise ValueError(f"Unknown tool: {tool_name}")
-
-
-TOOL_DEFINITIONS = [
-    {
-        "name": "scan_url",
-        "description": "Scan a target URL for vulnerabilities",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "url": {"type": "string", "description": "Target URL to scan"},
-                "scanners": {"type": "string", "description": "Comma-separated scanner names"},
-                "timeout": {"type": "number", "description": "Scan timeout in seconds"},
-            },
-            "required": ["url"],
-        },
-    },
-    {
-        "name": "get_flow",
-        "description": "Retrieve a proxied flow by ID (from a previous scan_url call)",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "flow_id": {"type": "string", "description": "Flow UUID to retrieve"},
-            },
-            "required": ["flow_id"],
-        },
-    },
-    {
-        "name": "list_flows",
-        "description": "List all scanned flows in this session",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "list_findings",
-        "description": "List available scanners and their status",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-    {
-        "name": "get_status",
-        "description": "Get proxy and scanner status",
-        "inputSchema": {
-            "type": "object",
-            "properties": {},
-        },
-    },
-]
-
-RESOURCE_DEFINITIONS = [
-    {
-        "name": "flows://{id}",
-        "description": "Flow details by ID",
-        "uriTemplate": "flows://{id}",
-    },
-    {
-        "name": "findings://{flow_id}",
-        "description": "Findings for a specific flow",
-        "uriTemplate": "findings://{flow_id}",
-    },
-]
+def _ok(data: Any) -> str:
+    return json.dumps(data, indent=2, default=str)
 
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s")
 
-    import os
-    session = os.environ.get("PWNPROXY_SESSION")
-    if session:
-        import httpx
-        api_base = os.environ.get("PUBLIC_API_BASE", "http://127.0.0.1:8000/api/v1")
+    if SESSION_NAME:
         try:
-            resp = httpx.get(f"{api_base}/sessions", timeout=5)
+            resp = httpx.get(f"{API_BASE}/sessions", timeout=5)
             if resp.status_code == 200:
                 names = [s["name"] for s in resp.json()]
-                if session not in names:
-                    logger.error("Session '%s' not found. Available: %s", session, ", ".join(names))
+                if SESSION_NAME not in names:
+                    logger.error("Session '%s' not found. Available: %s", SESSION_NAME, ", ".join(names))
                     sys.exit(1)
             else:
-                logger.warning("Could not verify session '%s': API unavailable", session)
+                logger.warning("Could not verify session '%s': API unavailable", SESSION_NAME)
         except Exception as e:
-            logger.warning("Could not verify session '%s': %s", session, e)
-
-    srv = asyncio.run(_ensure_initialized())
+            logger.warning("Could not verify session '%s': %s", SESSION_NAME, e)
 
     try:
         from mcp.server.fastmcp import FastMCP
-        mcp = FastMCP("pwnproxy", instructions="pwnproxy MCP server for security scanning")
-
-        @mcp.tool()
-        async def scan_url(url: str, scanners: str = "", timeout: int = 60) -> str:
-            results = await srv.handle_scan_url(url, scanners, timeout)
-            return json.dumps(results, indent=2, default=str)
-
-        @mcp.tool()
-        async def get_flow(flow_id: str) -> str:
-            result = await srv.handle_get_flow(flow_id)
-            if result is None:
-                return json.dumps({"error": f"Flow '{flow_id}' not found"})
-            return json.dumps(result, indent=2, default=str)
-
-        @mcp.tool()
-        async def list_flows() -> str:
-            results = await srv.handle_list_flows()
-            return json.dumps(results, indent=2, default=str)
-
-        @mcp.tool()
-        async def list_findings() -> str:
-            results = await srv.handle_list_findings()
-            return json.dumps(results, indent=2, default=str)
-
-        @mcp.tool()
-        async def get_status() -> str:
-            results = await srv.handle_get_status()
-            return json.dumps(results, indent=2, default=str)
-
-        @mcp.resource("flows://{id}")
-        async def flow_resource(id: str) -> str:
-            result = await srv.handle_get_flow(id)
-            if result is None:
-                return json.dumps({"error": f"Flow '{id}' not found"})
-            return json.dumps(result, indent=2, default=str)
-
-        @mcp.resource("findings://{flow_id}")
-        async def findings_resource(flow_id: str) -> str:
-            findings = srv._findings_by_flow.get(flow_id, [])
-            return json.dumps(findings, indent=2, default=str)
-
+        mcp = FastMCP("pwnproxy", instructions="pwnproxy MCP server — thin wrapper over pwnproxy REST API")
+        _register_tools(mcp)
+        _register_resources(mcp)
         mcp.run(transport="stdio")
     except ImportError:
         logger.warning("mcp SDK not installed, falling back to JSON-RPC stdio")
         _stdio_repl()
 
 
+def _register_tools(mcp):
+    c = get_client()
+
+    @mcp.tool()
+    async def proxy_status() -> str:
+        return _ok(await c.get("/proxy/status"))
+
+    @mcp.tool()
+    async def proxy_toggle(enabled: bool) -> str:
+        return _ok(await c.put("/proxy/toggle", json={"enabled": enabled}))
+
+    @mcp.tool()
+    async def list_flows(limit: int = 50, offset: int = 0) -> str:
+        return _ok(await c.get("/flows", params={"limit": limit, "offset": offset}))
+
+    @mcp.tool()
+    async def get_flow(flow_id: int) -> str:
+        return _ok(await c.get(f"/flows/{flow_id}"))
+
+    @mcp.tool()
+    async def delete_flow(flow_id: int) -> str:
+        return _ok(await c.delete(f"/flows/{flow_id}"))
+
+    @mcp.tool()
+    async def list_findings(scanner: str = "", severity: str = "", limit: int = 50, offset: int = 0) -> str:
+        if scanner:
+            return _ok(await c.get(f"/findings/{scanner}", params={"severity": severity, "limit": limit, "offset": offset}))
+        return _ok(await c.get("/findings", params={"severity": severity, "limit": limit, "offset": offset}))
+
+    @mcp.tool()
+    async def delete_finding(scanner: str, finding_id: str) -> str:
+        return _ok(await c.delete(f"/findings/{scanner}/{finding_id}"))
+
+    @mcp.tool()
+    async def list_sessions() -> str:
+        return _ok(await c.get("/sessions"))
+
+    @mcp.tool()
+    async def create_session(name: str) -> str:
+        return _ok(await c.post("/sessions/manage", json={"action": "create", "name": name}))
+
+    @mcp.tool()
+    async def switch_session(name: str) -> str:
+        return _ok(await c.post("/sessions/manage", json={"action": "load", "name": name}))
+
+    @mcp.tool()
+    async def get_scope() -> str:
+        return _ok(await c.get("/sessions/scope"))
+
+    @mcp.tool()
+    async def update_scope(in_scope: list[str] = [], out_of_scope: list[str] = [], enabled: bool = True) -> str:
+        return _ok(await c.put("/sessions/scope", json={"in_scope": in_scope, "out_of_scope": out_of_scope, "enabled": enabled}))
+
+    @mcp.tool()
+    async def repeater_send(method: str, url: str, headers: dict = {}, body: str = "") -> str:
+        return _ok(await c.post("/repeater/send", json={"method": method, "url": url, "headers": headers, "body": body}))
+
+    @mcp.tool()
+    async def list_repeater_tabs() -> str:
+        return _ok(await c.get("/repeater/tabs"))
+
+    @mcp.tool()
+    async def intruder_run(url: str, payload_positions: list[str] = [], wordlist: list[str] = [], mode: str = "sniper", concurrency: int = 5) -> str:
+        return _ok(await c.post("/intruder/run", json={"url": url, "payload_positions": payload_positions, "wordlist": wordlist, "mode": mode, "concurrency": concurrency}))
+
+    @mcp.tool()
+    async def get_intruder_results(attack_id: str) -> str:
+        return _ok(await c.get(f"/intruder/attack/{attack_id}"))
+
+    @mcp.tool()
+    async def list_tasks(type: str = "") -> str:
+        params = {"type": type} if type else {}
+        return _ok(await c.get("/tasks", params=params))
+
+    @mcp.tool()
+    async def get_task(task_id: str) -> str:
+        return _ok(await c.get(f"/tasks/{task_id}"))
+
+    @mcp.tool()
+    async def cancel_task(task_id: str) -> str:
+        return _ok(await c.post(f"/tasks/{task_id}/cancel"))
+
+    @mcp.tool()
+    async def list_plugins() -> str:
+        return _ok(await c.get("/plugins"))
+
+    @mcp.tool()
+    async def toggle_plugin(name: str, enabled: bool) -> str:
+        return _ok(await c.post(f"/plugins/{name}/toggle", json={"enabled": enabled}))
+
+    @mcp.tool()
+    async def trigger_scan(url: str, scanners: str = "", detection_depth: str = "fast", evasion_level: str = "none") -> str:
+        params = {"url": url}
+        if scanners:
+            params["scanners"] = scanners
+        if detection_depth:
+            params["detection_depth"] = detection_depth
+        if evasion_level:
+            params["evasion_level"] = evasion_level
+        return _ok(await c.post("/scan", params=params))
+
+    @mcp.tool()
+    async def get_scan_results(scan_id: str) -> str:
+        return _ok(await c.get(f"/scan/{scan_id}"))
+
+    @mcp.tool()
+    async def export_results(scan_id: str, format: str = "json") -> str:
+        return _ok(await c.get(f"/export/{scan_id}", params={"format": format}))
+
+    @mcp.tool()
+    async def health_check() -> str:
+        return _ok(await c.get("/health"))
+
+
+def _register_resources(mcp):
+    c = get_client()
+
+    @mcp.resource("flows://{flow_id}")
+    async def flow_resource(flow_id: str) -> str:
+        return _ok(await c.get(f"/flows/{flow_id}"))
+
+    @mcp.resource("findings://{scanner}/{finding_id}")
+    async def finding_resource(scanner: str, finding_id: str) -> str:
+        return _ok(await c.get(f"/findings/{scanner}/{finding_id}"))
+
+    @mcp.resource("sessions://{name}")
+    async def session_resource(name: str) -> str:
+        result = await c.get("/sessions")
+        if isinstance(result, list):
+            for s in result:
+                if s.get("name") == name:
+                    return _ok(s)
+            return _ok({"error": f"Session '{name}' not found"})
+        return _ok(result)
+
+
+TOOL_DEFINITIONS = [
+    {"name": "proxy_status", "description": "Get proxy capture status", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "proxy_toggle", "description": "Toggle proxy capture on/off", "inputSchema": {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]}},
+    {"name": "list_flows", "description": "List proxied flows from DB", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}, "offset": {"type": "integer"}}}},
+    {"name": "get_flow", "description": "Get flow by ID", "inputSchema": {"type": "object", "properties": {"flow_id": {"type": "integer"}}, "required": ["flow_id"]}},
+    {"name": "delete_flow", "description": "Delete a flow", "inputSchema": {"type": "object", "properties": {"flow_id": {"type": "integer"}}, "required": ["flow_id"]}},
+    {"name": "list_findings", "description": "List scanner findings from DB", "inputSchema": {"type": "object", "properties": {"scanner": {"type": "string"}, "severity": {"type": "string"}, "limit": {"type": "integer"}, "offset": {"type": "integer"}}}},
+    {"name": "delete_finding", "description": "Delete a finding", "inputSchema": {"type": "object", "properties": {"scanner": {"type": "string"}, "finding_id": {"type": "string"}}, "required": ["scanner", "finding_id"]}},
+    {"name": "list_sessions", "description": "List all sessions", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "create_session", "description": "Create a new session", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "switch_session", "description": "Switch to a different session", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "get_scope", "description": "Get current scope config", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "update_scope", "description": "Update scope rules", "inputSchema": {"type": "object", "properties": {"in_scope": {"type": "array", "items": {"type": "string"}}, "out_of_scope": {"type": "array", "items": {"type": "string"}}, "enabled": {"type": "boolean"}}}},
+    {"name": "repeater_send", "description": "Send raw HTTP request via repeater", "inputSchema": {"type": "object", "properties": {"method": {"type": "string"}, "url": {"type": "string"}, "headers": {"type": "object"}, "body": {"type": "string"}}, "required": ["method", "url"]}},
+    {"name": "list_repeater_tabs", "description": "List repeater tabs", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "intruder_run", "description": "Launch intruder attack", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "payload_positions": {"type": "array", "items": {"type": "string"}}, "wordlist": {"type": "array", "items": {"type": "string"}}, "mode": {"type": "string"}, "concurrency": {"type": "integer"}}, "required": ["url"]}},
+    {"name": "get_intruder_results", "description": "Get intruder attack results", "inputSchema": {"type": "object", "properties": {"attack_id": {"type": "string"}}, "required": ["attack_id"]}},
+    {"name": "list_tasks", "description": "List tasks (scan/intruder/repeater)", "inputSchema": {"type": "object", "properties": {"type": {"type": "string"}}}},
+    {"name": "get_task", "description": "Get task status and result", "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "cancel_task", "description": "Cancel a running task", "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
+    {"name": "list_plugins", "description": "List loaded plugins", "inputSchema": {"type": "object", "properties": {}}},
+    {"name": "toggle_plugin", "description": "Enable/disable a plugin", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "enabled": {"type": "boolean"}}, "required": ["name", "enabled"]}},
+    {"name": "trigger_scan", "description": "Trigger scan on URL with detection depth and evasion level", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "scanners": {"type": "string"}, "detection_depth": {"type": "string"}, "evasion_level": {"type": "string"}}, "required": ["url"]}},
+    {"name": "get_scan_results", "description": "Get scan task results", "inputSchema": {"type": "object", "properties": {"scan_id": {"type": "string"}}, "required": ["scan_id"]}},
+    {"name": "export_results", "description": "Export scan results (json/sarif/html/pdf)", "inputSchema": {"type": "object", "properties": {"scan_id": {"type": "string"}, "format": {"type": "string"}}, "required": ["scan_id"]}},
+    {"name": "health_check", "description": "Check pwnproxy API health", "inputSchema": {"type": "object", "properties": {}}},
+]
+
+RESOURCE_DEFINITIONS = [
+    {"name": "flows://{flow_id}", "description": "Flow details by ID", "uriTemplate": "flows://{flow_id}"},
+    {"name": "findings://{scanner}/{finding_id}", "description": "Finding by scanner and ID", "uriTemplate": "findings://{scanner}/{finding_id}"},
+    {"name": "sessions://{name}", "description": "Session info by name", "uriTemplate": "sessions://{name}"},
+]
+
+
+async def handle_call(tool_name: str, arguments: dict) -> Any:
+    c = get_client()
+    mapping = {
+        "proxy_status": lambda: c.get("/proxy/status"),
+        "proxy_toggle": lambda: c.put("/proxy/toggle", json={"enabled": arguments["enabled"]}),
+        "list_flows": lambda: c.get("/flows", params={"limit": arguments.get("limit", 50), "offset": arguments.get("offset", 0)}),
+        "get_flow": lambda: c.get(f"/flows/{arguments['flow_id']}"),
+        "delete_flow": lambda: c.delete(f"/flows/{arguments['flow_id']}"),
+        "list_findings": lambda: c.get(f"/findings/{arguments.get('scanner', '')}", params={"severity": arguments.get("severity", ""), "limit": arguments.get("limit", 50), "offset": arguments.get("offset", 0)}) if arguments.get("scanner") else c.get("/findings", params={"severity": arguments.get("severity", ""), "limit": arguments.get("limit", 50), "offset": arguments.get("offset", 0)}),
+        "delete_finding": lambda: c.delete(f"/findings/{arguments['scanner']}/{arguments['finding_id']}"),
+        "list_sessions": lambda: c.get("/sessions"),
+        "create_session": lambda: c.post("/sessions/manage", json={"action": "create", "name": arguments["name"]}),
+        "switch_session": lambda: c.post("/sessions/manage", json={"action": "load", "name": arguments["name"]}),
+        "get_scope": lambda: c.get("/sessions/scope"),
+        "update_scope": lambda: c.put("/sessions/scope", json={"in_scope": arguments.get("in_scope", []), "out_of_scope": arguments.get("out_of_scope", []), "enabled": arguments.get("enabled", True)}),
+        "repeater_send": lambda: c.post("/repeater/send", json={"method": arguments["method"], "url": arguments["url"], "headers": arguments.get("headers", {}), "body": arguments.get("body", "")}),
+        "list_repeater_tabs": lambda: c.get("/repeater/tabs"),
+        "intruder_run": lambda: c.post("/intruder/run", json={"url": arguments["url"], "payload_positions": arguments.get("payload_positions", []), "wordlist": arguments.get("wordlist", []), "mode": arguments.get("mode", "sniper"), "concurrency": arguments.get("concurrency", 5)}),
+        "get_intruder_results": lambda: c.get(f"/intruder/attack/{arguments['attack_id']}"),
+        "list_tasks": lambda: c.get("/tasks", params={"type": arguments["type"]} if arguments.get("type") else {}),
+        "get_task": lambda: c.get(f"/tasks/{arguments['task_id']}"),
+        "cancel_task": lambda: c.post(f"/tasks/{arguments['task_id']}/cancel"),
+        "list_plugins": lambda: c.get("/plugins"),
+        "toggle_plugin": lambda: c.post(f"/plugins/{arguments['name']}/toggle", json={"enabled": arguments["enabled"]}),
+        "trigger_scan": lambda: c.post("/scan", params={"url": arguments["url"], **({"scanners": arguments["scanners"]} if arguments.get("scanners") else {}), **({"detection_depth": arguments["detection_depth"]} if arguments.get("detection_depth") else {}), **({"evasion_level": arguments["evasion_level"]} if arguments.get("evasion_level") else {})}),
+        "get_scan_results": lambda: c.get(f"/scan/{arguments['scan_id']}"),
+        "export_results": lambda: c.get(f"/export/{arguments['scan_id']}", params={"format": arguments.get("format", "json")}),
+        "health_check": lambda: c.get("/health"),
+    }
+    handler = mapping.get(tool_name)
+    if handler is None:
+        raise ValueError(f"Unknown tool: {tool_name}")
+    return await handler()
+
+
 def _stdio_repl():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    srv = loop.run_until_complete(_ensure_initialized())
 
     for line in sys.stdin:
         line = line.strip()
@@ -331,12 +329,23 @@ def _stdio_repl():
                 response = {"jsonrpc": "2.0", "result": result, "id": msg.get("id")}
             elif method == "read_resource":
                 uri = params.get("uri", "")
+                c = get_client()
                 if uri.startswith("flows://"):
                     flow_id = uri[len("flows://"):]
-                    result = loop.run_until_complete(srv.handle_get_flow(flow_id))
+                    result = loop.run_until_complete(c.get(f"/flows/{flow_id}"))
                 elif uri.startswith("findings://"):
-                    flow_id = uri[len("findings://"):]
-                    result = srv._findings_by_flow.get(flow_id, [])
+                    parts = uri[len("findings://"):].split("/")
+                    if len(parts) == 2:
+                        result = loop.run_until_complete(c.get(f"/findings/{parts[0]}/{parts[1]}"))
+                    else:
+                        result = {"error": f"Invalid findings URI: {uri}"}
+                elif uri.startswith("sessions://"):
+                    name = uri[len("sessions://"):]
+                    sessions = loop.run_until_complete(c.get("/sessions"))
+                    if isinstance(sessions, list):
+                        result = next((s for s in sessions if s.get("name") == name), {"error": f"Session '{name}' not found"})
+                    else:
+                        result = sessions
                 else:
                     response = {"jsonrpc": "2.0", "error": {"code": -32601, "message": f"Unknown resource: {uri}"}, "id": msg.get("id")}
                     print(json.dumps(response), flush=True)

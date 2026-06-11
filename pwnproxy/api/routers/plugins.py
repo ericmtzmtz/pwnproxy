@@ -50,14 +50,25 @@ async def toggle_plugin(name: str, request: Request):
 
 
 @router.post("/scan")
-async def launch_scan(url: str, request: Request, scanners: str = ""):
+async def launch_scan(
+    url: str,
+    request: Request,
+    scanners: str = "",
+    detection_depth: str = "fast",
+    evasion_level: str = "none",
+):
     mgr = getattr(request.app.state, "session_manager", None)
     store = mgr.task_store if mgr and mgr.task_store else getattr(request.app.state, "task_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Task store not available")
     session_name = mgr.active_name if mgr else ""
 
-    config = {"url": url, "scanners": scanners}
+    config = {
+        "url": url,
+        "scanners": scanners,
+        "detection_depth": detection_depth,
+        "evasion_level": evasion_level,
+    }
     task_id = await store.create("scan", config, session_name=session_name)
 
     from pwnproxy.api.routers.tasks import _launch_task_runner

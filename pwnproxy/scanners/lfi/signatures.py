@@ -21,16 +21,34 @@ LFI_SIGNATURES: dict[str, list[re.Pattern]] = {
         re.compile(r"\[files\]"),
         re.compile(r"^;?\s*\[?(fonts|extensions|mail|compatibility)\]?"),
     ],
-    "php": [
-        re.compile(r"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$", re.M),
-    ],
 }
 
 
-def detect_os(body: str) -> tuple[Optional[str], Optional[str]]:
+def detect_os(body: str, min_matches: int = 1) -> tuple[Optional[str], Optional[str]]:
+    """Detect OS from LFI payload evidence in response body.
+    
+    Args:
+        body: Response body text
+        min_matches: Minimum number of distinct signature matches for confirmation
+        
+    Returns:
+        Tuple of (os_type, evidence) or (None, None)
+    """
+    best_os = None
+    best_evidence = None
+    best_count = 0
+    
     for os_type, patterns in LFI_SIGNATURES.items():
+        matches = []
         for pat in patterns:
             m = pat.search(body)
             if m:
-                return os_type, m.group()
+                matches.append(m.group())
+        if len(matches) >= min_matches and len(matches) > best_count:
+            best_os = os_type
+            best_evidence = matches[0]
+            best_count = len(matches)
+    
+    if best_os and best_count >= min_matches:
+        return best_os, best_evidence
     return None, None

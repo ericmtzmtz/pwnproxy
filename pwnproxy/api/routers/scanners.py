@@ -95,3 +95,32 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
         hook_bus.publish("done", f)
 
     return {"status": "triggered", "flow_id": body.flow_id}
+
+
+@router.post("/scanners/second-order/start")
+async def start_second_order(request: Request):
+    """Start the second-order detection background task."""
+    from pwnproxy.scanners.common.payload_store import get_store
+
+    store = get_store()
+    store._running = True
+    return {"status": "started", "stats": store.stats()}
+
+
+@router.post("/scanners/second-order/stop")
+async def stop_second_order(request: Request):
+    """Stop the second-order detection background task."""
+    from pwnproxy.scanners.common.payload_store import get_store
+
+    store = get_store()
+    store._running = False
+    return {"status": "stopped", "stats": store.stats()}
+
+
+@router.get("/scanners/second-order/status")
+async def second_order_status(request: Request):
+    """Get second-order detection status."""
+    from pwnproxy.scanners.common.payload_store import get_store
+
+    store = get_store()
+    return {"running": store._running, "stats": store.stats()}

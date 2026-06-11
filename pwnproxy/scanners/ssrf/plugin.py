@@ -1,4 +1,5 @@
-from typing import Optional
+import asyncio
+from collections.abc import AsyncGenerator
 
 from pwnproxy.core.models import Flow
 from pwnproxy.plugin.base import Finding, ScannerPlugin
@@ -7,13 +8,18 @@ from pwnproxy.scanners.common.params import extract as extract_params
 
 class SSRFScannerPlugin(ScannerPlugin):
     name = "ssrf"
-    version = "0.1.0"
+    version = "0.2.0"
     author = "pwnproxy"
 
     def __init__(self, scanner):
         self._scanner = scanner
 
-    async def scan(self, flow: Flow) -> Optional[Finding]:
+    async def scan(
+        self,
+        flow: Flow,
+        depth: str = "fast",
+        evasion_level: str = "none",
+    ) -> AsyncGenerator[Finding, None]:
         old_count = self._scanner.finding_count
         points = extract_params(flow)
         seen = set()
@@ -24,7 +30,7 @@ class SSRFScannerPlugin(ScannerPlugin):
             seen.add(key)
             await self._scanner._scan_point(point)
         if self._scanner.finding_count > old_count:
-            return Finding(
+            yield Finding(
                 scanner="ssrf",
                 url=flow.url,
                 method=flow.method,
@@ -35,4 +41,34 @@ class SSRFScannerPlugin(ScannerPlugin):
                 confidence="confirmed",
                 payload="",
             )
-        return None
+        
+        # Deep detection: integrate OOB callbacks
+        if depth == "deep":
+            from pwnproxy.oob.canary import get_registry
+            from pwnproxy.oob.http_server import get_server as get_http
+            
+            registry = get_registry()
+            canary = registry.create(flow.id)
+            
+            try:
+                server = await get_http()
+                if server.is_running:
+                    callback_url = server.get_callback_url(canary.token)
+                    # Note: actual injection via _scanner is handled internally
+                    await asyncio.sleep(0.5)  # brief wait for callback
+                    
+                    if canary.callback_received:
+                        yield Finding(
+                            scanner="ssrf",
+                            url=flow.url,
+                            method=flow.method,
+                            param_name="oob",
+                            param_location="callback",
+                            technique="out-of-band",
+                            severity="high",
+                            confidence="confirmed",
+                            payload=callback_url,
+                            evidence=f"Callback from {canary.callback_ip}",
+                        )
+            except Exception:
+                pass

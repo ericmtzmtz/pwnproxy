@@ -55,23 +55,20 @@ pwnproxy was designed for a world where security testing happens in pipelines, A
 
 ## AI Agent Integration (MCP)
 
-pwnproxy ships a native MCP server. Any MCP-compatible agent (Claude, Copilot, custom) can scan targets, read findings, and control the proxy without parsing CLI output or wrapping HTTP calls.
+pwnproxy ships a native MCP server — a thin wrapper over the REST API. Any MCP-compatible agent (Claude, Copilot, custom) can control the proxy, read traffic/findings, manage sessions, run scans, and export reports.
 
 ```bash
 pip install pwnproxy-mcp
 ```
 
-**Example: Claude reproduces a bug bounty report automatically**
-```
-scan_url("https://target.com/api/search?q=test", plugins=["sqli","xss"])
-→ Finding: SQLi confirmed in param 'q', technique: error-based, severity: critical
-```
+**Prerequisite:** pwnproxy API must be running (`pwnproxy start`). The MCP server delegates all operations to the API.
 
-**Example: CI/CD pipeline blocks a deploy on critical findings**
-```bash
-pwnproxy scan url https://staging.example.com --output sarif
-# exit code 1 → findings found → PR blocked
-```
+### Configuration
+
+| Env Var | Default | Description |
+|---------|---------|-------------|
+| `PUBLIC_API_BASE` | `http://127.0.0.1:8000/api/v1` | pwnproxy API base URL |
+| `PWNPROXY_SESSION` | _(none)_ | Session name — added as `X-Pwnproxy-Session` header |
 
 ### Claude Desktop
 
@@ -81,44 +78,75 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "pwnproxy": {
-      "command": "pwnproxy-mcp"
+      "command": "pwnproxy-mcp",
+      "env": {
+        "PUBLIC_API_BASE": "http://127.0.0.1:8000/api/v1",
+        "PWNPROXY_SESSION": "my-pentest"
+      }
     }
   }
 }
-```
-
-### GitHub Copilot
-
-Add to your `.github/copilot-instructions.md`:
-
-```markdown
-The project includes pwnproxy-mcp — an MCP server for security scanning.
-Start it with `pwnproxy-mcp` for AI-assisted vulnerability assessment.
-```
-
-### Custom Agents
-
-```python
-import asyncio
-from pwnproxy_mcp.server import PwnProxyMCPServer, _build_loader
-
-loader = _build_loader()
-server = PwnProxyMCPServer(loader)
-
-async def main():
-    findings = await server.handle_scan_url("https://example.com")
-    print(findings)
-
-asyncio.run(main())
 ```
 
 ### Available MCP Tools
 
 | Tool | Description |
 |------|-------------|
-| `scan_url` | Scan a target URL for vulnerabilities |
-| `list_findings` | List available scanners and their status |
-| `get_status` | Get proxy and scanner health |
+| **Proxy** | |
+| `proxy_status` | Get capture status (enabled/disabled) |
+| `proxy_toggle` | Enable/disable proxy capture |
+| **Traffic** | |
+| `list_flows` | List proxied flows (paginated) |
+| `get_flow` | Get flow by ID |
+| `delete_flow` | Delete a flow |
+| **Findings** | |
+| `list_findings` | List scanner findings (filter by scanner/severity) |
+| `delete_finding` | Delete a finding |
+| **Sessions** | |
+| `list_sessions` | List all sessions |
+| `create_session` | Create new session |
+| `switch_session` | Switch active session |
+| `get_scope` | Get scope config |
+| `update_scope` | Update scope rules |
+| **Repeater** | |
+| `repeater_send` | Send raw HTTP request |
+| `list_repeater_tabs` | List repeater tabs |
+| **Intruder** | |
+| `intruder_run` | Launch intruder attack |
+| `get_intruder_results` | Get attack results |
+| **Tasks** | |
+| `list_tasks` | List tasks (scan/intruder/repeater) |
+| `get_task` | Get task status/result |
+| `cancel_task` | Cancel running task |
+| **Plugins** | |
+| `list_plugins` | List loaded plugins |
+| `toggle_plugin` | Enable/disable plugin |
+| **Scanning** | |
+| `trigger_scan` | Scan URL with specified scanners |
+| `get_scan_results` | Get scan results |
+| `export_results` | Export as JSON/SARIF/HTML/PDF |
+| **Health** | |
+| `health_check` | Check API health |
+
+### MCP Resources
+
+| Resource | Description |
+|----------|-------------|
+| `flows://{flow_id}` | Flow details by ID |
+| `findings://{scanner}/{finding_id}` | Finding by scanner and ID |
+| `sessions://{name}` | Session info by name |
+
+### Migration from v0.1
+
+Old tools (`scan_url`, `get_flow`, `list_flows`, `list_findings`, `get_status`) operated standalone. New tools delegate to the REST API.
+
+| Old Tool | New Equivalent |
+|----------|----------------|
+| `scan_url` | `trigger_scan` + `get_scan_results` (async) |
+| `get_flow` | `get_flow` (now reads from proxy DB) |
+| `list_flows` | `list_flows` (now reads from proxy DB) |
+| `list_findings` | `list_findings` (now returns actual findings, not plugins) |
+| `get_status` | `health_check` + `list_plugins` |
 
 ---
 
@@ -926,6 +954,8 @@ Session isolation switches from file-per-session to `WHERE session_id = X`. The 
 4. **Repeater — Render HTML toggle** — raw response view works but the Render HTML button disappeared. Restore it so users can preview rendered responses inline.
 
 5. **Export report — templates + AI** — extend report export with customizable templates (PDF, HTML, Markdown, SARIF) and optional AI-assisted finding descriptions and remediation suggestions.
+
+6. **Self-describing plugin architecture** — ALL plugins (built-in and third-party) MUST expose full metadata via `GET /plugins`: parameters (name, type, required/optional, default, description), capabilities, usage examples, and version. This enables AI agents to auto-discover new plugins and update their SKILL.md/REFERENCE.md without manual intervention. Plugin design doc: `docs/plugin-architecture.md`.
 
 ---
 
