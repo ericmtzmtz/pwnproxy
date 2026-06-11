@@ -141,6 +141,9 @@ export function ScannersPage() {
       await deleteTask(id);
     } catch {}
     removeFromState(id);
+    window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+      detail: { title: "Scan deleted", message: "Task removed from database", severity: "info" },
+    }));
   }
 
   function removeFromState(id: string) {
@@ -273,6 +276,9 @@ export function ScannersPage() {
                                 ));
                                 const t = pollTimers.current.get(task.id);
                                 if (t) { clearInterval(t); pollTimers.current.delete(task.id); }
+                                window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+                                  detail: { title: "Scan cancelled", message: "", severity: "info" },
+                                }));
                               }}
                               class="inline-flex items-center gap-1 rounded bg-red-900/40 px-2 py-1 text-[11px] font-semibold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-800/60"
                               title="Stop scan"
