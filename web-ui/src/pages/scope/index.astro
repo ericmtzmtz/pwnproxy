@@ -9,14 +9,14 @@ import Card from "@/ui/Card.astro";
     <p class="mt-0.5 text-sm text-neutral-400">Define which targets are in scope for scanning</p>
   </div>
 
-  <div class="grid grid-cols-3 gap-4">
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     <Card>
       <div slot="title">In Scope</div>
       <div class="mb-3 flex gap-2">
         <input id="in-scope-input" placeholder="*.example.com" class="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-xs text-neutral-100 placeholder-neutral-500" />
         <button id="add-in-scope-btn" class="rounded-md bg-primary-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-500">Add</button>
       </div>
-      <div id="include-list">
+      <div id="include-list" class="max-h-[400px] overflow-y-auto">
         <div class="py-8 text-center text-sm text-neutral-600">No targets configured</div>
       </div>
     </Card>
@@ -27,55 +27,57 @@ import Card from "@/ui/Card.astro";
         <input id="exclude-input" placeholder="*.bad.com" class="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1.5 text-xs text-neutral-100 placeholder-neutral-500" />
         <button id="add-exclude-btn" class="rounded-md bg-primary-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-primary-500">Add</button>
       </div>
-      <div id="exclude-list">
+      <div id="exclude-list" class="max-h-[400px] overflow-y-auto">
         <div class="py-8 text-center text-sm text-neutral-600">No exclusions</div>
       </div>
     </Card>
 
-    <Card variant="accent">
-      <div slot="title">Import from Burp</div>
-      <p class="mb-3 text-xs text-neutral-500">Upload a Burp Suite project config JSON to import scope rules.</p>
-      <input
-        id="burp-file"
-        type="file"
-        accept=".json"
-        class="mb-3 block w-full text-xs text-neutral-400 file:mr-2 file:rounded file:border-0 file:bg-primary-800 file:px-2 file:py-1 file:text-xs file:font-medium file:text-primary-200 hover:file:bg-primary-700"
-      />
-      <button
-        id="import-btn"
-        class="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-400"
-        disabled
-      >
-        Import
-      </button>
-      <div id="import-result" class="mt-3 hidden"></div>
-    </Card>
-  </div>
+    <div class="md:col-span-2 lg:col-span-1">
+      <Card variant="accent">
+        <div slot="title">Import from Burp</div>
+        <p class="mb-3 text-xs text-neutral-500">Upload a Burp Suite project config JSON to import scope rules.</p>
+        <input
+          id="burp-file"
+          type="file"
+          accept=".json"
+          class="mb-3 block w-full text-xs text-neutral-400 file:mr-2 file:rounded file:border-0 file:bg-primary-800 file:px-2 file:py-1 file:text-xs file:font-medium file:text-primary-200 hover:file:bg-primary-700"
+        />
+        <button
+          id="import-btn"
+          class="inline-flex items-center gap-2 rounded-md bg-primary-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-400"
+          disabled
+        >
+          Import
+        </button>
+        <div id="import-result" class="mt-3 hidden"></div>
+      </Card>
 
-  <div class="mt-6">
-    <Card>
-      <div slot="title">Scope Summary</div>
-      <div class="flex items-center gap-6">
-        <div>
-          <span class="text-xs text-neutral-500">Include rules</span>
-          <p id="summary-include" class="text-lg font-bold text-neutral-50">0</p>
+      <hr class="my-6 border-neutral-700" />
+
+      <Card>
+        <div slot="title">Scope Summary</div>
+        <div class="flex flex-wrap items-center gap-6">
+          <div>
+            <span class="text-xs text-neutral-500">Include rules</span>
+            <p id="summary-include" class="text-lg font-bold text-neutral-50">0</p>
+          </div>
+          <div>
+            <span class="text-xs text-neutral-500">Exclude rules</span>
+            <p id="summary-exclude" class="text-lg font-bold text-neutral-50">0</p>
+          </div>
+          <div>
+            <span class="text-xs text-neutral-500">Scope file</span>
+            <p id="summary-file" class="text-sm font-mono text-neutral-400 break-all">~/.pwnproxy/sessions/default/scope.json</p>
+          </div>
+          <div>
+            <label class="flex items-center gap-2 text-xs text-neutral-400">
+              <input type="checkbox" id="scope-enabled" class="accent-primary-500" />
+              Enabled
+            </label>
+          </div>
         </div>
-        <div>
-          <span class="text-xs text-neutral-500">Exclude rules</span>
-          <p id="summary-exclude" class="text-lg font-bold text-neutral-50">0</p>
-        </div>
-        <div>
-          <span class="text-xs text-neutral-500">Scope file</span>
-          <p id="summary-file" class="text-sm font-mono text-neutral-400">~/.pwnproxy/sessions/default/scope.json</p>
-        </div>
-        <div>
-          <label class="flex items-center gap-2 text-xs text-neutral-400">
-            <input type="checkbox" id="scope-enabled" class="accent-primary-500" />
-            Enabled
-          </label>
-        </div>
-      </div>
-    </Card>
+      </Card>
+    </div>
   </div>
 </Base>
 
