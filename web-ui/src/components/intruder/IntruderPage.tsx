@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { runIntruder, replayPayload } from "@/api/intruder/calls";
-import type { IntruderResult, ReplayResponse } from "@/api/intruder/types";
+import { runIntruder, replayPayload, listWordlists } from "@/api/intruder/calls";
+import type { IntruderResult, ReplayResponse, WordlistEntry } from "@/api/intruder/types";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 
@@ -47,9 +47,14 @@ export function IntruderPage() {
   const [sortKey, setSortKey] = useState<SortKey>("request_id");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [filterText, setFilterText] = useState("");
+  const [draftId, setDraftId] = useState(0);
   const [showConfig, setShowConfig] = useState(true);
   const [renderMode, setRenderMode] = useState<"raw" | "render">("raw");
   const [showFullBody, setShowFullBody] = useState(false);
+  const [wordlists, setWordlists] = useState<WordlistEntry[]>([]);
+  const [showWordPicker, setShowWordPicker] = useState(false);
+  const [loadingWordlists, setLoadingWordlists] = useState(false);
+  const wordlistInputRef = useRef<HTMLInputElement>(null);
   const pollTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   function upsertAttack(t: TaskStatus) {
@@ -66,9 +71,11 @@ export function IntruderPage() {
 
   function removeFromAttacks(id: string) {
     setAttacks((prev) => prev.filter((a) => a.id !== id));
-    if (selectedId === id) { setSelectedId(null); setShowConfig(true); setResults([]); }
-    const t = pollTimers.current.get(id);
-    if (t) { clearInterval(t); pollTimers.current.delete(id); }
+    if (selectedId === id) { setSelectedId(null); setShowConfig(true); setResults([]); setPreview(null); }
+    if (!id.startsWith("draft-")) {
+      const t = pollTimers.current.get(id);
+      if (t) { clearInterval(t); pollTimers.current.delete(id); }
+    }
   }
 
   function startBackgroundPoll(taskId: string) {
@@ -121,11 +128,27 @@ export function IntruderPage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!showWordPicker) return;
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest(".wordlist-picker-wrap")) setShowWordPicker(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showWordPicker]);
+
   function selectAttack(id: string) {
+    const task = attacks.find((a) => a.id === id);
+    if (task?.status === "draft") {
+      setSelectedId(id);
+      setShowConfig(true);
+      setPreview(null);
+      return;
+    }
     setSelectedId(id);
     setShowConfig(false);
     setPreview(null);
-    const task = attacks.find((a) => a.id === id);
     if (task) {
       setResults((task.result?.results as IntruderResult[]) ?? []);
       setRawRequest((task.config?.raw_request as string) ?? "");
@@ -156,6 +179,7 @@ export function IntruderPage() {
         wordlist_path: wordlistPath,
         concurrency,
       });
+      setAttacks((prev) => prev.filter((a) => a.id !== selectedId));
       const placeholder = {
         id: data.task_id, type: "intruder", status: "running",
         progress: 0, total: data.total,
@@ -193,9 +217,11 @@ export function IntruderPage() {
   }
 
   async function handleDelete(id: string) {
-    try {
-      await deleteTask(id);
-    } catch {}
+    if (!id.startsWith("draft-")) {
+      try {
+        await deleteTask(id);
+      } catch {}
+    }
     removeFromAttacks(id);
     window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
       detail: { title: "Attack deleted", message: "", severity: "info" },
@@ -250,7 +276,25 @@ export function IntruderPage() {
       <div class="mb-4 flex items-center justify-between">
         <h1 class="text-xl font-bold text-neutral-50">Intruder</h1>
         <button
-          onClick={() => { setShowConfig(true); setSelectedId(null); setPreview(null); }}
+          onClick={() => {
+            setDraftId((n) => n + 1);
+            setRawRequest("GET /§path§ HTTP/1.1\nHost: example.com\n\n");
+            setMode("sniper");
+            setWordlistPath("");
+            setConcurrency(10);
+            setMaxResults(100);
+            setResults([]);
+            setPreview(null);
+            setSelectedId(null);
+            setShowConfig(true);
+            const draft: TaskStatus = {
+              id: `draft-${draftId + 1}`, type: "intruder", status: "draft",
+              progress: 0, total: 0, config: { mode: "sniper", wordlist_path: "", concurrency: 10 },
+              result: null, error: null,
+              created_at: new Date().toISOString(), completed_at: null,
+            };
+            setAttacks((prev) => [draft, ...prev]);
+          }}
           class="inline-flex items-center gap-1.5 rounded-md bg-primary-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-primary-500"
         >
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -259,9 +303,9 @@ export function IntruderPage() {
       </div>
 
       {/* Sidebar + Main */}
-      <div class="flex flex-1 gap-4 overflow-hidden">
+      <div class="flex flex-1 gap-3 lg:gap-2 overflow-hidden">
         {/* Sidebar */}
-        <div class="flex w-[280px] shrink-0 flex-col rounded-lg border border-neutral-800 bg-neutral-950">
+        <div class="flex w-[260px] shrink-0 flex-col rounded-lg border border-neutral-800 bg-neutral-950 lg:w-[220px]">
           <div class="border-b border-neutral-800 px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
             Attacks ({attacks.length})
           </div>
@@ -272,20 +316,23 @@ export function IntruderPage() {
               </div>
             )}
             {attacks.map((a) => {
+              const draft_ = a.status === "draft";
               const sel = a.id === selectedId;
               const running_ = a.status === "running";
-              const host = extractHost((a.config?.raw_request as string) ?? (a.config as any)?.rawRequest ?? "");
+              const host = draft_ ? "New Attack" : extractHost((a.config?.raw_request as string) ?? (a.config as any)?.rawRequest ?? "");
               const words = a.total ?? 0;
               return (
-                <div
-                  key={a.id}
-                  onClick={() => selectAttack(a.id)}
-                  class={`cursor-pointer rounded-md px-3 py-2 text-xs transition-colors ${
-                    sel ? "bg-primary-900/40 ring-1 ring-primary-700" : "hover:bg-neutral-800/60"
-                  }`}
-                >
+                  <div
+                    key={a.id}
+                    onClick={() => selectAttack(a.id)}
+                    class={`cursor-pointer rounded-md px-2 lg:px-1.5 py-1.5 text-xs transition-colors ${
+                      sel ? "bg-primary-900/40 ring-1 ring-primary-700" : "hover:bg-neutral-800/60"
+                    }`}
+                  >
                   <div class="flex items-center gap-2">
-                    {running_ ? (
+                    {draft_ ? (
+                      <span class="inline-block h-2 w-2 rounded-full bg-yellow-500" />
+                    ) : running_ ? (
                       <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-blue-400" />
                     ) : a.status === "completed" ? (
                       <span class="inline-block h-2 w-2 rounded-full bg-success-500" />
@@ -297,9 +344,11 @@ export function IntruderPage() {
                     <span class="flex-1 truncate font-medium text-neutral-200">{host}</span>
                   </div>
                   <div class="mt-1 flex items-center gap-2 text-[10px] text-neutral-500">
-                    <span class="uppercase">{a.config?.mode as string ?? mode}</span>
-                    <span>·</span>
-                    <span>{words} words</span>
+                    {draft_ ? (
+                      <span class="italic text-yellow-500">Not started</span>
+                    ) : (
+                      <><span class="uppercase">{a.config?.mode as string ?? mode}</span><span>·</span><span>{words} words</span></>
+                    )}
                   </div>
                   {running_ && (
                     <div class="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-neutral-800">
@@ -309,18 +358,20 @@ export function IntruderPage() {
                       />
                     </div>
                   )}
-                  <div class="mt-1 flex gap-1">
-                    {running_ && (
+                  {!draft_ && (
+                    <div class="mt-1 flex gap-1">
+                      {running_ && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleStop(a.id); }}
+                          class="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-800/60"
+                        >Stop</button>
+                      )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); handleStop(a.id); }}
-                        class="rounded bg-red-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-red-400 hover:bg-red-800/60"
-                      >Stop</button>
-                    )}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}
-                      class="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:bg-neutral-700 hover:text-red-400"
-                    >Delete</button>
-                  </div>
+                        onClick={(e) => { e.stopPropagation(); handleDelete(a.id); }}
+                        class="rounded bg-neutral-800 px-1.5 py-0.5 text-[10px] text-neutral-500 hover:bg-neutral-700 hover:text-red-400"
+                      >Delete</button>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -331,7 +382,7 @@ export function IntruderPage() {
         <div class="flex flex-1 flex-col overflow-hidden rounded-lg border border-neutral-800 bg-neutral-950">
           {showConfig || !selectedAttack ? (
             /* Config form */
-            <div class="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
+            <div class="flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden p-4">
               <h3 class="text-sm font-semibold text-neutral-200">Configuration</h3>
               <div>
                 <label class="mb-1 block text-xs text-neutral-400">Raw request (use § markers)</label>
@@ -342,7 +393,7 @@ export function IntruderPage() {
                   class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 font-mono text-xs text-neutral-100 placeholder-neutral-500 focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                 />
               </div>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-2 gap-3 lg:grid-cols-1">
                 <div>
                   <label class="mb-1 block text-xs text-neutral-400">Mode</label>
                   <select value={mode} onChange={(e) => setMode((e.target as HTMLSelectElement).value)}
@@ -354,24 +405,68 @@ export function IntruderPage() {
                 </div>
                 <div>
                   <label class="mb-1 block text-xs text-neutral-400">Wordlist</label>
-                  <div class="flex gap-2">
+                  <div class="flex gap-2 min-w-0">
                     <input value={wordlistPath} onInput={(e) => setWordlistPath((e.target as HTMLInputElement).value)}
                       placeholder="/path/to/wordlist.txt"
-                      class="flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500"
+                      class="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500"
                     />
-                    <input type="file" accept=".txt,.lst" class="hidden" id="wordlist-picker"
-                      onChange={(e) => {
-                        const files = (e.target as HTMLInputElement).files;
-                        if (files && files[0]) setWordlistPath(files[0].name);
+                    <div class="relative shrink-0 wordlist-picker-wrap">
+                      <input type="file" accept=".txt,.lst" class="hidden" ref={wordlistInputRef}
+                        onChange={(e) => {
+                          const files = (e.target as HTMLInputElement).files;
+                          if (!files?.[0]) return;
+                          const p = (files[0] as any).path;
+                          if (p) { setWordlistPath(p); return; }
+                          setWordlistPath(files[0].name);
+                          window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+                            detail: { title: "Tip", message: "Type the full path manually — browser didn't expose the file path", severity: "info" },
+                          }));
+                        }}
+                      />
+                      <button onClick={async () => {
+                        if (showWordPicker) { setShowWordPicker(false); return; }
+                        setLoadingWordlists(true);
+                        setShowWordPicker(true);
+                        try {
+                          const wl = await listWordlists();
+                          setWordlists(wl);
+                        } catch { setWordlists([]); }
+                        setLoadingWordlists(false);
                       }}
-                    />
-                    <button onClick={() => document.getElementById("wordlist-picker")?.click()}
-                      class="rounded-md border border-neutral-700 bg-neutral-800 px-2 text-xs text-neutral-400 hover:bg-neutral-700"
-                    >Browse</button>
+                        class="rounded-md border border-primary-700 bg-primary-900/30 px-3 text-xs font-medium text-primary-400 transition-colors hover:bg-primary-800/50"
+                      >Browse</button>
+                      {showWordPicker && (
+                        <div class="absolute right-0 top-full z-50 mt-1 w-72 max-h-64 overflow-y-auto rounded-md border border-neutral-700 bg-neutral-900 shadow-lg">
+                          {loadingWordlists ? (
+                            <div class="flex items-center justify-center gap-2 px-3 py-4 text-xs text-neutral-500">
+                              <svg class="h-3.5 w-3.5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+                              Loading...
+                            </div>
+                          ) : wordlists.length === 0 ? (
+                            <div class="border-b border-neutral-800 px-3 py-3 text-xs text-neutral-500">No wordlists in ~/.pwnproxy/wordlists/</div>
+                          ) : wordlists.map((wl) => (
+                            <div key={wl.path}
+                              onClick={() => { setWordlistPath(wl.path); setShowWordPicker(false); }}
+                              class="cursor-pointer border-b border-neutral-800 px-3 py-2 text-xs text-neutral-300 transition-colors last:border-0 hover:bg-neutral-800"
+                            >
+                              <div class="font-medium">{wl.name}</div>
+                              <div class="mt-0.5 text-[10px] text-neutral-500">{wl.line_count} lines · {fmtBytes(wl.size_bytes)}</div>
+                            </div>
+                          ))}
+                          <div
+                            onClick={() => { wordlistInputRef.current?.click(); setShowWordPicker(false); }}
+                            class="flex cursor-pointer items-center gap-2 border-t border-neutral-800 px-3 py-2 text-xs font-medium text-primary-400 transition-colors hover:bg-neutral-800"
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><line x1="12" y1="6" x2="12" y2="14"/><line x1="9" y1="10" x2="15" y2="10"/></svg>
+                            Open local file
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
-              <div class="grid grid-cols-2 gap-3">
+              <div class="grid grid-cols-2 gap-3 lg:grid-cols-1">
                 <div>
                   <label class="mb-1 block text-xs text-neutral-400">Concurrency</label>
                   <input type="number" value={concurrency} min={1}
@@ -430,23 +525,23 @@ export function IntruderPage() {
                             {(["request_id", "payload", "status_code", "response_length", "timing_ms"] as SortKey[]).map((col) => (
                               <th key={col}
                                 onClick={() => toggleSort(col)}
-                                class="cursor-pointer px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-200"
+                                class="cursor-pointer px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400 hover:text-neutral-200 lg:px-2"
                               >
                                 {col === "request_id" ? "#" : col === "status_code" ? "Status" : col === "response_length" ? "Length" : col === "timing_ms" ? "Time" : "Payload"}{sortArrow(col)}
                               </th>
                             ))}
-                            <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">Resp</th>
+                            <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400 lg:px-2">Resp</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-neutral-800">
                           {filtered.map((r) => (
                             <tr key={r.request_id} class="bg-neutral-950 hover:bg-neutral-900/50">
-                              <td class="px-3 py-1.5 text-neutral-500">{r.request_id}</td>
-                              <td class="max-w-[160px] truncate px-3 py-1.5 font-mono text-neutral-300" title={r.payload}>{escapeHtml(r.payload)}</td>
-                              <td class={`px-3 py-1.5 font-semibold ${statusColor(r.status_code)}`}>{r.status_code}</td>
-                              <td class="px-3 py-1.5 text-neutral-400">{fmtBytes(r.response_length)}</td>
-                              <td class="px-3 py-1.5 text-neutral-500">{r.timing_ms?.toFixed(0)}ms</td>
-                              <td class="px-3 py-1.5">
+                              <td class="px-3 py-1 lg:px-2 lg:py-1 text-neutral-500">{r.request_id}</td>
+                              <td class="max-w-[160px] truncate px-3 py-1 font-mono text-neutral-300 lg:max-w-[80px] lg:px-2 xl:max-w-[160px]" title={r.payload}>{escapeHtml(r.payload)}</td>
+                              <td class={`px-3 py-1 font-semibold lg:px-2 ${statusColor(r.status_code)}`}>{r.status_code}</td>
+                              <td class="px-3 py-1 text-neutral-400 lg:px-2">{fmtBytes(r.response_length)}</td>
+                              <td class="px-3 py-1 text-neutral-500 lg:px-2">{r.timing_ms?.toFixed(0)}ms</td>
+                              <td class="px-3 py-1 lg:px-2">
                                 <button onClick={() => handleReplay(r.payload)}
                                   class="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
                                   title="Preview response"
