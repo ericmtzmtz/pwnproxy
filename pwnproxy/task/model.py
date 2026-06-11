@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from pathlib import Path
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
@@ -36,10 +37,9 @@ class TaskRecord(TaskBase):
 
 
 def create_task_engine(session_path: str) -> AsyncEngine:
-    from pathlib import Path
     db_path = Path(session_path) / "tasks.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    url = f"sqlite+aiosqlite:///{db_path.absolute()}"
+    url = f"sqlite+aiosqlite:///{db_path.absolute().as_posix()}"
     return create_async_engine(url, echo=False)
 
 

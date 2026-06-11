@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
@@ -8,6 +9,8 @@ from sqlalchemy import select, delete as sa_delete, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from pwnproxy.task.model import TaskRecord, init_task_db
+
+logger = logging.getLogger(__name__)
 
 STALE_TIMEOUT = timedelta(minutes=5)
 
@@ -143,16 +146,17 @@ class TaskStore:
     async def delete(self, task_id: str) -> bool:
         if self._session_factory is None:
             await self.init()
+        logger.info("DELETE task %s from %s", task_id, self._engine.url)
         async with self._session_factory() as s:
-            record = await s.get(TaskRecord, task_id)
-            if record is None:
-                return False
-            await s.delete(record)
+            stmt = sa_delete(TaskRecord).where(TaskRecord.id == task_id)
+            result = await s.execute(stmt)
             await s.commit()
+            deleted = result.rowcount > 0
+            logger.info("DELETE task %s deleted=%s rowcount=%d", task_id, deleted, result.rowcount)
         runner = self._running_tasks.pop(task_id, None)
         if runner and not runner.done():
             runner.cancel()
-        return True
+        return deleted
 
     def track(self, task_id: str, coro) -> None:
         self._running_tasks[task_id] = asyncio.create_task(coro)
