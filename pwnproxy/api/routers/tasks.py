@@ -18,6 +18,14 @@ router = APIRouter(prefix="/api/v1", tags=["tasks"])
 
 
 def _get_store(request: Request) -> TaskStore:
+    return get_task_store(request)
+
+
+def get_task_store(request: Request) -> TaskStore:
+    """Get the session-scoped task store, falling back to app.state."""
+    mgr = getattr(request.app.state, "session_manager", None)
+    if mgr and mgr.task_store:
+        return mgr.task_store
     store: Optional[TaskStore] = getattr(request.app.state, "task_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Task store not available")
@@ -149,9 +157,18 @@ async def get_task(task_id: str, request: Request):
     return TaskStatusResponse(**task)
 
 
-@router.delete("/tasks/{task_id}", status_code=204)
+@router.post("/tasks/{task_id}/cancel", response_model=TaskStatusResponse)
 async def cancel_task(task_id: str, request: Request):
     store = _get_store(request)
     ok = await store.cancel(task_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Task not found")
+    task = await store.get(task_id)
+    return TaskStatusResponse(**task)
+
+@router.delete("/tasks/{task_id}", status_code=204)
+async def delete_task(task_id: str, request: Request):
+    store = _get_store(request)
+    ok = await store.delete(task_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Task not found")

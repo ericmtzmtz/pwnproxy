@@ -1,13 +1,15 @@
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy import select, delete as sa_delete, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from pwnproxy.task.model import TaskRecord, init_task_db
+
+STALE_TIMEOUT = timedelta(minutes=5)
 
 
 class TaskStore:
@@ -78,6 +80,13 @@ class TaskStore:
             record = await s.get(TaskRecord, task_id)
             if record is None:
                 return None
+            if record.status == "running":
+                created = datetime.fromisoformat(record.created_at) if record.created_at else datetime.now(timezone.utc)
+                if datetime.now(timezone.utc) - created > STALE_TIMEOUT and record.id not in self._running_tasks:
+                    record.status = "failed"
+                    record.completed_at = datetime.now(timezone.utc).isoformat()
+                    record.error = "Stale — task timed out"
+                    await s.commit()
             return self._record_to_dict(record)
 
     async def list(
@@ -94,6 +103,18 @@ class TaskStore:
         async with self._session_factory() as s:
             result = await s.execute(stmt)
             rows = result.scalars().all()
+            now = datetime.now(timezone.utc)
+            stale_tasks = []
+            for r in rows:
+                if r.status == "running":
+                    created = datetime.fromisoformat(r.created_at) if r.created_at else now
+                    if now - created > STALE_TIMEOUT and r.id not in self._running_tasks:
+                        r.status = "failed"
+                        r.completed_at = now.isoformat()
+                        r.error = "Stale — task timed out"
+                        stale_tasks.append(r)
+            if stale_tasks:
+                await s.commit()
             return [self._record_to_dict(r) for r in rows]
 
     async def count(self, task_type: str | None = None, session_name: str = "") -> int:
@@ -113,6 +134,20 @@ class TaskStore:
                 return False
             record.status = "cancelled"
             record.completed_at = datetime.now(timezone.utc).isoformat()
+            await s.commit()
+        runner = self._running_tasks.pop(task_id, None)
+        if runner and not runner.done():
+            runner.cancel()
+        return True
+
+    async def delete(self, task_id: str) -> bool:
+        if self._session_factory is None:
+            await self.init()
+        async with self._session_factory() as s:
+            record = await s.get(TaskRecord, task_id)
+            if record is None:
+                return False
+            await s.delete(record)
             await s.commit()
         runner = self._running_tasks.pop(task_id, None)
         if runner and not runner.done():

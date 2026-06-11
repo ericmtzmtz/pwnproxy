@@ -51,11 +51,11 @@ async def toggle_plugin(name: str, request: Request):
 
 @router.post("/scan")
 async def launch_scan(url: str, request: Request, scanners: str = ""):
-    store = getattr(request.app.state, "task_store", None)
+    mgr = getattr(request.app.state, "session_manager", None)
+    store = mgr.task_store if mgr and mgr.task_store else getattr(request.app.state, "task_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Task store not available")
-    session_mgr = getattr(request.app.state, "session_manager", None)
-    session_name = session_mgr.active_name if session_mgr else ""
+    session_name = mgr.active_name if mgr else ""
 
     config = {"url": url, "scanners": scanners}
     task_id = await store.create("scan", config, session_name=session_name)
@@ -69,9 +69,8 @@ async def launch_scan(url: str, request: Request, scanners: str = ""):
 
 @router.get("/scan/{scan_id}")
 async def poll_scan(scan_id: str, request: Request):
-    store = getattr(request.app.state, "task_store", None)
-    if store is None:
-        raise HTTPException(status_code=503, detail="Task store not available")
+    from pwnproxy.api.routers.tasks import get_task_store
+    store = get_task_store(request)
     task = await store.get(scan_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found")

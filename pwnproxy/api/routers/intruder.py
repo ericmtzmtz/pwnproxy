@@ -32,10 +32,8 @@ class IntruderResultItem(BaseModel):
 async def intruder_run(request: Request, body: IntruderRunRequest):
     from pwnproxy.intruder.parser import parse_markers
 
-    store = getattr(request.app.state, "task_store", None)
-    if store is None:
-        raise HTTPException(status_code=503, detail="Task store not available")
-
+    from pwnproxy.api.routers.tasks import get_task_store
+    store = get_task_store(request)
     engine = request.app.state.intruder_engine
     if not engine:
         raise HTTPException(status_code=503, detail="Intruder engine not available")
@@ -75,9 +73,8 @@ async def intruder_run(request: Request, body: IntruderRunRequest):
 
 @router.get("/intruder/attack/{attack_id}")
 async def poll_attack(attack_id: str, request: Request):
-    store = getattr(request.app.state, "task_store", None)
-    if store is None:
-        raise HTTPException(status_code=503, detail="Task store not available")
+    from pwnproxy.api.routers.tasks import get_task_store
+    store = get_task_store(request)
     task = await store.get(attack_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Attack '{attack_id}' not found")

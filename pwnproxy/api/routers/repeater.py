@@ -149,9 +149,8 @@ class RepeaterSendResponse(BaseModel):
 
 @router.post("/repeater/send")
 async def repeater_send(request: Request, body: RepeaterSendRequest):
-    store = getattr(request.app.state, "task_store", None)
-    if store is None:
-        raise HTTPException(status_code=503, detail="Task store not available")
+    from pwnproxy.api.routers.tasks import get_task_store
+    store = get_task_store(request)
 
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_name = session_mgr.active_name if session_mgr else ""
