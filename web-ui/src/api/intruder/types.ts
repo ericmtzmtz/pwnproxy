@@ -21,3 +21,23 @@ export interface IntruderRunResponse {
   status: string;
   total: number;
 }
+
+export interface ReplayRequest {
+  raw_request: string;
+  payload: string;
+}
+
+export interface ReplayResponse {
+  status_code: number;
+  headers: Record<string, string>;
+  body: string;
+  timing_ms: number;
+  error: string | null;
+}
+
+export interface WordlistEntry {
+  name: string;
+  path: string;
+  size_bytes: number;
+  line_count: number;
+}
