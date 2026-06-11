@@ -9,3 +9,21 @@ export interface RepeaterResponse {
   body_preview: string;
   timing_ms: number;
 }
+
+export interface RepeaterTab {
+  id: number;
+  name: string;
+  raw_request: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateRepeaterTab {
+  name?: string;
+  raw_request?: string;
+}
+
+export interface UpdateRepeaterTab {
+  name?: string;
+  raw_request?: string;
+}

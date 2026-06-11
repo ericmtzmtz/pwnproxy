@@ -1,5 +1,6 @@
 import { useState } from "preact/hooks";
 import { deleteFinding } from "@/api/findings/calls";
+import { createTab } from "@/api/repeater/calls";
 import type { Finding } from "@/api/findings/types";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
 
@@ -110,13 +111,35 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                         )}
                         <div class="flex items-center gap-2 pt-1">
                           <button
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
-                              window.open(`/repeater?url=${encodeURIComponent(f.url)}&method=${f.method}`, "_blank");
+                              setBusy((prev) => ({ ...prev, [key]: true }));
+                              try {
+                                const u = new URL(f.url);
+                                const path = u.pathname + u.search;
+                                const method = f.method || "GET";
+                                let headers = `Host: ${u.host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*`;
+                                if (f.param_location === "header" && f.param_name && f.payload) {
+                                  headers = `Host: ${u.host}\n${f.param_name}: ${f.payload}\nAccept: */*`;
+                                }
+                                const raw = `${method} ${path} HTTP/1.1\n${headers}\n\n`;
+                                const tab = await createTab({ name: `${method} ${path.slice(0, 30)}`, raw_request: raw });
+                                new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
+                                window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+                                  detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "success" },
+                                }));
+                              } catch {
+                                window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+                                  detail: { title: "Error", message: "Failed to create repeater tab", severity: "error" },
+                                }));
+                              } finally {
+                                setBusy((prev) => ({ ...prev, [key]: false }));
+                              }
                             }}
-                            class="cursor-pointer rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-700"
+                            disabled={isBusy}
+                            class="cursor-pointer rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-700 disabled:opacity-50"
                           >
-                            Send to Repeater
+                            {isBusy ? "..." : "Send to Repeater"}
                           </button>
                           <button
                             disabled={isBusy}

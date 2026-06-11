@@ -1,4 +1,7 @@
+import json
 import time
+from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -9,6 +12,128 @@ from pwnproxy.intruder.engine import _parse_raw_from_template
 
 router = APIRouter(prefix="/api/v1", tags=["repeater"])
 
+
+# --- Tab models ---
+
+class RepeaterTabCreate(BaseModel):
+    name: Optional[str] = None
+    raw_request: str = ""
+
+
+class RepeaterTabUpdate(BaseModel):
+    name: Optional[str] = None
+    raw_request: Optional[str] = None
+
+
+class RepeaterTabOut(BaseModel):
+    id: int
+    name: str
+    raw_request: str
+    created_at: str
+    updated_at: str
+
+
+# --- In-memory tab store per session ---
+# _tab_store[ session_name ] = { id: tab_dict, ... }
+_tab_store: dict[str, dict[int, dict]] = {}
+_next_ids: dict[str, int] = {}
+
+
+def _tabs_path(session_name: str) -> Path:
+    return Path.home() / ".pwnproxy" / "sessions" / session_name / "tabs.json"
+
+
+def _load_tabs(session_name: str) -> dict[int, dict]:
+    if session_name in _tab_store:
+        return _tab_store[session_name]
+    path = _tabs_path(session_name)
+    tabs: dict[int, dict] = {}
+    max_id = 0
+    if path.exists():
+        raw = json.loads(path.read_text())
+        for t in raw:
+            tid = t["id"]
+            tabs[tid] = t
+            if tid > max_id:
+                max_id = tid
+    _next_ids[session_name] = max_id + 1
+    _tab_store[session_name] = tabs
+    return tabs
+
+
+def _save_tabs(session_name: str, tabs: dict[int, dict]) -> None:
+    path = _tabs_path(session_name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(list(tabs.values()), indent=2))
+    _tab_store[session_name] = tabs
+
+
+def _next_tab_id(session_name: str) -> int:
+    nid = _next_ids.get(session_name, 1)
+    _next_ids[session_name] = nid + 1
+    return nid
+
+
+def _get_session_name(request: Request) -> str:
+    mgr = getattr(request.app.state, "session_manager", None)
+    return mgr.active_name if mgr and mgr.active_name else "default"
+
+
+# --- Tab CRUD endpoints ---
+
+@router.get("/repeater/tabs", response_model=list[RepeaterTabOut])
+async def list_tabs(request: Request):
+    session = _get_session_name(request)
+    tabs = _load_tabs(session)
+    return [RepeaterTabOut(**t) for t in sorted(tabs.values(), key=lambda x: x["id"])]
+
+
+@router.post("/repeater/tabs", response_model=RepeaterTabOut, status_code=201)
+async def create_tab(request: Request, body: RepeaterTabCreate):
+    session = _get_session_name(request)
+    tabs = _load_tabs(session)
+    tid = _next_tab_id(session)
+    now = datetime.now().isoformat()
+    tab = {
+        "id": tid,
+        "name": body.name or str(tid),
+        "raw_request": body.raw_request,
+        "created_at": now,
+        "updated_at": now,
+    }
+    tabs[tid] = tab
+    _save_tabs(session, tabs)
+    return RepeaterTabOut(**tab)
+
+
+@router.put("/repeater/tabs/{tab_id}", response_model=RepeaterTabOut)
+async def update_tab(request: Request, tab_id: int, body: RepeaterTabUpdate):
+    session = _get_session_name(request)
+    tabs = _load_tabs(session)
+    if tab_id not in tabs:
+        raise HTTPException(status_code=404, detail=f"Tab {tab_id} not found")
+    tab = tabs[tab_id]
+    if body.name is not None:
+        tab["name"] = body.name
+    if body.raw_request is not None:
+        tab["raw_request"] = body.raw_request
+    tab["updated_at"] = datetime.now().isoformat()
+    tabs[tab_id] = tab
+    _save_tabs(session, tabs)
+    return RepeaterTabOut(**tab)
+
+
+@router.delete("/repeater/tabs/{tab_id}", status_code=204)
+async def delete_tab(request: Request, tab_id: int):
+    session = _get_session_name(request)
+    tabs = _load_tabs(session)
+    if tab_id not in tabs:
+        raise HTTPException(status_code=404, detail=f"Tab {tab_id} not found")
+    del tabs[tab_id]
+    _save_tabs(session, tabs)
+
+
+# --- Send endpoint (unchanged) ---
 
 class RepeaterSendRequest(BaseModel):
     raw_request: str
