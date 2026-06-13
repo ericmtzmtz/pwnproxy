@@ -1,8 +1,8 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from pwnproxy.api.main import app
-from pwnproxy.core.hooks import HookBus
+from pwnproxy.transport.rest.app import app
+from pwnproxy.shared.hooks import HookBus
 
 
 @pytest.fixture

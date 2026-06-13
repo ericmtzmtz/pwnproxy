@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.api.main import app
-from pwnproxy.core.db import Base as CoreBase
-from pwnproxy.core.hooks import HookBus
+from unittest.mock import MagicMock
+
+from pwnproxy.transport.rest.app import app
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.hooks import HookBus
 
 
 @pytest.fixture
@@ -45,6 +47,8 @@ def test_app():
 
         asyncio.run(_init())
 
+        session_mgr = MagicMock()
+        session_mgr.get_scanner_engine.return_value = scanner_engine
         app.state.hook_bus = hook_bus
         app.state.traffic_engine = traffic_engine
         app.state.scanner_engine = scanner_engine
@@ -52,6 +56,7 @@ def test_app():
         app.state.interceptor_controller = None
         app.state.repeater_engine = None
         app.state.intruder_engine = None
+        app.state.session_manager = session_mgr
 
         with TestClient(app) as client:
             yield client

@@ -1,6 +1,6 @@
 import time
 
-from pwnproxy.modules.session_manager.validator import jwt_decode
+from pwnproxy.services.session.validator import jwt_decode
 
 
 class TestJwtDecode:

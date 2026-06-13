@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from pwnproxy.core.db import Base, FlowRecord
+from pwnproxy.shared.db import Base, FlowRecord
 
 
 async def _seed(engine):
@@ -45,7 +45,7 @@ def traffic_dir(tmp_path):
 
 
 def test_history_list_no_db(traffic_dir):
-    from pwnproxy.cli.history import _list_flows
+    from apps.terminal.cli.history import _list_flows
     engine = _make_engine(traffic_dir / ".pwnproxy" / "traffic.db")
     with patch("pwnproxy.cli.history._get_engine", return_value=engine):
         asyncio.run(_list_flows(10))
@@ -54,7 +54,7 @@ def test_history_list_no_db(traffic_dir):
 
 def test_history_get_not_found(traffic_dir):
     import typer
-    from pwnproxy.cli.history import _get_flow
+    from apps.terminal.cli.history import _get_flow
     engine = _make_engine(traffic_dir / ".pwnproxy" / "traffic.db")
     with patch("pwnproxy.cli.history._get_engine", return_value=engine):
         with pytest.raises(typer.Exit):
@@ -63,7 +63,7 @@ def test_history_get_not_found(traffic_dir):
 
 
 def test_history_list_with_data(traffic_dir):
-    from pwnproxy.cli.history import _list_flows
+    from apps.terminal.cli.history import _list_flows
     engine = _make_engine(traffic_dir / ".pwnproxy" / "traffic.db")
     with patch("pwnproxy.cli.history._get_engine", return_value=engine):
         asyncio.run(_list_flows(10))

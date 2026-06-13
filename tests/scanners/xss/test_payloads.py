@@ -1,4 +1,4 @@
-from pwnproxy.scanners.xss.payloads import (
+from pwnproxy.services.scanners.xss.payloads import (
     HTML_BODY_PAYLOADS,
     ATTR_BREAKOUT_PAYLOADS,
     JS_STRING_PAYLOADS,

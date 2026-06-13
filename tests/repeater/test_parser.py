@@ -1,6 +1,6 @@
 import pytest
 
-from pwnproxy.repeater.parser import parse_raw_request
+from pwnproxy.services.repeater.parser import parse_raw_request
 
 
 class TestParseRawRequest:

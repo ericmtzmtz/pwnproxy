@@ -1,5 +1,5 @@
-from pwnproxy.core.models import Flow
-from pwnproxy.scanners.ssrf.extractor import SsrfExtractor
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.scanners.ssrf.extractor import SsrfExtractor
 
 
 class TestSsrfExtractor:

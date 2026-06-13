@@ -55,7 +55,7 @@ def test_findings_all(findings_dir):
     asyncio.run(engine.dispose())
 
     from unittest.mock import patch
-    from pwnproxy.cli.findings import _list_findings
+    from apps.terminal.cli.findings import _list_findings
     with patch("pwnproxy.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings(None, 20))
 
@@ -68,7 +68,7 @@ def test_findings_filter_sqli(findings_dir):
     asyncio.run(engine.dispose())
 
     from unittest.mock import patch
-    from pwnproxy.cli.findings import _list_findings
+    from apps.terminal.cli.findings import _list_findings
     with patch("pwnproxy.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings("sqli", 20))
 
@@ -84,6 +84,6 @@ def test_findings_unknown_scanner():
 
 def test_findings_empty(findings_dir):
     from unittest.mock import patch
-    from pwnproxy.cli.findings import _list_findings
+    from apps.terminal.cli.findings import _list_findings
     with patch("pwnproxy.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings("sqli", 20))

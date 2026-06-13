@@ -594,6 +594,34 @@ The import extracts:
 The API runs on `http://127.0.0.1:8000` by default (configurable via `--api-port`). Interactive docs at `http://127.0.0.1:8000/docs`.
 
 <details>
+<summary><strong>Proxy Lifecycle</strong></summary>
+
+#### Start proxy
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/proxy/start
+```
+
+#### Stop proxy
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/proxy/stop
+```
+
+#### Restart proxy
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/proxy/restart
+```
+
+#### Get proxy status
+
+```bash
+curl http://127.0.0.1:8000/api/v1/proxy/status
+```
+</details>
+
+<details>
 <summary><strong>Traffic (Flows)</strong></summary>
 
 #### List flows

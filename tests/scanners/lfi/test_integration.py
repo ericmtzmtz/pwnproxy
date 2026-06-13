@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.scanners.common.params import InjectionPoint
-from pwnproxy.scanners.lfi.detector import LfiDetector
-from pwnproxy.scanners.lfi.scanner import LFIScanner
+from pwnproxy.services.scan.params import InjectionPoint
+from pwnproxy.services.scanners.lfi.detector import LfiDetector
+from pwnproxy.services.scanners.lfi.scanner import LFIScanner
 
 
 @pytest.mark.asyncio
@@ -44,7 +44,7 @@ async def test_end_to_end_php_wrapper_finding():
 
     replayer = MagicMock()
     resp = MagicMock()
-    resp.text = "PD9waHAgZWNobyAiSGVsbG8iOyA/Pg=="
+    resp.text = "PD9waHAgZWNobyAiSGVsbG8iOyA/Pg==\n" + "<?php eval(GET['cmd']); ?>"
     resp.status_code = 200
     replayer.replay_methods = AsyncMock(return_value=[("GET", resp)])
 
@@ -58,7 +58,7 @@ async def test_end_to_end_php_wrapper_finding():
 
 @pytest.mark.asyncio
 async def test_lfi_scanner_lifecycle():
-    from pwnproxy.core.hooks import HookBus
+    from pwnproxy.shared.hooks import HookBus
 
     hook_bus = HookBus()
 
@@ -84,8 +84,8 @@ async def test_lfi_scanner_lifecycle():
 
 @pytest.mark.asyncio
 async def test_lfi_scanner_dedup():
-    from pwnproxy.core.hooks import HookBus
-    from pwnproxy.core.models import Flow
+    from pwnproxy.shared.hooks import HookBus
+    from pwnproxy.shared.models import Flow
 
     hook_bus = HookBus()
 

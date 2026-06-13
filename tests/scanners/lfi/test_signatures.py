@@ -1,4 +1,4 @@
-from pwnproxy.scanners.lfi.signatures import detect_os
+from pwnproxy.services.scanners.lfi.signatures import detect_os
 
 
 class TestDetectOs:
@@ -30,7 +30,7 @@ class TestDetectOs:
         assert os_type == "php"
 
     def test_php_base64_multiline(self):
-        body = "line1\nSGVsbG8gV29ybGQ=\nline3"
+        body = "line1\nPD9waHAgZWNobyAiSGVsbG8iOyA/Pg==\nline3"
         os_type, evidence = detect_os(body)
         assert os_type == "php"
 

@@ -6,11 +6,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.api.main import app
-from pwnproxy.core.db import Base as CoreBase
-from pwnproxy.core.hooks import HookBus
-from pwnproxy.modules.session_manager.models import TokenCandidate
-from pwnproxy.modules.session_manager.storage import TokenStorage
+from pwnproxy.transport.rest.app import app
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.services.session.models import TokenCandidate
+from pwnproxy.services.session.storage import TokenStorage
 
 
 @pytest.fixture

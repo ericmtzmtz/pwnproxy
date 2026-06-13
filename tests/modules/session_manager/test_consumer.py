@@ -5,9 +5,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pwnproxy.core.hooks import HookBus
-from pwnproxy.core.models import Flow
-from pwnproxy.modules.session_manager.consumer import SessionConsumer
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.session.consumer import SessionConsumer
 
 
 @pytest.mark.asyncio

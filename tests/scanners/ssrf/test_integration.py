@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pwnproxy.core.hooks import HookBus
-from pwnproxy.core.models import Flow
-from pwnproxy.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.scanners.ssrf.scanner import SSRFScanner
 
 
 def _free_port() -> int:

@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 
-from pwnproxy.core.hooks import HookBus
+from pwnproxy.shared.hooks import HookBus
 
 
 @pytest.mark.asyncio

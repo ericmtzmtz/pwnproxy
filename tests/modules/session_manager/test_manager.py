@@ -3,13 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from pwnproxy.modules.session_manager.manager import ScopeConfig, SessionManager, SESSIONS_ROOT
+from pwnproxy.services.session.manager import ScopeConfig, SessionManager, SESSIONS_ROOT
 
 
 @pytest.fixture
 def mock_sessions_root(monkeypatch, tmp_path):
-    monkeypatch.setattr("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", tmp_path)
-    monkeypatch.setattr("pwnproxy.modules.session_manager.manager.LAST_SESSION_FILE", tmp_path / ".last_session")
+    monkeypatch.setattr("pwnproxy.services.session.manager.SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr("pwnproxy.services.session.manager.LAST_SESSION_FILE", tmp_path / ".last_session")
     return tmp_path
 
 

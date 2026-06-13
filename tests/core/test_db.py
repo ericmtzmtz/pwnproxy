@@ -1,4 +1,4 @@
-from pwnproxy.core.db import truncate_body
+from pwnproxy.shared.db import truncate_body
 
 def test_truncate_body():
     body, trunc = truncate_body(b"hello", max_size=10)

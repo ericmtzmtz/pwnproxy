@@ -3,9 +3,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.core.models import Flow
-from pwnproxy.modules.interceptor.addon import InterceptorAddon
-from pwnproxy.modules.interceptor.controller import (
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
+from pwnproxy.services.proxy.interceptor.controller import (
     InterceptorController,
     FlowSnapshot,
 )
@@ -110,6 +110,7 @@ async def test_drop_removes_from_pending(addon_and_queue):
 async def test_toggle_disable_resumes_all(addon_and_queue):
     addon, q = addon_and_queue
     controller = InterceptorController(addon, lambda f: None)
+    addon.set_enabled(True)
 
     mflow = MagicMock()
     mflow.id = "f4"
@@ -138,6 +139,7 @@ async def test_toggle_disable_resumes_all(addon_and_queue):
 @pytest.mark.asyncio
 async def test_forward_with_edits_applies_mutations(addon_and_queue):
     addon, q = addon_and_queue
+    addon.set_enabled(True)
 
     mflow = MagicMock()
     mflow.id = "f5"

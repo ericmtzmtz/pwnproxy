@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.modules.interceptor.addon import InterceptorAddon
+from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
 
 
 def _make_mock_httpflow(flow_id: str = "test1") -> MagicMock:
@@ -33,13 +33,14 @@ def _make_mock_httpflow(flow_id: str = "test1") -> MagicMock:
 async def test_default_enabled():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
-    assert addon.enabled is True
+    assert addon.enabled is False
 
 
 @pytest.mark.asyncio
 async def test_intercept_resume_lifecycle():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
+    addon.set_enabled(True)
 
     mflow = _make_mock_httpflow("f1")
     addon.request(mflow)
@@ -55,6 +56,7 @@ async def test_intercept_resume_lifecycle():
 async def test_intercept_kill():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
+    addon.set_enabled(True)
 
     mflow = _make_mock_httpflow("f2")
     addon.request(mflow)
@@ -69,6 +71,7 @@ async def test_intercept_kill():
 async def test_intercept_response_hook():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
+    addon.set_enabled(True)
 
     mflow = _make_mock_httpflow("f3")
     addon.response(mflow)
@@ -94,6 +97,7 @@ async def test_disabled_does_not_intercept():
 async def test_resume_all():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
+    addon.set_enabled(True)
 
     f1 = _make_mock_httpflow("f1")
     f2 = _make_mock_httpflow("f2")
@@ -130,6 +134,7 @@ async def test_kill_unknown_flow_no_error():
 async def test_queue_receives_flow_on_intercept():
     q: asyncio.Queue = asyncio.Queue()
     addon = InterceptorAddon(q)
+    addon.set_enabled(True)
 
     mflow = _make_mock_httpflow("f-queue")
     addon.request(mflow)

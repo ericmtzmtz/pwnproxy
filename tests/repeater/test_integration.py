@@ -1,5 +1,5 @@
-from pwnproxy.core.models import Flow
-from pwnproxy.repeater.integration import format_flow_as_raw_request
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.repeater.integration import format_flow_as_raw_request
 
 
 class TestFlowFormatting:

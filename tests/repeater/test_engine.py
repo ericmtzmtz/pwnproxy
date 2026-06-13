@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 @pytest.mark.asyncio
 async def test_engine_send_with_mock():
-    from pwnproxy.repeater.engine import RepeaterEngine
+    from pwnproxy.services.repeater.engine import RepeaterEngine
 
     engine = RepeaterEngine()
 

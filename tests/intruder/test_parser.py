@@ -1,4 +1,4 @@
-from pwnproxy.intruder.parser import parse_markers
+from pwnproxy.services.intruder.parser import parse_markers
 
 
 class TestParseMarkers:

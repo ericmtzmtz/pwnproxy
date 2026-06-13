@@ -7,11 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.api.main import app
-from pwnproxy.core.db import Base as CoreBase
-from pwnproxy.core.hooks import HookBus
-from pwnproxy.task.model import create_task_engine, init_task_db
-from pwnproxy.task.store import TaskStore
+from pwnproxy.transport.rest.app import app
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.task_model import create_task_engine, init_task_db
+from pwnproxy.services.session.store import TaskStore
 
 
 @pytest.fixture
@@ -34,6 +34,7 @@ def test_app():
 
         session_mgr = MagicMock()
         session_mgr.active_name = "default"
+        session_mgr.task_store = task_store
 
         app.state.hook_bus = hook_bus
         app.state.traffic_engine = traffic_engine
@@ -58,7 +59,7 @@ class TestRepeater:
     def test_send_request(self, test_app):
         client, task_store = test_app
 
-        with patch("pwnproxy.api.routers.repeater.httpx.AsyncClient") as mock_client:
+        with patch("pwnproxy.transport.rest.repeater.httpx.AsyncClient") as mock_client:
             mock_resp = AsyncMock()
             mock_resp.status_code = 200
             mock_resp.headers = {"content-type": "text/plain"}

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
-from pwnproxy.intruder.engine import IntruderEngine
+from pwnproxy.services.intruder.engine import IntruderEngine
 
 
 class AsyncIterator:
@@ -24,6 +24,7 @@ async def test_engine_respects_concurrency():
     mock_response = AsyncMock()
     mock_response.status_code = 200
     mock_response.content = b"ok"
+    mock_response.headers = {}
     mock_client.request.return_value = mock_response
 
     with patch.object(engine, "_get_client", return_value=mock_client):

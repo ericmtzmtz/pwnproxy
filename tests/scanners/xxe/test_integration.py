@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.scanners.common.params import InjectionPoint
-from pwnproxy.scanners.xxe.detector import XxeDetector
-from pwnproxy.scanners.xxe.scanner import XXEScanner
+from pwnproxy.services.scan.params import InjectionPoint
+from pwnproxy.services.scanners.xxe.detector import XxeDetector
+from pwnproxy.services.scanners.xxe.scanner import XXEScanner
 
 
 @pytest.mark.asyncio
@@ -35,7 +35,7 @@ async def test_end_to_end_unix_finding():
 
 @pytest.mark.asyncio
 async def test_xxe_scanner_lifecycle():
-    from pwnproxy.core.hooks import HookBus
+    from pwnproxy.shared.hooks import HookBus
 
     hook_bus = HookBus()
 
@@ -61,8 +61,8 @@ async def test_xxe_scanner_lifecycle():
 
 @pytest.mark.asyncio
 async def test_scanner_filters_non_xml_json():
-    from pwnproxy.core.hooks import HookBus
-    from pwnproxy.core.models import Flow
+    from pwnproxy.shared.hooks import HookBus
+    from pwnproxy.shared.models import Flow
 
     hook_bus = HookBus()
 
@@ -103,8 +103,8 @@ async def test_scanner_filters_non_xml_json():
 
 @pytest.mark.asyncio
 async def test_scanner_dedup():
-    from pwnproxy.core.hooks import HookBus
-    from pwnproxy.core.models import Flow
+    from pwnproxy.shared.hooks import HookBus
+    from pwnproxy.shared.models import Flow
 
     hook_bus = HookBus()
 

@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.scanners.common.params import InjectionPoint
-from pwnproxy.scanners.xss.canary import CanaryStore
-from pwnproxy.scanners.xss.detector import ReflectedDetector, StoredDetector
+from pwnproxy.services.scan.params import InjectionPoint
+from pwnproxy.services.scanners.xss.canary import CanaryStore
+from pwnproxy.services.scanners.xss.detector import ReflectedDetector, StoredDetector
 
 
 def _make_resp(body: str) -> MagicMock:

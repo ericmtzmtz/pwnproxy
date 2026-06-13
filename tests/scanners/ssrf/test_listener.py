@@ -1,6 +1,6 @@
 import pytest
 
-from pwnproxy.scanners.ssrf.listener import CallbackServer
+from pwnproxy.services.scanners.ssrf.listener import CallbackServer
 
 
 @pytest.mark.asyncio

@@ -8,11 +8,14 @@ AGENTS.md
 opencode.jsonc
 .claude/
 .cursor/
+.codegraph/
 
 # Python
 __pycache__/
 *.pyc
 .env
+.pytest_cache/
+.pytype/
 
 # Poetry
 .venv/
@@ -20,6 +23,5 @@ __pycache__/
 po
 
 # web-ui
-web-ui/node_modules/
-web-ui/dist/
-
+apps/web/node_modules/
+apps/web/dist/

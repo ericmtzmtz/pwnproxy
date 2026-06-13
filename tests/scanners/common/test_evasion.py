@@ -1,7 +1,7 @@
 """Tests for WAF evasion techniques."""
 import pytest
 
-from pwnproxy.scanners.common.evasion import (
+from pwnproxy.services.scan.evasion import (
     EvasionLevel,
     apply_evasion,
     apply_technique,

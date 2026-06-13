@@ -7,10 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.api.main import app
-from pwnproxy.core.db import Base as CoreBase
-from pwnproxy.core.hooks import HookBus
-from pwnproxy.core.models import Flow
+from pwnproxy.transport.rest.app import app
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
 
 
 @pytest.fixture

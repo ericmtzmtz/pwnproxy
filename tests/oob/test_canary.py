@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from pwnproxy.oob.canary import CanaryRegistry, CanaryToken
+from pwnproxy.shared.canary import CanaryRegistry, CanaryToken
 
 
 class TestCanaryToken:

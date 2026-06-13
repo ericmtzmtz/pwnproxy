@@ -1,4 +1,4 @@
-from pwnproxy.scanners.common.params import InjectionPoint, extract
+from pwnproxy.services.scan.params import InjectionPoint, extract
 
 
 def test_module_can_import():

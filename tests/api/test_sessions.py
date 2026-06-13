@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from pwnproxy.api.main import app
-from pwnproxy.modules.session_manager.manager import ScopeConfig, SESSIONS_ROOT, LAST_SESSION_FILE
+from pwnproxy.transport.rest.app import app
+from pwnproxy.services.session.manager import ScopeConfig, SESSIONS_ROOT, LAST_SESSION_FILE
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def test_client(monkeypatch, tmp_path):
     app.state.session_manager = manager
     app.state.plugin_loader = None
     app.state.proxy_port = 19999
-    from pwnproxy.core.hooks import HookBus
+    from pwnproxy.shared.hooks import HookBus
     app.state.hook_bus = HookBus()
 
     for s in ["test-session", "other-session"]:
@@ -34,8 +34,8 @@ def test_client(monkeypatch, tmp_path):
     last_file = tmp_path / ".last_session"
     last_file.write_text("test-session")
 
-    monkeypatch.setattr("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", tmp_path)
-    monkeypatch.setattr("pwnproxy.modules.session_manager.manager.LAST_SESSION_FILE", last_file)
+    monkeypatch.setattr("pwnproxy.services.session.manager.SESSIONS_ROOT", tmp_path)
+    monkeypatch.setattr("pwnproxy.services.session.manager.LAST_SESSION_FILE", last_file)
 
     with TestClient(app) as client:
         yield client

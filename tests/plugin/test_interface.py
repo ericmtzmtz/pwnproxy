@@ -5,9 +5,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.core.models import Flow
-from pwnproxy.plugin.base import Finding, ScannerPlugin
-from pwnproxy.plugin.loader import PluginLoader
+from pwnproxy.shared.models import Flow
+from pwnproxy.services.plugins.base import Finding, ScannerPlugin
+from pwnproxy.services.plugins.loader import PluginLoader
 
 
 class MockFlow:

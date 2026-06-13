@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from pwnproxy.modules.session_manager.models import TokenCandidate
-from pwnproxy.modules.session_manager.storage import TokenStorage
+from pwnproxy.services.session.models import TokenCandidate
+from pwnproxy.services.session.storage import TokenStorage
 
 
 @pytest.mark.asyncio

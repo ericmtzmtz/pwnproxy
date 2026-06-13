@@ -1,6 +1,6 @@
 import pytest
 
-from pwnproxy.intruder.generator import ClusterBombGenerator, SniperGenerator
+from pwnproxy.services.intruder.generator import ClusterBombGenerator, SniperGenerator
 
 
 async def _collect(agen):
