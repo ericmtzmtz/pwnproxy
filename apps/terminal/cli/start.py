@@ -205,24 +205,24 @@ def start(
                 console.print(f"[yellow]Supported schemes: {', '.join(valid_schemes)}[/]")
                 raise typer.Exit(1)
 
-        from pwnproxy.services.scanners.sqli.scanner import SQLiScanner
-        from pwnproxy.services.scanners.xss.scanner import XSSScanner
-        from pwnproxy.services.scanners.lfi.scanner import LFIScanner
-        from pwnproxy.services.scanners.xxe.scanner import XXEScanner
-        from pwnproxy.services.scanners.ssrf.scanner import SSRFScanner
-        from pwnproxy.services.scanners.sqli.storage import FindingStorage as SqliStorage
-        from pwnproxy.services.scanners.xss.storage import XssFindingStorage as XssStorage
-        from pwnproxy.services.scanners.lfi.storage import LfiFindingStorage as LfiStorage
-        from pwnproxy.services.scanners.xxe.storage import XxeFindingStorage as XxeStorage
-        from pwnproxy.services.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
+        from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
+        from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+        from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
+        from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+        from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+        from pwnproxy.plugins.scanners.sqli.storage import FindingStorage as SqliStorage
+        from pwnproxy.plugins.scanners.xss.storage import XssFindingStorage as XssStorage
+        from pwnproxy.plugins.scanners.lfi.storage import LfiFindingStorage as LfiStorage
+        from pwnproxy.plugins.scanners.xxe.storage import XxeFindingStorage as XxeStorage
+        from pwnproxy.plugins.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
         from pwnproxy.services.scan.scan_log_store import ScanLogStore
         from pwnproxy.services.scan.manager import ScanManager
-        from pwnproxy.services.plugins.loader import PluginLoader
-        from pwnproxy.services.scanners.sqli.plugin import SQLiScannerPlugin
-        from pwnproxy.services.scanners.xss.plugin import XSSScannerPlugin
-        from pwnproxy.services.scanners.lfi.plugin import LFIScannerPlugin
-        from pwnproxy.services.scanners.xxe.plugin import XXEScannerPlugin
-        from pwnproxy.services.scanners.ssrf.plugin import SSRFScannerPlugin
+        from pwnproxy.plugins.core.loader import PluginLoader
+        from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
+        from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
+        from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
+        from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
+        from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
         session_path = session_manager._active_path
         scanner_db = str(session_path / "scanner_results.db")
         scan_log_store = ScanLogStore(db_path=scanner_db)

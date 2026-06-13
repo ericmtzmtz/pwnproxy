@@ -6,7 +6,7 @@ import pytest
 
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 
 
 def _free_port() -> int:

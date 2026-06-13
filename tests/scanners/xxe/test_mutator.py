@@ -1,4 +1,4 @@
-from pwnproxy.services.scanners.xxe.mutator import json_to_xml
+from pwnproxy.plugins.scanners.xxe.mutator import json_to_xml
 
 
 class TestJsonToXml:

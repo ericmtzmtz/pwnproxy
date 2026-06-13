@@ -3,8 +3,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pwnproxy.services.scanners.xss.canary import CanaryStore
-from pwnproxy.services.scanners.xss.models import XssCanary
+from pwnproxy.plugins.scanners.xss.canary import CanaryStore
+from pwnproxy.plugins.scanners.xss.models import XssCanary
 
 
 @pytest.mark.asyncio

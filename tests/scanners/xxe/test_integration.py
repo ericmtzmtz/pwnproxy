@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.services.scan.params import InjectionPoint
-from pwnproxy.services.scanners.xxe.detector import XxeDetector
-from pwnproxy.services.scanners.xxe.scanner import XXEScanner
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.plugins.scanners.xxe.detector import XxeDetector
+from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
 
 
 @pytest.mark.asyncio

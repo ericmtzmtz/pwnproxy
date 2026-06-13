@@ -1,5 +1,5 @@
 """Tests for payload store (second-order detection)."""
-from pwnproxy.services.scan.payload_store import PayloadStore, get_store
+from pwnproxy.shared.scan.payload_store import PayloadStore, get_store
 
 
 class TestPayloadStore:

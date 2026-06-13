@@ -6,7 +6,7 @@ from typing import Optional
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from pwnproxy.services.plugins.base import Finding
+from pwnproxy.plugins.core.base import Finding
 
 logger = logging.getLogger(__name__)
 

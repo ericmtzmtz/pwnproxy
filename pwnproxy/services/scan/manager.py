@@ -2,14 +2,14 @@ import logging
 from typing import Optional
 
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.plugins.base import Finding, ScannerPlugin
-from pwnproxy.services.plugins.loader import PluginLoader
+from pwnproxy.plugins.core.base import Finding, ScannerPlugin
+from pwnproxy.plugins.core.loader import PluginLoader
 from pwnproxy.services.scan.scan_log_store import ScanLogStore
-from pwnproxy.services.scanners.lfi.scanner import LFIScanner
-from pwnproxy.services.scanners.sqli.scanner import SQLiScanner
-from pwnproxy.services.scanners.ssrf.scanner import SSRFScanner
-from pwnproxy.services.scanners.xxe.scanner import XXEScanner
-from pwnproxy.services.scanners.xss.scanner import XSSScanner
+from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
+from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
+from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
 
 logger = logging.getLogger(__name__)
 

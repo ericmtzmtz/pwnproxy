@@ -7,7 +7,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from pwnproxy.services.scan.models import Base, ScanLog
+from pwnproxy.shared.scan.models import Base, ScanLog
 
 logger = logging.getLogger(__name__)
 

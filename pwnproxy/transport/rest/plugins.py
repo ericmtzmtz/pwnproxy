@@ -6,7 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from pwnproxy.services.plugins.loader import PluginLoader
+from pwnproxy.plugins.core.loader import PluginLoader
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ async def poll_scan(scan_id: str, request: Request):
 @router.get("/export/{scan_id}")
 async def export_scan(scan_id: str, format: str = "json"):
     from pwnproxy.services.export.engine import ExportEngine
-    from pwnproxy.services.plugins.base import Finding
+    from pwnproxy.plugins.core.base import Finding
 
     task = _scan_tasks.get(scan_id)
     if task is None:

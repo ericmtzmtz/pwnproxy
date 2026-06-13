@@ -1,4 +1,4 @@
-from pwnproxy.services.scanners.lfi.signatures import detect_os
+from pwnproxy.plugins.scanners.lfi.signatures import detect_os
 
 
 class TestDetectOs:

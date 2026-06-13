@@ -2,8 +2,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from pwnproxy.services.plugins.config import load_config, get_registry_url
-from pwnproxy.services.plugins.discovery import discover_installed, search_pypi, install_package
+from pwnproxy.plugins.core.config import load_config, get_registry_url
+from pwnproxy.plugins.core.discovery import discover_installed, search_pypi, install_package
 
 app = typer.Typer(help="Manage pwnproxy plugins")
 console = Console()
@@ -83,7 +83,7 @@ def create(
 
 _SCANNER_TEMPLATE = '''from typing import Optional
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.plugins.base import Finding, ScannerPlugin
+from pwnproxy.plugins.core.base import Finding, ScannerPlugin
 
 
 class {name}Plugin(ScannerPlugin):
@@ -98,7 +98,7 @@ class {name}Plugin(ScannerPlugin):
 
 _HOOK_TEMPLATE = '''from typing import Optional
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.plugins.base import HookPlugin
+from pwnproxy.plugins.core.base import HookPlugin
 
 
 class {name}Plugin(HookPlugin):

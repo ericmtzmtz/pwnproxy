@@ -1,7 +1,7 @@
 import pytest
 
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.scan.params import extract, InjectionPoint
+from pwnproxy.shared.scan.params import extract, InjectionPoint
 
 
 def _flow(**overrides) -> Flow:

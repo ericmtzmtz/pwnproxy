@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.services.scanners.sqli.detector import ErrorBasedDetector
+from pwnproxy.plugins.scanners.sqli.detector import ErrorBasedDetector
 
 
 class TestErrorBasedDetector:

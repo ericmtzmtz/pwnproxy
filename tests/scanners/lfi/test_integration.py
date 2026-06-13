@@ -1,9 +1,9 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from pwnproxy.services.scan.params import InjectionPoint
-from pwnproxy.services.scanners.lfi.detector import LfiDetector
-from pwnproxy.services.scanners.lfi.scanner import LFIScanner
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.plugins.scanners.lfi.detector import LfiDetector
+from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
 
 
 @pytest.mark.asyncio

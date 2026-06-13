@@ -4,7 +4,7 @@ import pytest
 
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.scanners.xss.scanner import XSSScanner
+from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
 
 
 @pytest.mark.asyncio
@@ -41,7 +41,7 @@ async def test_scanner_dedup():
         request_headers={"Host": "target.com"},
         request_body=None,
     )
-    from pwnproxy.services.scan.params import extract as extract_params
+    from pwnproxy.shared.scan.params import extract as extract_params
     points = extract_params(flow)
     assert len(points) == 1
     key = (points[0].method, points[0].host + points[0].path, points[0].name, points[0].location)

@@ -1,6 +1,6 @@
 from urllib.parse import quote_plus
 
-from pwnproxy.services.scanners.xss.replayer import (
+from pwnproxy.shared.scan.replayer import (
     _inject_cookie,
     _inject_form_body,
     _inject_json_body,

@@ -12,9 +12,9 @@ from rich.console import Console
 
 from pwnproxy.shared.models import Flow
 from pwnproxy.services.findings.engine import ExportEngine
-from pwnproxy.services.plugins.base import Finding
-from pwnproxy.services.plugins.loader import PluginLoader
-from pwnproxy.services.plugins.config import load_config
+from pwnproxy.plugins.core.base import Finding
+from pwnproxy.plugins.core.loader import PluginLoader
+from pwnproxy.plugins.core.config import load_config
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -49,21 +49,21 @@ def url(
 
 
 async def _build_scan_loader() -> PluginLoader:
-    from pwnproxy.services.scanners.sqli.scanner import SQLiScanner
-    from pwnproxy.services.scanners.xss.scanner import XSSScanner
-    from pwnproxy.services.scanners.lfi.scanner import LFIScanner
-    from pwnproxy.services.scanners.xxe.scanner import XXEScanner
-    from pwnproxy.services.scanners.ssrf.scanner import SSRFScanner
-    from pwnproxy.services.scanners.sqli.storage import FindingStorage as SqliStorage
-    from pwnproxy.services.scanners.xss.storage import XssFindingStorage as XssStorage
-    from pwnproxy.services.scanners.lfi.storage import LfiFindingStorage as LfiStorage
-    from pwnproxy.services.scanners.xxe.storage import XxeFindingStorage as XxeStorage
-    from pwnproxy.services.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
-    from pwnproxy.services.scanners.sqli.plugin import SQLiScannerPlugin
-    from pwnproxy.services.scanners.xss.plugin import XSSScannerPlugin
-    from pwnproxy.services.scanners.lfi.plugin import LFIScannerPlugin
-    from pwnproxy.services.scanners.xxe.plugin import XXEScannerPlugin
-    from pwnproxy.services.scanners.ssrf.plugin import SSRFScannerPlugin
+    from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
+    from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+    from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
+    from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+    from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+    from pwnproxy.plugins.scanners.sqli.storage import FindingStorage as SqliStorage
+    from pwnproxy.plugins.scanners.xss.storage import XssFindingStorage as XssStorage
+    from pwnproxy.plugins.scanners.lfi.storage import LfiFindingStorage as LfiStorage
+    from pwnproxy.plugins.scanners.xxe.storage import XxeFindingStorage as XxeStorage
+    from pwnproxy.plugins.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
+    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
+    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
+    from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
+    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
+    from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
 
     tmp = tempfile.mkdtemp(prefix="pwnproxy_scan_")
     db_path = str(Path(tmp) / "results.db")

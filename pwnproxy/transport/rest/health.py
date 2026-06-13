@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Request
 
-from pwnproxy.services.plugins.loader import PluginLoader
+from pwnproxy.plugins.core.loader import PluginLoader
 
 logger = logging.getLogger(__name__)
 

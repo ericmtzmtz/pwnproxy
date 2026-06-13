@@ -100,7 +100,7 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
 @router.post("/scanners/second-order/start")
 async def start_second_order(request: Request):
     """Start the second-order detection background task."""
-    from pwnproxy.services.scan.payload_store import get_store
+    from pwnproxy.shared.scan.payload_store import get_store
 
     store = get_store()
     store._running = True
@@ -110,7 +110,7 @@ async def start_second_order(request: Request):
 @router.post("/scanners/second-order/stop")
 async def stop_second_order(request: Request):
     """Stop the second-order detection background task."""
-    from pwnproxy.services.scan.payload_store import get_store
+    from pwnproxy.shared.scan.payload_store import get_store
 
     store = get_store()
     store._running = False
@@ -120,7 +120,7 @@ async def stop_second_order(request: Request):
 @router.get("/scanners/second-order/status")
 async def second_order_status(request: Request):
     """Get second-order detection status."""
-    from pwnproxy.services.scan.payload_store import get_store
+    from pwnproxy.shared.scan.payload_store import get_store
 
     store = get_store()
     return {"running": store._running, "stats": store.stats()}

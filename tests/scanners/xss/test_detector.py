@@ -2,8 +2,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from pwnproxy.services.scanners.xss.detector import ReflectedDetector, StoredDetector
-from pwnproxy.services.scanners.xss.models import XssFinding
+from pwnproxy.plugins.scanners.xss.detector import ReflectedDetector, StoredDetector
+from pwnproxy.plugins.scanners.xss.models import XssFinding
 
 
 class TestEncodingCheck:
