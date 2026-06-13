@@ -27,7 +27,7 @@ class XXEScannerPlugin(ScannerPlugin):
             if key in seen:
                 continue
             seen.add(key)
-            await self._scanner._scan_point(point)
+            await self._scanner._scan_point(point, flow)
         if self._scanner.finding_count > old_count:
             yield Finding(
                 scanner="xxe",

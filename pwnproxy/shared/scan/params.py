@@ -30,6 +30,10 @@ class InjectionPoint:
     original_headers: dict[str, str]
     original_body: Optional[str]
 
+    @property
+    def key(self) -> tuple:
+        return (self.method, self.host + self.path, self.name, self.location)
+
 
 def extract(flow: Flow) -> list[InjectionPoint]:
     points: list[InjectionPoint] = []

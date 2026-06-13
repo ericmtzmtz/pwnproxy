@@ -21,6 +21,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.plugins.core.base import Finding
 
 logger = logging.getLogger(__name__)
@@ -31,22 +32,6 @@ class DetectionDepth(str, Enum):
     FAST = "fast"           # Error-based only
     STANDARD = "standard"   # Error + boolean + time
     DEEP = "deep"           # All stages including OOB
-
-
-@dataclass
-class InjectionPoint:
-    """A point in a request where injection is possible."""
-    method: str
-    host: str
-    path: str
-    name: str
-    location: str  # "query", "body", "header", "cookie"
-    original_value: str = ""
-    
-    @property
-    def key(self) -> tuple:
-        """Unique key for deduplication."""
-        return (self.method, self.host + self.path, self.name, self.location)
 
 
 @dataclass
@@ -139,23 +124,23 @@ class DetectionChain:
                 )
                 continue
             
-            # Filter out already-confirmed injection points
-            remaining_points = [
-                p for p in injection_points
-                if p.key not in confirmed_keys
-            ]
-            
-            if not remaining_points:
-                logger.debug("No remaining injection points, stopping chain")
-                break
-            
-            logger.debug(
-                "Running stage %s on %d injection points",
-                stage.__class__.__name__,
-                len(remaining_points),
-            )
-            
             try:
+                # Filter out already-confirmed injection points
+                remaining_points = [
+                    p for p in injection_points
+                    if p.key not in confirmed_keys
+                ]
+                
+                if not remaining_points:
+                    logger.debug("No remaining injection points, stopping chain")
+                    break
+                
+                logger.debug(
+                    "Running stage %s on %d injection points",
+                    stage.__class__.__name__,
+                    len(remaining_points),
+                )
+                
                 result = await stage.execute(flow, remaining_points)
                 
                 # Yield findings

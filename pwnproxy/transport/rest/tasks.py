@@ -69,7 +69,7 @@ async def _launch_task_runner(
 
 async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Request) -> None:
     from apps.terminal.cli.scan import _build_scan_loader, _scan_target
-    from pwnproxy.services.export.engine import ExportEngine
+    from pwnproxy.services.findings.engine import ExportEngine
 
     main_loader = getattr(request.app.state, "plugin_loader", None)
     loader = await _build_scan_loader()
@@ -82,7 +82,14 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     url = config.get("url", "")
     detection_depth = config.get("detection_depth", "fast")
     evasion_level = config.get("evasion_level", "none")
-    findings = await _scan_target(loader, url, 60, detection_depth=detection_depth, evasion_level=evasion_level)
+    extra_headers: dict[str, str] = {}
+    cookies = config.get("cookies")
+    if cookies:
+        extra_headers["cookie"] = cookies
+    raw_headers = config.get("headers")
+    if raw_headers and isinstance(raw_headers, dict):
+        extra_headers.update(raw_headers)
+    findings = await _scan_target(loader, url, 60, detection_depth=detection_depth, evasion_level=evasion_level, extra_headers=extra_headers or None)
     result_data = ExportEngine(findings).to_dicts() if findings else []
     await store.update(
         task_id,

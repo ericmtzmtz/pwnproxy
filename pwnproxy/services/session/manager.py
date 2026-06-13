@@ -28,7 +28,11 @@ class ScopeConfig:
         self.out_of_scope: list[str] = d.get("out_of_scope", [])
         self.include_subdomains: bool = d.get("include_subdomains", True)
         self.ports: list[int] = d.get("ports", [80, 443])
-        self.enabled: bool = d.get("enabled", False)
+        enabled = d.get("enabled")
+        if enabled is None:
+            self.enabled = len(self.in_scope) > 0
+        else:
+            self.enabled = enabled
 
     def to_dict(self) -> dict:
         return {
@@ -128,18 +132,20 @@ class SessionManager:
         return self._proxy_engine
 
     async def _apply_proxy_config(self) -> None:
-        if not self._proxy_engine:
-            return
-        db_path = None
-        scope = None
-        if self._active_name and self._active_path:
-            db_path = str(self._active_path / "traffic.db")
-            if self.scope.enabled and self.scope.in_scope:
-                scope = list(self.scope.in_scope)
-        try:
-            await self._proxy_engine.restart(self.proxy_config, db_path=db_path, scope=scope)
-        except Exception as e:
-            logger.error(f"Error restarting proxy: {e}")
+        # Proxy no auto-start on session load. Debe iniciarse manual vía API.
+        # if not self._proxy_engine:
+        #     return
+        # db_path = None
+        # scope = None
+        # if self._active_name and self._active_path:
+        #     db_path = str(self._active_path / "traffic.db")
+        #     if self.scope.enabled and self.scope.in_scope:
+        #         scope = list(self.scope.in_scope)
+        # try:
+        #     await self._proxy_engine.restart(self.proxy_config, db_path=db_path, scope=scope)
+        # except Exception as e:
+        #     logger.error(f"Error restarting proxy: {e}")
+        pass
 
     @property
     def active_name(self) -> Optional[str]:

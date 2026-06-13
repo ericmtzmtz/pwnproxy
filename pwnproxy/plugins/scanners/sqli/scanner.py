@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator
 from typing import Callable, Optional
 
 from pwnproxy.shared.hooks import HookBus
@@ -10,6 +11,7 @@ from pwnproxy.plugins.scanners.sqli.replayer import SQLiReplayer
 from pwnproxy.plugins.scanners.sqli.storage import FindingStorage
 from pwnproxy.plugins.scanners.sqli.models import ScanFinding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.plugins.core.base import Finding
 from pwnproxy.shared.scan.stages.sqli_stages import (
     ErrorBasedStage,
     BooleanBlindStage,
@@ -125,7 +127,7 @@ class SQLiScanner:
                         continue
                     self._dedup.add(key)
                     self._flow_counter[fid] += 1
-                    task = asyncio.create_task(self._scan_point(point))
+                    task = asyncio.create_task(self._consume_scan_point(point))
                     self._scan_tasks.add(task)
                     task.add_done_callback(lambda t, fid=fid: self._on_scan_point_done(t, fid))
 
@@ -159,7 +161,7 @@ class SQLiScanner:
         self._flow_method.pop(flow_id, None)
         self._flow_findings_before.pop(flow_id, None)
 
-    async def _scan_point(self, point: InjectionPoint, depth: str = "fast", evasion_level: str = "none") -> None:
+    async def _scan_point(self, point: InjectionPoint, depth: str = "fast", evasion_level: str = "none") -> AsyncGenerator[Finding, None]:
         async with self._global_sem:
             await self._rate_limit_host(point.host)
 
@@ -183,6 +185,11 @@ class SQLiScanner:
             async for finding in chain.run(flow, [point]):
                 scan_finding = _finding_to_scan_finding(point, finding)
                 await self._save_finding(scan_finding)
+                yield finding
+
+    async def _consume_scan_point(self, point: InjectionPoint) -> None:
+        async for _ in self._scan_point(point):
+            pass
 
     async def _rate_limit_host(self, host: str) -> None:
         async with self._host_lock:
@@ -204,7 +211,8 @@ class SQLiScanner:
             self._on_finding(finding)
         finding_data = {k: v for k, v in finding.__dict__.items() if not k.startswith("_")}
         finding_data["scanner"] = "sqli"
-        self._hook_bus.publish("finding", finding_data)
+        if self._hook_bus:
+            self._hook_bus.publish("finding", finding_data)
 
 
 def _finding_to_scan_finding(point: InjectionPoint, finding: "Finding") -> ScanFinding:

@@ -128,15 +128,68 @@ The self-describing pattern enables:
 3. **Documentation** — API docs stay in sync with actual plugin capabilities
 4. **Validation** — Parameters are validated against schema before execution
 
-## Future: Premium Scanner Architecture
+## Scanner Pipeline
 
-Premium scanners (planned) will extend this pattern with:
-- Detection chain configuration (error → blind → OOB)
-- WAF evasion profiles
-- Context-aware payload selection
-- Callback server integration
+Every scanner follows this execution pipeline:
 
-All premium features will be exposed through the `parameters` schema, maintaining the self-describing contract.
+```
+ScannerPlugin.scan(flow, depth, evasion_level)
+  └─ extract_params(flow) → list[InjectionPoint]
+       └─ for each point: scanner._scan_point(point, depth, evasion_level)
+            └─ DetectionChain.run(flow, [point])
+                 └─ stages execute in order (error → boolean → time → OOB)
+                      └─ replayer.replay(point, payload) → check response
+```
+
+### _scan_point Contract
+
+All scanner `_scan_point` methods MUST follow this signature:
+
+```python
+async def _scan_point(self, point: InjectionPoint, depth: str = "fast", evasion_level: str = "none") -> AsyncGenerator[Finding, None]:
+```
+
+Returns an async generator yielding findings. Old-style scanners (returning None) still work via `PluginLoader` compatibility shim but should migrate to the async generator pattern.
+
+### InjectionPoint
+
+A single `InjectionPoint` type is used across the entire pipeline, defined in `shared/scan/params.py`:
+
+```python
+@dataclass
+class InjectionPoint:
+    name: str
+    value: str
+    location: str        # "query", "body", "cookie", "header"
+    flow_id: str
+    method: str
+    url: str
+    host: str
+    path: str
+    original_headers: dict[str, str]
+    original_body: Optional[str]
+
+    @property
+    def key(self) -> tuple:
+        return (self.method, self.host + self.path, self.name, self.location)
+```
+
+The `key` property is used by `DetectionChain` for deduplication across stages.
+
+### DetectionChain
+
+The chain framework (`plugins/core/chain.py`) orchestrates detection stages. Stages run in order; confirmed injection points are removed from subsequent stages.
+
+Stages import `InjectionPoint` from `shared/scan/params.py`, NOT from `plugins/core/chain.py`.
+
+### Adding a New Scanner
+
+1. Create scanner in `plugins/scanners/<name>/scanner.py` with `_scan_point(self, point, depth, evasion_level) -> AsyncGenerator[Finding, None]`
+2. Create plugin in `plugins/scanners/<name>/plugin.py` extending `ScannerPlugin`
+3. Wire DetectionChain stages in `_scan_point` for multi-technique detection
+4. Register in `apps/terminal/cli/scan.py:_build_scan_loader()`
+5. Register in `apps/terminal/cli/start.py` (production loader)
+6. Add tests matching existing scanner test patterns
 
 ## References
 

@@ -56,6 +56,8 @@ async def launch_scan(
     scanners: str = "",
     detection_depth: str = "fast",
     evasion_level: str = "none",
+    cookies: str = "",
+    headers: str = "",
 ):
     mgr = getattr(request.app.state, "session_manager", None)
     store = mgr.task_store if mgr and mgr.task_store else getattr(request.app.state, "task_store", None)
@@ -69,6 +71,14 @@ async def launch_scan(
         "detection_depth": detection_depth,
         "evasion_level": evasion_level,
     }
+    if cookies:
+        config["cookies"] = cookies
+    if headers:
+        import json
+        try:
+            config["headers"] = json.loads(headers)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="headers must be a valid JSON object")
     task_id = await store.create("scan", config, session_name=session_name)
 
     from pwnproxy.transport.rest.tasks import _launch_task_runner
@@ -96,7 +106,7 @@ async def poll_scan(scan_id: str, request: Request):
 
 @router.get("/export/{scan_id}")
 async def export_scan(scan_id: str, format: str = "json"):
-    from pwnproxy.services.export.engine import ExportEngine
+    from pwnproxy.services.findings.engine import ExportEngine
     from pwnproxy.plugins.core.base import Finding
 
     task = _scan_tasks.get(scan_id)

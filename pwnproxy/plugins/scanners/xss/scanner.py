@@ -167,7 +167,7 @@ class XSSScanner:
             if finding:
                 await self._save_finding(finding)
         finally:
-            self._rate_limiter.release(point.host)
+            await self._rate_limiter.release(point.host)
 
     async def _check_stored(self, flow: Flow) -> None:
         body = flow.response_body.decode("utf-8", "replace") if flow.response_body else ""
@@ -184,4 +184,5 @@ class XSSScanner:
             self._on_finding(finding)
         finding_data = {k: v for k, v in finding.__dict__.items() if not k.startswith("_")}
         finding_data["scanner"] = "xss"
-        self._hook_bus.publish("finding", finding_data)
+        if self._hook_bus:
+            self._hook_bus.publish("finding", finding_data)

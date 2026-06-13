@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { FlowTable } from "./FlowTable";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { listFlows, clearFlows } from "@/api/traffic/calls";
-import { getProxyStatus, toggleProxy } from "@/api/proxy/calls";
+import { getProxyStatus, startProxy, stopProxy, toggleProxy } from "@/api/proxy/calls";
 import type { FlowRecord } from "@/api/traffic/types";
 
 const API_BASE = import.meta.env.PUBLIC_API_BASE ?? "http://127.0.0.1:8000/api/v1";
@@ -14,6 +14,7 @@ export function ProxyPage() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [findingsMap, setFindingsMap] = useState<Record<number, number>>({});
   const [captureEnabled, setCaptureEnabled] = useState(true);
+  const [proxyRunning, setProxyRunning] = useState<boolean | null>(null);
   const [page, setPage] = useState(0);
   const [methodFilter, setMethodFilter] = useState("");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -53,6 +54,7 @@ export function ProxyPage() {
       }
       const status = await getProxyStatus();
       setCaptureEnabled(status.capture_enabled);
+      setProxyRunning(status.running);
     } catch { /* silent */ }
   }, []);
 
@@ -129,6 +131,17 @@ export function ProxyPage() {
     setPage(0);
   }, [methodFilter]);
 
+  useEffect(() => {
+    const t = setInterval(async () => {
+      try {
+        const status = await getProxyStatus();
+        setCaptureEnabled(status.capture_enabled);
+        setProxyRunning(status.running);
+      } catch { /* silent */ }
+    }, 5000);
+    return () => clearInterval(t);
+  }, []);
+
   const handleClear = async () => {
     try {
       await clearFlows();
@@ -181,6 +194,35 @@ export function ProxyPage() {
           >
             Clear
           </button>
+        </div>
+      </div>
+
+      <div class="mb-4 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-900 px-4 py-3">
+        <div class="flex items-center gap-3">
+          <span class="flex items-center gap-2 text-sm font-medium text-neutral-50">
+            <span class={`inline-flex h-2.5 w-2.5 rounded-full ${proxyRunning === null ? "bg-yellow-500" : proxyRunning ? "bg-success-500" : "bg-danger-500"}`} />
+            Proxy
+          </span>
+          <span class="text-sm text-neutral-400">
+            {proxyRunning === null ? "Checking..." : proxyRunning ? "Running on 127.0.0.1:8080" : "Stopped"}
+          </span>
+        </div>
+        <div class="flex items-center gap-2">
+          {proxyRunning ? (
+            <button
+              onClick={async () => { await stopProxy(); setProxyRunning(false); }}
+              class="cursor-pointer rounded-md border border-danger-800 bg-danger-900/20 px-3 py-1 text-xs font-medium text-danger-400 transition-colors hover:bg-danger-900/40"
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={async () => { const s = await startProxy(); setProxyRunning(s.running); }}
+              class="cursor-pointer rounded-md border border-success-800 bg-success-900/20 px-3 py-1 text-xs font-medium text-success-400 transition-colors hover:bg-success-900/40"
+            >
+              Start
+            </button>
+          )}
         </div>
       </div>
 

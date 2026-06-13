@@ -88,43 +88,9 @@ class TestSessionManagerApplyProxyConfig:
         return sm
 
     @pytest.mark.asyncio
-    async def test_restarts_with_db_path(self, manager):
+    async def test_does_not_auto_start_proxy(self, manager):
         await manager._apply_proxy_config()
-        manager._proxy_engine.restart.assert_awaited_once()
-        _, kwargs = manager._proxy_engine.restart.call_args
-        assert kwargs["db_path"].endswith("traffic.db")
-
-    @pytest.mark.asyncio
-    async def test_restarts_with_scope_when_enabled(self, manager):
-        manager.scope.enabled = True
-        manager.scope.in_scope = ["*://example.com/*"]
-        await manager._apply_proxy_config()
-        _, kwargs = manager._proxy_engine.restart.call_args
-        assert kwargs["scope"] == ["*://example.com/*"]
-
-    @pytest.mark.asyncio
-    async def test_no_scope_when_disabled(self, manager):
-        manager.scope.enabled = False
-        manager.scope.in_scope = ["*://example.com/*"]
-        await manager._apply_proxy_config()
-        _, kwargs = manager._proxy_engine.restart.call_args
-        assert kwargs["scope"] is None
-
-    @pytest.mark.asyncio
-    async def test_no_scope_when_empty(self, manager):
-        manager.scope.enabled = True
-        manager.scope.in_scope = []
-        await manager._apply_proxy_config()
-        _, kwargs = manager._proxy_engine.restart.call_args
-        assert kwargs["scope"] is None
-
-    @pytest.mark.asyncio
-    async def test_no_db_path_when_no_session(self, manager):
-        manager._active_name = None
-        manager._active_path = None
-        await manager._apply_proxy_config()
-        _, kwargs = manager._proxy_engine.restart.call_args
-        assert kwargs["db_path"] is None
+        manager._proxy_engine.restart.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_skips_when_no_proxy_engine(self, manager):

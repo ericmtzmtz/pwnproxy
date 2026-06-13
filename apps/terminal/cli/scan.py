@@ -94,13 +94,18 @@ async def _scan_target(
     timeout: int,
     detection_depth: str = "fast",
     evasion_level: str = "none",
+    extra_headers: Optional[dict[str, str]] = None,
 ) -> list[Finding]:
     console.print(f"[cyan]Scanning:[/cyan] {target}")
     start = time.monotonic()
 
+    headers = {"host": httpx.URL(target).host or ""}
+    if extra_headers:
+        headers.update(extra_headers)
+
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
         try:
-            resp = await client.get(target)
+            resp = await client.get(target, headers=headers)
         except Exception as e:
             console.print(f"[red]Request failed:[/red] {e}")
             raise
@@ -110,7 +115,7 @@ async def _scan_target(
         id=str(uuid.uuid4()),
         method="GET",
         url=target,
-        request_headers={"host": parsed.host or ""},
+        request_headers=headers,
         request_body=None,
         status_code=resp.status_code,
         response_headers=dict(resp.headers),

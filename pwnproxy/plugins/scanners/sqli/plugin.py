@@ -19,7 +19,6 @@ class SQLiScannerPlugin(ScannerPlugin):
         depth: str = "fast",
         evasion_level: str = "none",
     ) -> AsyncGenerator[Finding, None]:
-        old_count = self._scanner.finding_count
         points = extract_params(flow)
         seen = set()
         for point in points:
@@ -27,16 +26,5 @@ class SQLiScannerPlugin(ScannerPlugin):
             if key in seen:
                 continue
             seen.add(key)
-            await self._scanner._scan_point(point, depth=depth, evasion_level=evasion_level)
-        if self._scanner.finding_count > old_count:
-            yield Finding(
-                scanner="sqli",
-                url=flow.url,
-                method=flow.method,
-                param_name="",
-                param_location="",
-                technique="scanner",
-                severity="high",
-                confidence="confirmed",
-                payload="",
-            )
+            async for finding in self._scanner._scan_point(point, depth=depth, evasion_level=evasion_level):
+                yield finding

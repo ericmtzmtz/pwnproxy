@@ -199,4 +199,5 @@ class XXEScanner:
             self._on_finding(finding)
         finding_data = {k: v for k, v in finding.__dict__.items() if not k.startswith("_")}
         finding_data["scanner"] = "xxe"
-        self._hook_bus.publish("finding", finding_data)
+        if self._hook_bus:
+            self._hook_bus.publish("finding", finding_data)
