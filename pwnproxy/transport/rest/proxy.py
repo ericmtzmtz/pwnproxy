@@ -40,11 +40,22 @@ async def proxy_toggle(request: Request):
     return {"capture_enabled": sm.proxy_config.capture_enabled}
 
 
+def _build_proxy_params(sm):
+    db_path = None
+    scope = None
+    if sm.has_active_session:
+        db_path = str(sm.active_path / "traffic.db")
+        if sm.scope.enabled and sm.scope.in_scope:
+            scope = list(sm.scope.in_scope)
+    return db_path, scope
+
+
 @router.post("/proxy/start")
 async def proxy_start(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)
-    await proxy.start(sm.proxy_config)
+    db_path, scope = _build_proxy_params(sm)
+    await proxy.start(sm.proxy_config, db_path=db_path, scope=scope)
     return await proxy_status(request)
 
 
@@ -59,5 +70,6 @@ async def proxy_stop(request: Request):
 async def proxy_restart(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)
-    await proxy.restart(sm.proxy_config)
+    db_path, scope = _build_proxy_params(sm)
+    await proxy.restart(sm.proxy_config, db_path=db_path, scope=scope)
     return await proxy_status(request)

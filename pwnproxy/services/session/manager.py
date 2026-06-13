@@ -130,10 +130,16 @@ class SessionManager:
     async def _apply_proxy_config(self) -> None:
         if not self._proxy_engine:
             return
+        db_path = None
+        scope = None
+        if self._active_name and self._active_path:
+            db_path = str(self._active_path / "traffic.db")
+            if self.scope.enabled and self.scope.in_scope:
+                scope = list(self.scope.in_scope)
         try:
-            await self._proxy_engine.stop()
+            await self._proxy_engine.restart(self.proxy_config, db_path=db_path, scope=scope)
         except Exception as e:
-            logger.error(f"Error stopping proxy: {e}")
+            logger.error(f"Error restarting proxy: {e}")
 
     @property
     def active_name(self) -> Optional[str]:

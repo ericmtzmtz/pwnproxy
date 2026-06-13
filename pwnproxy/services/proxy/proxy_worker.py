@@ -30,7 +30,9 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--scope-pattern", action="append", default=[])
     p.add_argument("--scope-enabled", action="store_true", default=False)
     p.add_argument("--confdir", default="~/.mitmproxy")
-    return p.parse_args()
+    args = p.parse_args()
+    logging.info(f"Worker started with: db_path={args.db_path}, scope_enabled={args.scope_enabled}, scope_patterns={args.scope_pattern}")
+    return args
 
 
 class EventServer:
@@ -122,8 +124,8 @@ class ProxyWorker:
 
         self._master.addons.add(WorkerHookRelay(_publish))
         if self._args.db_path:
-            from sqlalchemy import create_engine
-            engine = create_engine(f"sqlite:///{self._args.db_path}")
+            from sqlalchemy.ext.asyncio import create_async_engine
+            engine = create_async_engine(f"sqlite+aiosqlite:///{self._args.db_path}")
             self._master.addons.add(StorageAddon(
                 db_engine=engine,
                 scope_filter=self._scope_check,
@@ -134,12 +136,12 @@ class ProxyWorker:
         self._running = True
         self._task = asyncio.create_task(self._run_master())
 
-    def _scope_check(self, url: str) -> bool:
+    def _scope_check(self, flow: "Flow") -> bool:
         if not self._args.scope_enabled or not self._args.scope_pattern:
             return True
         from fnmatch import fnmatch
         for pattern in self._args.scope_pattern:
-            if fnmatch(url, pattern):
+            if fnmatch(flow.url, pattern):
                 return True
         return False
 

@@ -22,6 +22,23 @@ class Flow:
     request_body_truncated: bool = False
     response_body_truncated: bool = False
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "method": self.method,
+            "url": self.url,
+            "request_headers": self.request_headers,
+            "request_body": self.request_body.decode("utf-8", errors="replace") if self.request_body else None,
+            "request_body_truncated": self.request_body_truncated,
+            "status_code": self.status_code,
+            "response_headers": self.response_headers,
+            "response_body": self.response_body.decode("utf-8", errors="replace") if self.response_body else None,
+            "response_body_truncated": self.response_body_truncated,
+            "duration_ms": self.duration_ms,
+            "error": self.error,
+            "tls": self.tls,
+        }
+
     @classmethod
     def from_mitmproxy(cls, mflow) -> "Flow":
         """Convert a mitmproxy flow into a pwnproxy Flow."""

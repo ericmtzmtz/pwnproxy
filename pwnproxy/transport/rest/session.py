@@ -99,6 +99,9 @@ async def update_scope(request: Request):
     body = await request.json()
     manager = request.app.state.session_manager
     from pwnproxy.services.session.manager import ScopeConfig
+    if "patterns" in body:
+        body["in_scope"] = body.pop("patterns")
     manager.scope = ScopeConfig(body)
     manager.mark_unsaved()
+    await manager._apply_proxy_config()
     return {"status": "ok", "message": "Scope updated"}
