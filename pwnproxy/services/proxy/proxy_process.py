@@ -1,5 +1,7 @@
-import aiohttp
+
 import asyncio
+from typing import Optional, Callable, Any
+from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient
 import logging
 import sys
 from typing import Optional
@@ -15,15 +17,29 @@ class ProxyProcess:
     def __init__(self):
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._event_port: int = 0
-        self._event_reader: Optional[asyncio.Task] = None
+        self._bridge: Optional[TcpBridgeClient] = None
         self._stderr_reader: Optional[asyncio.Task] = None
         self._ready = asyncio.Event()
+        self._on_event: Optional[Callable[[str, Any], None]] = None
 
     @property
     def running(self) -> bool:
         return self._proc is not None and self._proc.returncode is None
 
+    def set_event_callback(self, callback: Callable[[str, Any], None]) -> None:
+        """Register a callback to receive events from the worker.
+
+        The callback receives the event name and the payload object.
+        """
+        self._on_event = callback
+
     async def start(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None) -> None:
+        """Start the proxy subprocess and event bridge.
+
+        The caller can set an event callback via ``set_event_callback`` before
+        calling ``start``. The ``TcpBridgeClient`` will forward any event payload
+        received from the worker to that callback.
+        """
         await self.stop()
 
         args = [
@@ -58,7 +74,13 @@ class ProxyProcess:
         self._event_port = int(raw.split("=")[1])
         logger.info(f"Worker event port: {self._event_port}")
 
-        self._event_reader = asyncio.create_task(self._read_events())
+        # Initialize TCP bridge client for event forwarding
+        self._bridge = TcpBridgeClient(
+            host="127.0.0.1",
+            port=self._event_port,
+            on_event=self._on_event,
+        )
+        await self._bridge.start()
         self._stderr_reader = asyncio.create_task(self._read_stderr())
 
     async def _read_stderr(self) -> None:
@@ -73,24 +95,12 @@ class ProxyProcess:
         except Exception as e:
             logger.debug(f"Stderr reader stopped: {e}")
 
-    async def _read_events(self) -> None:
-        try:
-            _, writer = await asyncio.wait_for(
-                asyncio.open_connection("127.0.0.1", self._event_port),
-                timeout=5,
-            )
-            async with aiohttp.ClientSession() as session:
-                while self.running:
-                    await asyncio.sleep(0.1)
-                    writer.write(b"\n")
-                    await writer.drain()
-        except (ConnectionRefusedError, asyncio.TimeoutError, Exception) as e:
-            logger.warning(f"Event connection failed: {e}")
 
     async def stop(self) -> None:
-        if self._event_reader:
-            self._event_reader.cancel()
-            self._event_reader = None
+        # Stop TCP bridge if active
+        if self._bridge:
+            await self._bridge.stop()
+            self._bridge = None
         if self._stderr_reader:
             self._stderr_reader.cancel()
             self._stderr_reader = None

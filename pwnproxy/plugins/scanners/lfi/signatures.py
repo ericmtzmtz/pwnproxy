@@ -32,31 +32,30 @@ LFI_SIGNATURES: dict[str, list[re.Pattern]] = {
 }
 
 
+class OsSignatureMatcher:
+    """Matches OS type from LFI payload evidence in response body."""
+
+    def match(self, body: str, min_matches: int = 2) -> tuple[Optional[str], Optional[str]]:
+        best_os = None
+        best_evidence = None
+        best_count = 0
+
+        for os_type, patterns in LFI_SIGNATURES.items():
+            matches = []
+            for pat in patterns:
+                m = pat.search(body)
+                if m:
+                    matches.append(m.group())
+            if len(matches) >= min_matches and len(matches) > best_count:
+                best_os = os_type
+                best_evidence = matches[0]
+                best_count = len(matches)
+
+        if best_os and best_count >= min_matches:
+            return best_os, best_evidence
+        return None, None
+
+
 def detect_os(body: str, min_matches: int = 1) -> tuple[Optional[str], Optional[str]]:
-    """Detect OS from LFI payload evidence in response body.
-    
-    Args:
-        body: Response body text
-        min_matches: Minimum number of distinct signature matches for confirmation
-        
-    Returns:
-        Tuple of (os_type, evidence) or (None, None)
-    """
-    best_os = None
-    best_evidence = None
-    best_count = 0
-    
-    for os_type, patterns in LFI_SIGNATURES.items():
-        matches = []
-        for pat in patterns:
-            m = pat.search(body)
-            if m:
-                matches.append(m.group())
-        if len(matches) >= min_matches and len(matches) > best_count:
-            best_os = os_type
-            best_evidence = matches[0]
-            best_count = len(matches)
-    
-    if best_os and best_count >= min_matches:
-        return best_os, best_evidence
-    return None, None
+    """Legacy wrapper — prefer OsSignatureMatcher.match()."""
+    return OsSignatureMatcher().match(body, min_matches)

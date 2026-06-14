@@ -1,3 +1,4 @@
+import re
 import logging
 import time
 from typing import Optional
@@ -17,24 +18,24 @@ logger = logging.getLogger(__name__)
 class ErrorBasedStage(DetectionStage):
     order = 0
     min_depth = DetectionDepth.FAST
+    capability = "error-based-sqli"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, signatures: dict[str, list[re.Pattern]], error_payloads: list, evasion_level: str = "none"):
         self._replayer = replayer
+        self._signatures = signatures
+        self._error_payloads = error_payloads
         self._evasion = evasion_level
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
-        from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads
-        from pwnproxy.plugins.scanners.sqli.detector import ERROR_SIGNATURES
-
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
         for point in injection_points:
-            for payload in get_error_payloads():
+            for payload in self._error_payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0, evasion_level=self._evasion)
                 if resp is None:
                     continue
-                result = _check_error_signatures(resp.text, ERROR_SIGNATURES)
+                result = _check_error_signatures(resp.text, self._signatures)
                 if result is not None:
                     dbms, evidence = result
                     findings.append(Finding(
@@ -59,6 +60,7 @@ class ErrorBasedStage(DetectionStage):
 class BooleanBlindStage(DetectionStage):
     order = 1
     min_depth = DetectionDepth.STANDARD
+    capability = "boolean-blind-sqli"
 
     def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
         self._replayer = replayer
@@ -117,14 +119,14 @@ class BooleanBlindStage(DetectionStage):
 class TimeBlindStage(DetectionStage):
     order = 2
     min_depth = DetectionDepth.STANDARD
+    capability = "time-based-sqli"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, time_payloads: list, evasion_level: str = "none"):
         self._replayer = replayer
+        self._time_payloads = time_payloads
         self._evasion = evasion_level
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
-        from pwnproxy.plugins.scanners.sqli.payloads import TIME_PAYLOADS
-
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
@@ -135,7 +137,7 @@ class TimeBlindStage(DetectionStage):
             if clean is None:
                 continue
 
-            result = await _check_time_based(self._replayer, point, baseline_ms, TIME_PAYLOADS, self._evasion)
+            result = await _check_time_based(self._replayer, point, baseline_ms, self._time_payloads, self._evasion)
             if result is not None:
                 finding, dbms = result
                 finding.extra["dbms"] = dbms
@@ -148,6 +150,7 @@ class TimeBlindStage(DetectionStage):
 class OOBStage(DetectionStage):
     order = 3
     min_depth = DetectionDepth.DEEP
+    capability = "oob-sqli"
 
     def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
         self._replayer = replayer

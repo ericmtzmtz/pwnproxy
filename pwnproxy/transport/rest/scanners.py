@@ -13,13 +13,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["scanners"])
 
-VALID_SCANNERS: Dict[str, str] = {
-    "sqli": "scan_findings",
-    "xss": "xss_findings",
-    "lfi": "lfi_findings",
-    "xxe": "xxe_findings",
-    "ssrf": "ssrf_findings",
-}
+VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
 
 
 class TriggerRequest(BaseModel):
@@ -54,7 +48,7 @@ async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
         response_headers=body.response_headers,
         response_body=body.response_body.encode("utf-8") if body.response_body else None,
     )
-    hook_bus.publish("done", f)
+    hook_bus.publish("flow", f)
     return {"status": "scanning", "flow_id": body.id}
 
 
@@ -76,7 +70,7 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
     if unknown:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown scanner(s): {unknown}. Available: {list(VALID_SCANNERS.keys())}",
+            detail=f"Unknown scanner(s): {unknown}. Available: {VALID_SCANNERS}",
         )
 
     hook_bus = request.app.state.hook_bus
@@ -92,7 +86,7 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
             response_headers=flow.response_headers or {},
             response_body=flow.response_body,
         )
-        hook_bus.publish("done", f)
+        hook_bus.publish("flow", f)
 
     return {"status": "triggered", "flow_id": body.flow_id}
 

@@ -1,24 +1,45 @@
 from collections.abc import AsyncGenerator
 
 from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.base import Finding, ScannerPlugin
+from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
+from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.shared.scan.stages.sqli_stages import (
+    ErrorBasedStage,
+    BooleanBlindStage,
+    TimeBlindStage,
+    OOBStage,
+)
+from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
+from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads, TIME_PAYLOADS
+from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
 
 
 class SQLiScannerPlugin(ScannerPlugin):
-    name = "sqli"
-    version = "0.2.0"
-    author = "pwnproxy"
+    metadata = PluginMetadata(
+        name="sqli",
+        version="0.3.0",
+        author="pwnproxy",
+        consumes=["flow"],
+        produces=["finding"],
+    )
+    techniques = ["error-based", "boolean-blind", "time-based", "oob"]
+    capabilities = ["sql-injection", "blind-sqli"]
 
-    def __init__(self, scanner):
-        self._scanner = scanner
+    async def on_load(self) -> None:
+        depth = self.context.config.get("depth", "fast")
+        evasion_level = self.context.config.get("evasion_level", "none")
+        self._replayer = RequestReplayer()
+        chain = DetectionChain([
+            ErrorBasedStage(self._replayer, ERROR_SIGNATURES, get_error_payloads(), evasion_level),
+            BooleanBlindStage(self._replayer, evasion_level),
+            TimeBlindStage(self._replayer, TIME_PAYLOADS, evasion_level),
+            OOBStage(self._replayer, evasion_level),
+        ], DetectionDepth(depth))
+        self._scanner = SQLiScanner(chain)
 
-    async def scan(
-        self,
-        flow: Flow,
-        depth: str = "fast",
-        evasion_level: str = "none",
-    ) -> AsyncGenerator[Finding, None]:
+    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
         points = extract_params(flow)
         seen = set()
         for point in points:
@@ -26,5 +47,8 @@ class SQLiScannerPlugin(ScannerPlugin):
             if key in seen:
                 continue
             seen.add(key)
-            async for finding in self._scanner._scan_point(point, depth=depth, evasion_level=evasion_level):
+            async for finding in self._scanner._scan_point(point):
                 yield finding
+
+    async def on_unload(self) -> None:
+        await self._replayer.close()

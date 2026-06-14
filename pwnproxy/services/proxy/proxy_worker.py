@@ -8,12 +8,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from aiohttp import web
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
 
-from pwnproxy.services.proxy.addons.hook_relay import HookRelayAddon
 from pwnproxy.services.proxy.addons.storage import StorageAddon
+from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer
 from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger("proxy_worker")
@@ -31,53 +30,10 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--scope-enabled", action="store_true", default=False)
     p.add_argument("--confdir", default="~/.mitmproxy")
     args = p.parse_args()
-    logging.info(f"Worker started with: db_path={args.db_path}, scope_enabled={args.scope_enabled}, scope_patterns={args.scope_pattern}")
+    logging.info(
+        f"Worker started with: db_path={args.db_path}, scope_enabled={args.scope_enabled}, scope_patterns={args.scope_pattern}"
+    )
     return args
-
-
-class EventServer:
-    """Local TCP server that receives events from addons and forwards to the API."""
-
-    def __init__(self):
-        self._runner: Optional[web.AppRunner] = None
-        self._site: Optional[web.TCPSite] = None
-        self._port: int = 0
-        self._event_queue: asyncio.Queue = asyncio.Queue()
-        self._api_connected = asyncio.Event()
-
-    @property
-    def port(self) -> int:
-        return self._port
-
-    async def start(self) -> None:
-        app = web.Application()
-        app.router.add_post("/event", self._handle_event)
-        self._runner = web.AppRunner(app)
-        await self._runner.setup()
-        self._site = web.TCPSite(self._runner, "127.0.0.1", 0)
-        await self._site.start()
-        _, self._port = self._site._server.sockets[0].getsockname()
-        logger.info(f"Event server listening on port {self._port}")
-
-    async def stop(self) -> None:
-        if self._runner:
-            await self._runner.cleanup()
-
-    async def _handle_event(self, request: web.Request) -> web.Response:
-        body = await request.json()
-        await self._event_queue.put(body)
-        return web.Response(status=200)
-
-    async def forward_events(self, writer: asyncio.StreamWriter) -> None:
-        while True:
-            event = await self._event_queue.get()
-            line = json.dumps(event) + "\n"
-            writer.write(line.encode())
-            try:
-                await writer.drain()
-            except ConnectionResetError:
-                logger.warning("API connection lost")
-                break
 
 
 class ProxyWorker:
@@ -87,12 +43,13 @@ class ProxyWorker:
         self._args = args
         self._master: Optional[DumpMaster] = None
         self._task: Optional[asyncio.Task] = None
-        self._event_server = EventServer()
+        self._bridge = TcpBridgeServer()
         self._running = False
 
     async def start(self) -> None:
-        await self._event_server.start()
-        print(f"EVENT_PORT={self._event_server.port}", flush=True)
+        # Start TCP bridge server
+        await self._bridge.start()
+        print(f"EVENT_PORT={self._bridge.port}", flush=True)
 
         opts = Options(
             listen_host=self._args.listen_host,
@@ -104,35 +61,39 @@ class ProxyWorker:
         import os as _os
         opts.update(confdir=_os.path.expanduser(self._args.confdir))
 
-        def _publish(event_type: str, flow: Flow) -> None:
-            payload = {"type": event_type, "data": flow.to_dict()}
-            asyncio.create_task(self._post_event(payload))
+        class BridgeRelay:
+            def __init__(self, bridge: TcpBridgeServer):
+                self._bridge = bridge
 
-        from pwnproxy.services.proxy.addons.hook_relay import HookRelayAddon
-
-        class WorkerHookRelay:
-            def __init__(self, publish_fn):
-                self._publish = publish_fn
             def request(self, f):
-                self._publish("request", Flow.from_mitmproxy(f))
-            def response(self, f):
-                f = Flow.from_mitmproxy(f)
-                self._publish("response", f)
-                self._publish("done", f)
-            def error(self, f):
-                self._publish("error", Flow.from_mitmproxy(f))
+                flow = Flow.from_mitmproxy(f)
+                asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
-        self._master.addons.add(WorkerHookRelay(_publish))
+            def response(self, f):
+                flow = Flow.from_mitmproxy(f)
+                asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
+
+            def error(self, f):
+                flow = Flow.from_mitmproxy(f)
+                asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
+
+        self._master.addons.add(BridgeRelay(self._bridge))
+
         if self._args.db_path:
             from sqlalchemy.ext.asyncio import create_async_engine
-            engine = create_async_engine(f"sqlite+aiosqlite:///{self._args.db_path}")
-            self._master.addons.add(StorageAddon(
-                db_engine=engine,
-                scope_filter=self._scope_check,
-                capture_enabled_fn=lambda: self._args.capture_enabled,
-            ))
 
-        logger.info(f"Starting proxy on {self._args.listen_host}:{self._args.listen_port}")
+            engine = create_async_engine(f"sqlite+aiosqlite:///{self._args.db_path}")
+            self._master.addons.add(
+                StorageAddon(
+                    db_engine=engine,
+                    scope_filter=self._scope_check,
+                    capture_enabled_fn=lambda: self._args.capture_enabled,
+                )
+            )
+
+        logger.info(
+            f"Starting proxy on {self._args.listen_host}:{self._args.listen_port}"
+        )
         self._running = True
         self._task = asyncio.create_task(self._run_master())
 
@@ -144,17 +105,6 @@ class ProxyWorker:
             if fnmatch(flow.url, pattern):
                 return True
         return False
-
-    async def _post_event(self, payload: dict) -> None:
-        try:
-            async with aiohttp.ClientSession() as session:
-                await session.post(
-                    f"http://127.0.0.1:{self._event_server.port}/event",
-                    json=payload,
-                    timeout=aiohttp.ClientTimeout(total=1),
-                )
-        except Exception:
-            pass
 
     async def _run_master(self) -> None:
         try:
@@ -173,7 +123,7 @@ class ProxyWorker:
                 await self._task
             except (asyncio.CancelledError, Exception):
                 pass
-        await self._event_server.stop()
+        await self._bridge.stop()
 
 
 async def main():

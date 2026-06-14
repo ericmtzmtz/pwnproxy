@@ -392,6 +392,9 @@ class SessionManager:
         new_scanner = create_async_engine(scanner_url, echo=False)
         await self._scanner_engine.dispose()
         self._scanner_engine = new_scanner
+        from pwnproxy.shared.findings.storage import FindingORM
+        async with new_scanner.begin() as conn:
+            await conn.run_sync(FindingORM.metadata.create_all)
 
         tokens_db = session_path / "tokens.db"
         await self._token_storage.repoint(str(tokens_db.absolute()))

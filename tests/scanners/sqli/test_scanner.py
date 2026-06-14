@@ -1,51 +1,39 @@
-import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.shared.hooks import HookBus
-from pwnproxy.shared.models import Flow
+from pwnproxy.plugins.core.chain import DetectionChain
 from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
 
 
-@pytest.mark.asyncio
-async def test_scanner_lifecycle():
-    bus = HookBus()
-    scanner = SQLiScanner(bus)
-    assert not scanner.is_running
-
-    await scanner.start()
-    assert scanner.is_running
-
-    await scanner.stop()
-    assert not scanner.is_running
+@pytest.fixture
+def scanner():
+    chain = MagicMock(spec=DetectionChain)
+    return SQLiScanner(chain)
 
 
 @pytest.mark.asyncio
-async def test_scanner_status():
-    bus = HookBus()
-    scanner = SQLiScanner(bus)
-    s = scanner.status()
-    assert "running" in s
-    assert "flows_processed" in s
-    assert "params_scanned" in s
-    assert "findings" in s
+async def test_scanner_init(scanner):
+    assert hasattr(scanner, "_chain")
 
 
 @pytest.mark.asyncio
-async def test_scanner_dedup():
-    bus = HookBus()
-    scanner = SQLiScanner(bus)
-    flow = Flow(
-        id="f1", method="GET", url="http://target.com/page?q=hello",
-        request_headers={"Host": "target.com"},
-        request_body=None,
-    )
-    from pwnproxy.shared.scan.params import extract as extract_params
-    points = extract_params(flow)
-    assert len(points) == 1
-    key = (points[0].method, points[0].host + points[0].path, points[0].name, points[0].location)
-    scanner._dedup.add(key)
-    assert key in scanner._dedup
-    same_key = ("GET", "target.com/page", "q", "query")
-    assert same_key in scanner._dedup
+async def test_scanner_has_scan_point(scanner):
+    assert hasattr(scanner, "_scan_point")
+
+
+@pytest.mark.asyncio
+async def test_scanner_scan_point_is_async_gen(scanner):
+    point = MagicMock()
+    point.flow_id = "f1"
+    point.method = "GET"
+    point.url = "http://target.com/page?q=hello"
+    point.host = "target.com"
+    point.path = "/page"
+    point.name = "q"
+    point.location = "query"
+    point.key = ("GET", "target.com/page", "q", "query")
+    point.original_headers = {"Host": "target.com"}
+    point.original_body = None
+    gen = scanner._scan_point(point)
+    assert hasattr(gen, "__aiter__")

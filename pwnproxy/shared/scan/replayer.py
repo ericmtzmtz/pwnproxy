@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
@@ -13,7 +14,57 @@ logger = logging.getLogger(__name__)
 
 class RequestReplayer:
     def __init__(self):
-        self._client = httpx.AsyncClient(verify=False, follow_redirects=False)
+        self._client = httpx.AsyncClient(verify=False, follow_redirects=False, timeout=httpx.Timeout(30.0))
+        self._global_semaphore = asyncio.Semaphore(5)
+        self._host_semaphores: dict[str, asyncio.Semaphore] = {}
+        self._host_lock = asyncio.Lock()
+
+    def _build_request(
+        self,
+        point: InjectionPoint,
+        payload: str,
+        evasion_level: str = "none",
+    ) -> httpx.Request:
+        """Build an HTTP request with the payload injected.
+
+        Protected hook — subclasses override this for specialised mutation
+        (e.g. ``XxeReplayer`` mutates the XML body instead of parameters).
+
+        Base implementation: inject *payload* as the parameter value using
+        ``point.inject()``, then build the request with ``build_request()``.
+        """
+        method = point.method.upper()
+        headers = dict(point.original_headers)
+        evaded = apply_evasion(payload, EvasionLevel(evasion_level) if isinstance(evasion_level, str) else evasion_level)
+        if point.location == "query":
+            url = _inject_query(point.url, point.name, evaded)
+            body = point.original_body.encode() if point.original_body else None
+            if body and "content-type" in headers:
+                pass
+            elif body:
+                headers.pop("content-length", None)
+            return httpx.Request(method, url, headers=headers, content=body)
+        elif point.location == "body":
+            ct = headers.get("content-type", "").lower()
+            if "application/x-www-form-urlencoded" in ct:
+                body = _inject_form_body(point.original_body or "", point.name, evaded)
+            elif "application/json" in ct:
+                body = _inject_json_body(point.original_body or "", point.name, evaded)
+            else:
+                body = point.original_body.encode() if point.original_body else None
+            headers.pop("content-length", None)
+            return httpx.Request(method, point.url, headers=headers, content=body)
+        elif point.location == "cookie":
+            cookies = _inject_cookie(headers.get("cookie", ""), point.name, evaded)
+            headers["cookie"] = cookies
+            body = point.original_body.encode() if point.original_body else None
+            return httpx.Request(method, point.url, headers=headers, content=body)
+        elif point.location == "header":
+            headers[point.name] = evaded
+            body = point.original_body.encode() if point.original_body else None
+            return httpx.Request(method, point.url, headers=headers, content=body)
+        else:
+            raise ValueError(f"Unsupported injection location: {point.location}")
 
     async def replay(
         self,
@@ -22,50 +73,17 @@ class RequestReplayer:
         timeout: float = 5.0,
         evasion_level: str | EvasionLevel = EvasionLevel.NONE,
     ) -> Optional[httpx.Response]:
-        method = point.method.upper()
-        headers = dict(point.original_headers)
-        evaded = apply_evasion(payload, EvasionLevel(evasion_level) if isinstance(evasion_level, str) else evasion_level)
+        """Send the request with the injection payload.
 
-        try:
-            if point.location == "query":
-                url = _inject_query(point.url, point.name, evaded)
-                body = point.original_body.encode() if point.original_body else None
-                if body and "content-type" in headers:
-                    pass
-                elif body:
-                    headers.pop("content-length", None)
-                return await self._client.request(method, url, headers=headers, content=body, timeout=timeout)
-
-            elif point.location == "body":
-                ct = headers.get("content-type", "").lower()
-                if "application/x-www-form-urlencoded" in ct:
-                    body = _inject_form_body(point.original_body or "", point.name, evaded)
-                elif "application/json" in ct:
-                    body = _inject_json_body(point.original_body or "", point.name, evaded)
-                else:
-                    body = point.original_body.encode() if point.original_body else None
-                headers.pop("content-length", None)
-                return await self._client.request(method, point.url, headers=headers, content=body, timeout=timeout)
-
-            elif point.location == "cookie":
-                cookies = _inject_cookie(headers.get("cookie", ""), point.name, evaded)
-                headers["cookie"] = cookies
-                body = point.original_body.encode() if point.original_body else None
-                return await self._client.request(method, point.url, headers=headers, content=body, timeout=timeout)
-
-            elif point.location == "header":
-                headers[point.name] = evaded
-                body = point.original_body.encode() if point.original_body else None
-                return await self._client.request(method, point.url, headers=headers, content=body, timeout=timeout)
-
-        except httpx.TimeoutException:
-            logger.debug(f"Timeout for {point.url} ({point.name}={payload})")
-            return None
-        except Exception as e:
-            logger.warning(f"Replay failed for {point.url}: {e}")
-            return None
-
-        return None
+        Uses ``self._build_request()`` so subclasses can override
+        request construction without touching the send logic.
+        """
+        return await self._send(
+            point,
+            payload,
+            timeout=timeout,
+            evasion_level=evasion_level,
+        )
 
     async def send_clean(self, point: InjectionPoint, timeout: float = 10.0) -> Optional[httpx.Response]:
         headers = dict(point.original_headers)
@@ -78,6 +96,28 @@ class RequestReplayer:
         except Exception as e:
             logger.debug(f"Clean request failed: {e}")
             return None
+
+    async def _send(
+        self,
+        point: InjectionPoint,
+        payload: str,
+        timeout: float,
+        evasion_level: str = "none",
+    ) -> Optional[httpx.Response]:
+        """Build and send the request with rate limiting, returning response or None on failure."""
+        async with self._global_semaphore:
+            async with self._host_lock:
+                if point.host not in self._host_semaphores:
+                    self._host_semaphores[point.host] = asyncio.Semaphore(2)
+            async with self._host_semaphores[point.host]:
+                await asyncio.sleep(0.1)  # inter-request delay
+                try:
+                    request = self._build_request(point, payload, evasion_level)
+                    resp = await self._client.send(request)
+                    return resp
+                except Exception as exc:
+                    logger.debug("Replayer error for %s: %s", point.key, exc)
+                    return None
 
     async def close(self) -> None:
         await self._client.aclose()

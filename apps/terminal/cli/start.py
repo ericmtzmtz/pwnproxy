@@ -14,6 +14,7 @@ from apps.api.server import start_api_server
 from pwnproxy.shared.db import create_engine as create_traffic_engine, init_db
 from pwnproxy.services.proxy.proxy_process import ProxyProcess
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.bus.transports.inprocess import InProcessBus
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -125,6 +126,16 @@ def start(
                 force=True,
             )
         hook_bus = HookBus()
+        bus = InProcessBus()
+
+        def _on_proxy_event(topic: str, data: dict) -> None:
+            """Bridge events from proxy worker to HookBus (PluginLoader consumers)."""
+            if topic == "proxy.flow":
+                from pwnproxy.shared.models import Flow
+                flow = Flow.from_dict(data)
+                hook_bus.publish("flow", flow)
+            else:
+                hook_bus.publish(topic, data)
 
         traffic_engine = create_traffic_engine()
         await init_db(traffic_engine)
@@ -150,6 +161,7 @@ def start(
         scope_check = lambda flow: session_manager.scope.is_in_scope(flow.url)
         proxy = ProxyProcess()
         session_manager.set_proxy_engine(proxy)
+        proxy.set_event_callback(_on_proxy_event)
 
         # ── Interceptor controller (must be created before session ops) ──
         from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
@@ -178,7 +190,6 @@ def start(
                 await session_manager._point_engines(session_manager._active_path)
             else:
                 await session_manager.start()
-
         if session_name:
             await session_manager.create(session_name)
         elif session:
@@ -205,63 +216,22 @@ def start(
                 console.print(f"[yellow]Supported schemes: {', '.join(valid_schemes)}[/]")
                 raise typer.Exit(1)
 
-        from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
-        from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
-        from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
-        from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
-        from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
-        from pwnproxy.plugins.scanners.sqli.storage import FindingStorage as SqliStorage
-        from pwnproxy.plugins.scanners.xss.storage import XssFindingStorage as XssStorage
-        from pwnproxy.plugins.scanners.lfi.storage import LfiFindingStorage as LfiStorage
-        from pwnproxy.plugins.scanners.xxe.storage import XxeFindingStorage as XxeStorage
-        from pwnproxy.plugins.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
-        from pwnproxy.services.scan.scan_log_store import ScanLogStore
-        from pwnproxy.services.scan.manager import ScanManager
         from pwnproxy.plugins.core.loader import PluginLoader
         from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
         from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
         from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
         from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
         from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
-        session_path = session_manager._active_path
-        scanner_db = str(session_path / "scanner_results.db")
-        scan_log_store = ScanLogStore(db_path=scanner_db)
-        await scan_log_store.create_table()
-        def _headless_on_finding(finding):
-            if not tui:
-                print(json.dumps({
-                    "type": "finding",
-                    "scanner": finding.__class__.__name__,
-                    "url": getattr(finding, "url", ""),
-                    "severity": getattr(finding, "severity", ""),
-                }))
-
-        sqli = SQLiScanner(hook_bus, storage=SqliStorage(db_path=scanner_db), on_finding=_headless_on_finding)
-        xss = XSSScanner(hook_bus, storage=XssStorage(db_path=scanner_db), on_finding=_headless_on_finding)
-        lfi = LFIScanner(hook_bus, storage=LfiStorage(db_path=scanner_db), on_finding=_headless_on_finding)
-        xxe = XXEScanner(hook_bus, storage=XxeStorage(db_path=scanner_db), on_finding=_headless_on_finding)
-        ssrf = SSRFScanner(hook_bus, storage=SsrfStorage(db_path=scanner_db), on_finding=_headless_on_finding)
-        ssrf.configure(listen_port=callback_port)
-        plugin_loader = PluginLoader()
-        await plugin_loader.load_builtin(SQLiScannerPlugin(sqli))
-        await plugin_loader.load_builtin(XSSScannerPlugin(xss))
-        await plugin_loader.load_builtin(LFIScannerPlugin(lfi))
-        await plugin_loader.load_builtin(XXEScannerPlugin(xxe))
-        await plugin_loader.load_builtin(SSRFScannerPlugin(ssrf))
+        plugin_loader = PluginLoader(hook_bus=hook_bus)
+        await plugin_loader.load_builtin(SQLiScannerPlugin())
+        await plugin_loader.load_builtin(XSSScannerPlugin())
+        await plugin_loader.load_builtin(LFIScannerPlugin())
+        await plugin_loader.load_builtin(XXEScannerPlugin())
+        await plugin_loader.load_builtin(SSRFScannerPlugin())
         session_manager.set_module_providers(plugin_loader=plugin_loader)
-        scan_manager = ScanManager(
-            sqli=sqli,
-            xss=xss,
-            lfi=lfi,
-            xxe=xxe,
-            ssrf=ssrf,
-            loader=plugin_loader,
-            scan_log_store=scan_log_store,
-        )
-        await scan_manager.start_all()
-
-        # TODO: wire interceptor via IPC once proxy runs as subprocess
-        # await proxy.register_addon(intercept_addon)
+        # Wire PluginLoader with SessionManager and start it
+        plugin_loader._session_manager = session_manager
+        await plugin_loader.start()
 
         api_task = await start_api_server(
             hook_bus=hook_bus,
@@ -340,7 +310,7 @@ def start(
         console.print("\n[bold yellow]Shutting down...[/]")
         await proxy.stop()
         interceptor_controller.stop()
-        await scan_manager.dispose()
+        await plugin_loader.shutdown()
         await session_consumer.stop()
         await session_manager.stop()
         api_task.cancel()

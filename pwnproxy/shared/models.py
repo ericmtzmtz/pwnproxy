@@ -10,7 +10,7 @@ class Flow:
     method: str
     url: str
     request_headers: Dict[str, str]
-    request_body: Optional[bytes]
+    request_body: Optional[bytes] = None
     
     status_code: Optional[int] = None
     response_headers: Optional[Dict[str, str]] = None
@@ -38,6 +38,24 @@ class Flow:
             "error": self.error,
             "tls": self.tls,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Flow":
+        return cls(
+            id=d.get("id", ""),
+            method=d.get("method", "GET"),
+            url=d.get("url", ""),
+            request_headers=d.get("request_headers", {}),
+            request_body=d["request_body"].encode("utf-8") if d.get("request_body") else None,
+            request_body_truncated=d.get("request_body_truncated", False),
+            status_code=d.get("status_code"),
+            response_headers=d.get("response_headers"),
+            response_body=d["response_body"].encode("utf-8") if d.get("response_body") else None,
+            response_body_truncated=d.get("response_body_truncated", False),
+            duration_ms=d.get("duration_ms"),
+            error=d.get("error"),
+            tls=d.get("tls", False),
+        )
 
     @classmethod
     def from_mitmproxy(cls, mflow) -> "Flow":
