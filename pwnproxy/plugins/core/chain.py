@@ -199,9 +199,11 @@ class BudgetChain(DetectionChain):
         self,
         stages: list[DetectionStage],
         depth: DetectionDepth = DetectionDepth.FAST,
+        max_depth: DetectionDepth = DetectionDepth.DEEP,
         budget_ms: int = 30000,
     ):
         super().__init__(stages, depth)
+        self._max_depth = max_depth
         self._budget_ms = budget_ms
 
     async def run(
@@ -214,7 +216,7 @@ class BudgetChain(DetectionChain):
         waves_order = [DetectionDepth.FAST, DetectionDepth.STANDARD, DetectionDepth.DEEP]
 
         for wave_depth in waves_order:
-            # Skip waves deeper than configured depth
+            # Start at configured depth, escalate up to max_depth
             if not self._depth_allows(wave_depth):
                 continue
 
@@ -254,14 +256,18 @@ class BudgetChain(DetectionChain):
             DetectionDepth.STANDARD: 1,
             DetectionDepth.DEEP: 2,
         }
-        return depth_order[wave_depth] <= depth_order[self.depth]
+        return depth_order[self.depth] <= depth_order[wave_depth] <= depth_order[self._max_depth]
 
 
 def chain_from_depth(stages: list[DetectionStage], depth: str = "fast", budget_ms: int | None = None) -> BudgetChain:
-    """Create a BudgetChain from depth string, mapping depth to default budget if no explicit budget_ms."""
+    """Create a BudgetChain from depth string.
+    
+    Starts at configured depth, escalates up to DEEP if budget permits.
+    Maps depth to default budget if no explicit budget_ms provided.
+    """
     if isinstance(depth, str):
         depth = DetectionDepth(depth)
     if budget_ms is None:
-        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(depth, 30000)
-    return BudgetChain(stages, depth=depth, budget_ms=budget_ms)
+        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(DetectionDepth.DEEP, 30000)
+    return BudgetChain(stages, depth=depth, max_depth=DetectionDepth.DEEP, budget_ms=budget_ms)
 
