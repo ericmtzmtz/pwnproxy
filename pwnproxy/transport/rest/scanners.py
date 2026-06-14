@@ -54,7 +54,7 @@ async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
     hook_bus.publish("flow", f)
     bus = getattr(request.app.state, "bus", None)
     if bus is not None:
-        asyncio.create_task(bus.publish("flow", f))
+        await bus.publish("flow", f)
     return {"status": "scanning", "flow_id": body.id}
 
 
@@ -95,7 +95,7 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
         hook_bus.publish("flow", f)
         bus = getattr(request.app.state, "bus", None)
         if bus is not None:
-            asyncio.create_task(bus.publish("flow", f))
+            await bus.publish("flow", f)
 
     return {"status": "triggered", "flow_id": body.flow_id}
 
