@@ -30,3 +30,6 @@ cookies.txt
 
 # Astro auto-generated
 apps/web/.astro/types.d.ts
+
+diag_*.py
+*.tmp
