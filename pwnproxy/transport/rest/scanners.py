@@ -17,11 +17,13 @@ VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
 
 
 class TriggerRequest(BaseModel):
+    budget_ms: int | None = None
     flow_id: int
     scanners: List[str]
 
 
 class FlowTriggerRequest(BaseModel):
+    budget_ms: int | None = None
     id: str
     method: str
     url: str

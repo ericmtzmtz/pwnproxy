@@ -222,7 +222,7 @@ def start(
         from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
         from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
         from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
-        plugin_loader = PluginLoader(hook_bus=hook_bus)
+        plugin_loader = PluginLoader(hook_bus=hook_bus, bus=bus)
         await plugin_loader.load_builtin(SQLiScannerPlugin())
         await plugin_loader.load_builtin(XSSScannerPlugin())
         await plugin_loader.load_builtin(LFIScannerPlugin())

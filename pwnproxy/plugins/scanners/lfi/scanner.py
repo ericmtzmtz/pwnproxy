@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionChain, create_chain, DetectionDepth
+from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth, chain_from_depth
 from pwnproxy.shared.scan.stages.lfi_stages import (
     SimpleStage,
     PHPWrapperStage,
@@ -36,13 +36,13 @@ class LFIScanner:
     ):
         self._replayer = replayer
 
-        self.chain = create_chain(
+        self.chain = chain_from_depth(
             stages=[
                 SimpleStage(self._replayer, payloads, matcher, evasion_level=evasion),
                 PHPWrapperStage(self._replayer, php_payloads, matcher, evasion_level=evasion),
                 LfiOOBStage(self._replayer, evasion_level=evasion),
             ],
-            depth=depth,
+            depth=str(depth) if isinstance(depth, DetectionDepth) else depth,
         )
 
     async def scan(self, flow: Flow, points: list[InjectionPoint]) -> list[Finding]:

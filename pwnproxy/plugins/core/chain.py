@@ -93,7 +93,7 @@ class DetectionChain:
         stages: list[DetectionStage],
         depth: DetectionDepth = DetectionDepth.FAST,
     ):
-        self.stages = sorted(stages, key=lambda s: s.order)
+        self.stages = sorted(stages, key=lambda s: (getattr(s, "order", 0), id(s)))
         self.depth = depth
     
     async def run(
@@ -159,6 +159,9 @@ class DetectionChain:
                 continue
 
 
+# Import time for BudgetChain
+import time
+
 # Convenience function for creating chains
 def create_chain(
     stages: list[DetectionStage],
@@ -176,3 +179,89 @@ def create_chain(
     if isinstance(depth, str):
         depth = DetectionDepth(depth)
     return DetectionChain(stages, depth)
+
+
+class BudgetChain(DetectionChain):
+    """DetectionChain with automatic wave escalation and budget tracking.
+    
+    Runs stages in waves by depth level. If a wave produces no findings
+    and unconfirmed injection points remain, escalates to the next wave
+    as long as the time budget has not been exhausted.
+    """
+
+    WAVE_BUDGET_MS = {
+        DetectionDepth.FAST: 3000,
+        DetectionDepth.STANDARD: 15000,
+        DetectionDepth.DEEP: 30000,
+    }
+
+    def __init__(
+        self,
+        stages: list[DetectionStage],
+        depth: DetectionDepth = DetectionDepth.FAST,
+        budget_ms: int = 30000,
+    ):
+        super().__init__(stages, depth)
+        self._budget_ms = budget_ms
+
+    async def run(
+        self,
+        flow: Flow,
+        injection_points: list[InjectionPoint],
+    ) -> AsyncGenerator[Finding, None]:
+        confirmed_keys: set[tuple] = set()
+        start = time.monotonic()
+        waves_order = [DetectionDepth.FAST, DetectionDepth.STANDARD, DetectionDepth.DEEP]
+
+        for wave_depth in waves_order:
+            # Skip waves deeper than configured depth
+            if not self._depth_allows(wave_depth):
+                continue
+
+            elapsed_ms = (time.monotonic() - start) * 1000
+            if elapsed_ms >= self._budget_ms:
+                logger.info("BudgetChain: budget exhausted at wave %s", wave_depth.value)
+                break
+
+            remaining = [p for p in injection_points if p.key not in confirmed_keys]
+            if not remaining:
+                break
+
+            wave_stages = [s for s in self.stages if s.min_depth == wave_depth]
+            if not wave_stages:
+                continue
+
+            wave_findings = 0
+            for stage in wave_stages:
+                if (time.monotonic() - start) * 1000 >= self._budget_ms:
+                    break
+                try:
+                    result = await stage.execute(flow, remaining)
+                    for finding in result.findings:
+                        wave_findings += 1
+                        yield finding
+                    confirmed_keys.update(result.confirmed_points)
+                except Exception as e:
+                    logger.warning("BudgetChain: stage %s failed: %s", stage.__class__.__name__, e)
+
+            # If wave found nothing and no points confirmed, escalate
+            if wave_findings == 0 and not confirmed_keys:
+                logger.debug("BudgetChain: escalating to next wave (%s)", wave_depth.value)
+
+    def _depth_allows(self, wave_depth: DetectionDepth) -> bool:
+        depth_order = {
+            DetectionDepth.FAST: 0,
+            DetectionDepth.STANDARD: 1,
+            DetectionDepth.DEEP: 2,
+        }
+        return depth_order[wave_depth] <= depth_order[self.depth]
+
+
+def chain_from_depth(stages: list[DetectionStage], depth: str = "fast", budget_ms: int | None = None) -> BudgetChain:
+    """Create a BudgetChain from depth string, mapping depth to default budget if no explicit budget_ms."""
+    if isinstance(depth, str):
+        depth = DetectionDepth(depth)
+    if budget_ms is None:
+        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(depth, 30000)
+    return BudgetChain(stages, depth=depth, budget_ms=budget_ms)
+

@@ -4,7 +4,7 @@ from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
 from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth, chain_from_depth
 from pwnproxy.shared.scan.stages.sqli_stages import (
     ErrorBasedStage,
     BooleanBlindStage,
@@ -31,12 +31,12 @@ class SQLiScannerPlugin(ScannerPlugin):
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
         self._replayer = RequestReplayer()
-        chain = DetectionChain([
+        chain = chain_from_depth([
             ErrorBasedStage(self._replayer, ERROR_SIGNATURES, get_error_payloads(), evasion_level),
             BooleanBlindStage(self._replayer, evasion_level),
             TimeBlindStage(self._replayer, TIME_PAYLOADS, evasion_level),
             OOBStage(self._replayer, evasion_level),
-        ], DetectionDepth(depth))
+        ], depth=depth)
         self._scanner = SQLiScanner(chain)
 
     async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:

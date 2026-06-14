@@ -340,6 +340,54 @@ The loader guarantees that **only one instance** of a plugin exists at a time an
 
 ---
 
+## 10.1j: MessageBus integration
+
+### Communication channels
+
+All plugins communicate through the `MessageBus` (see `docs/message-bus.md`). Scanner plugins consume flows and produce findings via bus topics:
+
+| Plugin type | Consumes | Produces |
+|------------|----------|----------|
+| `ScannerPlugin` | `proxy.flow` (via `flow` legacy topic) | `finding.new` |
+| `CrawlerPlugin` | `scan.request` | `surface.*` |
+| `ExploiterPlugin` | `finding.confirmed` | `evidence.*` |
+
+### Transport transparency
+
+Plugins never import transport implementations directly. They use `MessageBus` interface:
+
+```python
+# Correct — plugin uses the interface
+from pwnproxy.shared.bus import MessageBus
+
+class MyPlugin(ScannerPlugin):
+    def __init__(self, bus: MessageBus):
+        self._bus = bus
+
+    async def on_flow(self, flow):
+        finding = await self._scan(flow)
+        await self._bus.publish("finding.new", finding)
+```
+
+The bus is wired in `start.py` with the appropriate transport (InProcessBus for single-process, TcpBridge + InProcessBus for subprocess proxy). Plugins do not know which transport is in use.
+
+### Legacy HookBus compatibility
+
+The existing `HookBus` is bridged from the `MessageBus` via the `_on_proxy_event` callback in `start.py`. Plugins still using `HookBus` continue to work. New plugins SHOULD use `MessageBus` directly.
+
+Migration path:
+1. Accept `MessageBus` in constructor (fall back to HookBus if not provided)
+2. Replace `self.hook_bus.publish("flow", ...)` with `self._bus.publish("proxy.flow", ...)`
+3. Replace `self.hook_bus.register("finding")` with `self._bus.subscribe("finding.new")`
+
+### Topic naming
+
+- Built-in topics use two-part names: `proxy.flow`, `finding.new`, `scan.request`
+- Third-party plugins SHOULD prefix with their plugin name: `myplugin.*`
+- Topics are lowercase, dot-separated
+
+---
+
 ## 10.1c: Scanner architecture – DetectionChain + stages pattern
 
 A **scanner** is composed of a `DetectionChain` (`plugins/core/chain.py`) that orchestrates an ordered list of `DetectionStage` objects. Stages live in `shared/scan/stages/`, each implementing one detection technique.
@@ -408,6 +456,44 @@ chain = DetectionChain([
 Each stage returns a `StageResult` containing:
 - `findings`: list of `Finding` objects discovered by this stage
 - `confirmed_points`: set of `InjectionPoint.key` tuples proven vulnerable (subsequent stages skip these points)
+
+### BudgetChain — automatic wave escalation
+
+`BudgetChain` extends `DetectionChain` with automatic depth escalation. It runs stages in budgeted waves (FAST → STANDARD → DEEP), escalating only when:
+
+- No findings were produced in the current wave
+- Unconfirmed injection points remain
+- The time budget has not been exhausted
+
+```python
+from pwnproxy.plugins.core.chain import BudgetChain, DetectionDepth
+
+chain = BudgetChain(
+    stages=[
+        ErrorBasedStage(replayer, signatures, payloads),
+        BooleanBlindStage(replayer),
+        TimeBlindStage(replayer, time_payloads),
+        OOBStage(replayer),
+    ],
+    depth=DetectionDepth.STANDARD,
+    budget_ms=30000,  # stop after 30s total
+)
+```
+
+| Wave | Depth | Stages | Budget |
+|------|-------|--------|--------|
+| 1 | FAST | Error-based only | 3s |
+| 2 | STANDARD | Boolean + Time-based | 15s |
+| 3 | DEEP | OOB | 30s |
+
+The `chain_from_depth()` helper creates a BudgetChain from a legacy depth string:
+
+```python
+chain = chain_from_depth(stages, depth="standard")
+# maps to budget_ms=15000 automatically
+```
+
+The `budget_ms` parameter is also accepted in scan trigger endpoints (`POST /scanners/trigger-flow` and `POST /scanners/trigger`).
 
 ---
 

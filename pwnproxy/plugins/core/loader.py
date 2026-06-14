@@ -19,8 +19,9 @@ class PluginLoadError(Exception):
 class UniversalPluginLoader:
     """Universal plugin loader that connects plugins based on contracts."""
     
-    def __init__(self, hook_bus: HookBus):
+    def __init__(self, hook_bus: HookBus, bus=None):
         self.hook_bus = hook_bus
+        self.bus = bus  # Optional MessageBus
         self._plugins: Dict[str, PwnPlugin] = {}
         self._plugin_tasks: Dict[str, asyncio.Task] = {}
         self._timeout = 0.1  # Short timeout for consumer loop responsiveness
@@ -86,51 +87,75 @@ class UniversalPluginLoader:
         channel_name: str
     ) -> None:
         """Run a consumer task for a plugin on a specific channel."""
-        try:
-            queue = self.hook_bus.register(channel_name)
-            
-            while True:
-                try:
-                    # Wait for data with a timeout to allow graceful shutdown
-                    data = await asyncio.wait_for(queue.get(), timeout=self._timeout)
-                    
-                    if consume_type == "flow" and (hasattr(plugin, "on_flow") or hasattr(plugin, "scan")):
-                        async for result in self._handle_flow(plugin, data):
+        # New branch: use InProcessBus if available
+        if self.bus is not None:
+            async for envelope in self.bus.subscribe(channel_name):
+                data = envelope.data
+                if consume_type == "flow" and (hasattr(plugin, "on_flow") or hasattr(plugin, "scan")):
+                    async for result in self._handle_flow(plugin, data):
+                        if result is not None:
+                            await self._publish_results(plugin, result)
+                elif consume_type == "finding" and hasattr(plugin, "on_finding"):
+                    result = await plugin.on_finding(data)
+                    if result is not None:
+                        await self._publish_results(plugin, result)
+                elif consume_type == "surface" and hasattr(plugin, "on_surface"):
+                    result = await plugin.on_surface(data)
+                    if result is not None:
+                        await _publish_results(plugin, result)
+                elif consume_type == "evidence" and hasattr(plugin, "on_evidence"):
+                    result = await plugin.on_evidence(data)
+                    if result is not None:
+                        await self._publish_results(plugin, result)
+                else:
+                    logger.warning("Plugin %s has no handler for %s", plugin.metadata.name, consume_type)
+        else:
+            # Legacy: use HookBus
+            try:
+                queue = self.hook_bus.register(channel_name)
+                
+                while True:
+                    try:
+                        # Wait for data with a timeout to allow graceful shutdown
+                        data = await asyncio.wait_for(queue.get(), timeout=self._timeout)
+                        
+                        if consume_type == "flow" and (hasattr(plugin, "on_flow") or hasattr(plugin, "scan")):
+                            async for result in self._handle_flow(plugin, data):
+                                if result is not None:
+                                    await self._publish_results(plugin, result)
+                        
+                        elif consume_type == "finding" and hasattr(plugin, "on_finding"):
+                            result = await plugin.on_finding(data)
                             if result is not None:
                                 await self._publish_results(plugin, result)
+                        
+                        elif consume_type == "surface" and hasattr(plugin, "on_surface"):
+                            result = await plugin.on_surface(data)
+                            if result is not None:
+                                await self._publish_results(plugin, result)
+                        
+                        elif consume_type == "evidence" and hasattr(plugin, "on_evidence"):
+                            result = await plugin.on_evidence(data)
+                            if result is not None:
+                                await self._publish_results(plugin, result)
+                        
+                        else:
+                            logger.warning("Plugin %s has no handler for %s", plugin.metadata.name, consume_type)
                     
-                    elif consume_type == "finding" and hasattr(plugin, "on_finding"):
-                        result = await plugin.on_finding(data)
-                        if result is not None:
-                            await self._publish_results(plugin, result)
-                    
-                    elif consume_type == "surface" and hasattr(plugin, "on_surface"):
-                        result = await plugin.on_surface(data)
-                        if result is not None:
-                            await self._publish_results(plugin, result)
-                    
-                    elif consume_type == "evidence" and hasattr(plugin, "on_evidence"):
-                        result = await plugin.on_evidence(data)
-                        if result is not None:
-                            await self._publish_results(plugin, result)
-                    
-                    else:
-                        logger.warning("Plugin %s has no handler for %s", plugin.metadata.name, consume_type)
-                
-                except asyncio.CancelledError:
-                    logger.debug("Consumer cancelled for %s on %s", plugin.metadata.name, channel_name)
-                    raise
-                except asyncio.TimeoutError:
-                    # Timeout indicates no data; loop again to check for cancellation
-                    continue
-                except Exception as e:
-                    logger.error("Error in consumer %s on %s: %s", plugin.metadata.name, channel_name, e)
-                    break
-        
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            logger.error("Failed to start consumer %s on %s: %s", plugin.metadata.name, channel_name, e)
+                    except asyncio.CancelledError:
+                        logger.debug("Consumer cancelled for %s on %s", plugin.metadata.name, channel_name)
+                        raise
+                    except asyncio.TimeoutError:
+                        # Timeout indicates no data; loop again to check for cancellation
+                        continue
+                    except Exception as e:
+                        logger.error("Error in consumer %s on %s: %s", plugin.metadata.name, channel_name, e)
+                        break
+            
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error("Failed to start consumer %s on %s: %s", plugin.metadata.name, channel_name, e)
 
     async def _handle_flow(self, plugin: PwnPlugin, flow: Flow) -> AsyncGenerator[Any, None]:
         """Handle flow data - either through new on_flow() or legacy scan() method."""
@@ -266,11 +291,11 @@ class UniversalPluginLoader:
 class PluginLoader(UniversalPluginLoader):
     """Backward compatibility wrapper for UniversalPluginLoader."""
     
-    def __init__(self, hook_bus=None):
+    def __init__(self, hook_bus=None, bus=None):
         if hook_bus is None:
             from pwnproxy.shared.hooks import HookBus
             hook_bus = HookBus()
-        super().__init__(hook_bus)
+        super().__init__(hook_bus, bus=bus)
     
     async def load_builtin(self, plugin: PwnPlugin) -> None:
         """Load a builtin plugin and call its on_load hook."""
