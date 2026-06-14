@@ -151,6 +151,8 @@ async def ws_events(ws: WebSocket):
                         },
                         default=str,
                     )
+                else:
+                    payload = json.dumps({"type": "unknown", "data": str(result)}, default=str)
                 await ws.send_text(payload)
     except WebSocketDisconnect:
         events_manager.disconnect(ws)
