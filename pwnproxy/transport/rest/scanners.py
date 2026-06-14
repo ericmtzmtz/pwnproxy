@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from typing import Dict, List
 
@@ -51,6 +52,9 @@ async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
         response_body=body.response_body.encode("utf-8") if body.response_body else None,
     )
     hook_bus.publish("flow", f)
+    bus = getattr(request.app.state, "bus", None)
+    if bus is not None:
+        asyncio.create_task(bus.publish("flow", f))
     return {"status": "scanning", "flow_id": body.id}
 
 
@@ -89,6 +93,9 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
             response_body=flow.response_body,
         )
         hook_bus.publish("flow", f)
+        bus = getattr(request.app.state, "bus", None)
+        if bus is not None:
+            asyncio.create_task(bus.publish("flow", f))
 
     return {"status": "triggered", "flow_id": body.flow_id}
 

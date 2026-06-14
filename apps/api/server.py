@@ -49,6 +49,7 @@ def _create_sessions_engine() -> AsyncEngine:
 
 async def start_api_server(
     hook_bus: HookBus,
+    bus=None,
     traffic_engine: Optional[AsyncEngine] = None,
     scanner_engine: Optional[AsyncEngine] = None,
     token_storage=None,
@@ -69,6 +70,7 @@ async def start_api_server(
         scanner_engine = _create_scanner_engine()
 
     app.state.hook_bus = hook_bus
+    app.state.bus = bus
     app.state.traffic_engine = traffic_engine
     app.state.scanner_engine = scanner_engine
     app.state.token_storage = token_storage

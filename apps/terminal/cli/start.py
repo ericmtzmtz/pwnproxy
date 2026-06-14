@@ -134,8 +134,10 @@ def start(
                 from pwnproxy.shared.models import Flow
                 flow = Flow.from_dict(data)
                 hook_bus.publish("flow", flow)
+                asyncio.create_task(bus.publish("flow", flow))
             else:
                 hook_bus.publish(topic, data)
+                asyncio.create_task(bus.publish(topic, data))
 
         traffic_engine = create_traffic_engine()
         await init_db(traffic_engine)
@@ -235,6 +237,7 @@ def start(
 
         api_task = await start_api_server(
             hook_bus=hook_bus,
+            bus=bus,
             traffic_engine=traffic_engine,
             scanner_engine=scanner_engine,
             repeater_engine=repeater_engine,
