@@ -214,13 +214,19 @@ class UniversalPluginLoader:
                 session_manager = getattr(self.hook_bus, "app", None) and getattr(self.hook_bus.app, "state", None) and getattr(self.hook_bus.app.state, "session_manager", None)
             if session_manager:
                 from pwnproxy.shared.findings.storage import FindingStorage
-                storage = FindingStorage(session_manager.get_scanner_engine())
-                await storage.create_table()
+                sm = session_manager
+                # Ensure findings table exists in current engine
+                tmp = FindingStorage(sm.get_scanner_engine())
+                await tmp.create_table()
                 async def _consume_findings():
                     q = self.hook_bus.register("finding")
                     while True:
                         finding = await q.get()
-                        await storage.save(finding)
+                        try:
+                            storage = FindingStorage(sm.get_scanner_engine())
+                            await storage.save(finding)
+                        except Exception as e:
+                            logger.error("Failed to save finding: %s", e)
                 asyncio.create_task(_consume_findings())
         except Exception as e:
             logger.error("Failed to wire FindingStorage: %s", e)
