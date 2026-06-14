@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from pwnproxy.cli import app as cli_app
+from apps.terminal.cli import app as cli_app
 
 runner = CliRunner()
 
@@ -25,8 +25,8 @@ def test_session_list():
         _create_workspace(base, "alpha")
         _create_workspace(base, "beta")
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()
@@ -44,8 +44,8 @@ def test_session_list_empty():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         base = Path(tmp)
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()
@@ -62,8 +62,8 @@ def test_session_info_found():
         base = Path(tmp)
         _create_workspace(base, "my-session")
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()
@@ -80,8 +80,8 @@ def test_session_info_not_found():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         base = Path(tmp)
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()
@@ -98,8 +98,8 @@ def test_session_delete_found():
         base = Path(tmp)
         _create_workspace(base, "to-delete")
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()
@@ -116,8 +116,8 @@ def test_session_delete_not_found():
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         base = Path(tmp)
         patches = (
-            patch("pwnproxy.cli.session.SESSIONS_ROOT", base),
-            patch("pwnproxy.modules.session_manager.manager.SESSIONS_ROOT", base),
+            patch("apps.terminal.cli.session.SESSIONS_ROOT", base),
+            patch("pwnproxy.services.session.manager.SESSIONS_ROOT", base),
         )
         for p in patches:
             p.start()

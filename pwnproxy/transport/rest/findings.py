@@ -2,39 +2,30 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from sqlalchemy import text
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
+
+from pwnproxy.shared.findings.storage import FindingORM
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["findings"])
 
-SCANNER_TABLES: Dict[str, str] = {
-    "sqli": "scan_findings",
-    "xss": "xss_findings",
-    "lfi": "lfi_findings",
-    "xxe": "xxe_findings",
-    "ssrf": "ssrf_findings",
-}
 
-
-def _severity_clause(severity: Optional[str]) -> str:
+def _severity_clause(severity: Optional[str]) -> list:
     if not severity:
-        return ""
-    levels = [s.strip() for s in severity.split(",") if s.strip()]
-    if not levels:
-        return ""
-    quoted = ", ".join(f"'{s}'" for s in levels)
-    return f"AND severity IN ({quoted})"
+        return []
+    return [s.strip() for s in severity.split(",") if s.strip()]
 
 
-def _count_sql(table: str, severity_clause: str) -> str:
-    return f"SELECT COUNT(*) as cnt FROM {table} WHERE 1=1 {severity_clause}"
-
-
-def _select_sql(table: str, severity_clause: str, limit: int, offset: int) -> str:
-    return f"SELECT * FROM {table} WHERE 1=1 {severity_clause} ORDER BY id DESC LIMIT {limit} OFFSET {offset}"
+def _apply_filters(query, scanner: Optional[str] = None, severity: Optional[str] = None):
+    if scanner:
+        query = query.where(FindingORM.scanner == scanner)
+    levels = _severity_clause(severity)
+    if levels:
+        query = query.where(FindingORM.severity.in_(levels))
+    return query
 
 
 @router.get("/findings/{scanner_name}")
@@ -45,33 +36,22 @@ async def get_findings(
     per_page: int = Query(20, ge=1, le=500),
     severity: Optional[str] = Query(None, description="Comma-separated severity levels"),
 ):
-    table = SCANNER_TABLES.get(scanner_name.lower())
-    if not table:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Unknown scanner: {scanner_name}. Available: {list(SCANNER_TABLES.keys())}",
-        )
-    sev_clause = _severity_clause(severity)
     offset = (page - 1) * per_page
     engine = request.app.state.session_manager.get_scanner_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
         try:
-            count_result = await session.execute(
-                text(_count_sql(table, sev_clause))
-            )
-            total = count_result.scalar() or 0
+            count_q = _apply_filters(select(func.count(FindingORM.id)), scanner_name, severity)
+            total = (await session.execute(count_q)).scalar() or 0
 
-            result = await session.execute(
-                text(_select_sql(table, sev_clause, per_page, offset))
-            )
-            rows = result.mappings().all()
-            items = [dict(row) for row in rows]
-            for item in items:
-                item["scanner"] = scanner_name
+            sel_q = _apply_filters(select(FindingORM), scanner_name, severity)
+            sel_q = sel_q.order_by(FindingORM.id.desc()).limit(per_page).offset(offset)
+            result = await session.execute(sel_q)
+            rows = result.scalars().all()
+            items = [{c.name: getattr(r, c.name) for c in FindingORM.__table__.columns} for r in rows]
             return {"items": items, "total": total, "page": page, "per_page": per_page}
         except Exception as exc:
-            logger.warning(f"Could not query {table}: {exc}")
+            logger.warning(f"Could not query findings: {exc}")
             return {"items": [], "total": 0, "page": page, "per_page": per_page}
 
 
@@ -82,47 +62,39 @@ async def list_all_findings(
     per_page: int = Query(20, ge=1, le=500),
     severity: Optional[str] = Query(None, description="Comma-separated severity levels"),
 ):
-    sev_clause = _severity_clause(severity)
     offset = (page - 1) * per_page
-    engine = request.app.state.session_manager.get_scanner_engine()
-    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    all_findings: List[Dict[str, Any]] = []
-    total = 0
-    async with factory() as session:
-        for scanner_name, table in SCANNER_TABLES.items():
-            try:
-                count_result = await session.execute(
-                    text(_count_sql(table, sev_clause))
-                )
-                total += count_result.scalar() or 0
-
-                result = await session.execute(
-                    text(_select_sql(table, sev_clause, per_page + offset, 0))
-                )
-                rows = result.mappings().all()
-                for row in rows:
-                    item = dict(row)
-                    item["scanner"] = scanner_name
-                    all_findings.append(item)
-            except Exception as exc:
-                logger.debug(f"Could not query {table}: {exc}")
-
-    all_findings.sort(key=lambda x: x.get("id", 0), reverse=True)
-    paginated = all_findings[offset:offset + per_page]
-    return {"items": paginated, "total": total, "page": page, "per_page": per_page}
-
-
-@router.delete("/findings/{scanner_name}/{finding_id}", status_code=204)
-async def delete_finding(scanner_name: str, finding_id: int, request: Request):
-    table = SCANNER_TABLES.get(scanner_name.lower())
-    if not table:
-        raise HTTPException(status_code=404, detail=f"Unknown scanner: {scanner_name}")
     engine = request.app.state.session_manager.get_scanner_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
         try:
-            await session.execute(text(f"DELETE FROM {table} WHERE id = :id"), {"id": finding_id})
-            await session.commit()
+            count_q = _apply_filters(select(func.count(FindingORM.id)), severity=severity)
+            total = (await session.execute(count_q)).scalar() or 0
+
+            sel_q = _apply_filters(select(FindingORM), severity=severity)
+            sel_q = sel_q.order_by(FindingORM.id.desc()).limit(per_page).offset(offset)
+            result = await session.execute(sel_q)
+            rows = result.scalars().all()
+            items = [{c.name: getattr(r, c.name) for c in FindingORM.__table__.columns} for r in rows]
+            return {"items": items, "total": total, "page": page, "per_page": per_page}
         except Exception as exc:
-            logger.warning(f"Could not delete from {table}: {exc}")
+            logger.warning(f"Could not query findings: {exc}")
+            return {"items": [], "total": 0, "page": page, "per_page": per_page}
+
+
+@router.delete("/findings/{finding_id}", status_code=204)
+async def delete_finding(finding_id: int, request: Request):
+    engine = request.app.state.session_manager.get_scanner_engine()
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        try:
+            result = await session.execute(select(FindingORM).where(FindingORM.id == finding_id))
+            record = result.scalar_one_or_none()
+            if not record:
+                raise HTTPException(status_code=404, detail="Finding not found")
+            await session.delete(record)
+            await session.commit()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning(f"Could not delete finding: {exc}")
             raise HTTPException(status_code=500, detail=str(exc))

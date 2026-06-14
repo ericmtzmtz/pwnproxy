@@ -49,42 +49,19 @@ def url(
 
 
 async def _build_scan_loader() -> PluginLoader:
-    from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
-    from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
-    from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
-    from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
-    from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
-    from pwnproxy.plugins.scanners.sqli.storage import FindingStorage as SqliStorage
-    from pwnproxy.plugins.scanners.xss.storage import XssFindingStorage as XssStorage
-    from pwnproxy.plugins.scanners.lfi.storage import LfiFindingStorage as LfiStorage
-    from pwnproxy.plugins.scanners.xxe.storage import XxeFindingStorage as XxeStorage
-    from pwnproxy.plugins.scanners.ssrf.storage import SsrfFindingStorage as SsrfStorage
     from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
     from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
     from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
     from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
-
-    tmp = tempfile.mkdtemp(prefix="pwnproxy_scan_")
-    db_path = str(Path(tmp) / "results.db")
-    sqli = SQLiScanner(None, storage=SqliStorage(db_path))
-    xss = XSSScanner(None, storage=XssStorage(db_path))
-    lfi = LFIScanner(None, storage=LfiStorage(db_path))
-    xxe = XXEScanner(None, storage=XxeStorage(db_path))
-    ssrf = SSRFScanner(None, storage=SsrfStorage(db_path))
-
-    await sqli._storage.create_tables()
-    await xss._storage.create_tables()
-    await lfi._storage.create_tables()
-    await xxe._storage.create_tables()
-    await ssrf._storage.create_tables()
+    from pwnproxy.plugins.core.loader import PluginLoader
 
     loader = PluginLoader()
-    await loader.load_builtin(SQLiScannerPlugin(sqli))
-    await loader.load_builtin(XSSScannerPlugin(xss))
-    await loader.load_builtin(LFIScannerPlugin(lfi))
-    await loader.load_builtin(XXEScannerPlugin(xxe))
-    await loader.load_builtin(SSRFScannerPlugin(ssrf))
+    await loader.load_builtin(SQLiScannerPlugin())
+    await loader.load_builtin(XSSScannerPlugin())
+    await loader.load_builtin(LFIScannerPlugin())
+    await loader.load_builtin(XXEScannerPlugin())
+    await loader.load_builtin(SSRFScannerPlugin())
     return loader
 
 

@@ -1,74 +1,56 @@
-import asyncio
+"""SSRF plugin entry point."""
+
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.base import Finding, ScannerPlugin
+from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
+from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.models import Flow
+from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 
 
 class SSRFScannerPlugin(ScannerPlugin):
-    name = "ssrf"
-    version = "0.2.0"
-    author = "pwnproxy"
+    metadata = PluginMetadata(
+        name="ssrf",
+        version="0.3.0",
+        author="pwnproxy",
+        consumes=["flow"],
+        produces=["finding"],
+    )
+    techniques = ["ssrf-simple", "ssrf-redirect", "ssrf-oob"]
+    capabilities = ["server-side-request-forgery", "ssrf"]
 
-    def __init__(self, scanner):
+    def __init__(self, scanner=None):
         self._scanner = scanner
 
-    async def scan(
-        self,
-        flow: Flow,
-        depth: str = "fast",
-        evasion_level: str = "none",
-    ) -> AsyncGenerator[Finding, None]:
-        old_count = self._scanner.finding_count
+    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+        depth = self.context.config.get("depth", "fast")
+        evasion_level = self.context.config.get("evasion_level", "none")
+        callback_host = self.context.config.get("callback_host", "127.0.0.1")
+        callback_port = int(self.context.config.get("callback_port", 18080))
         points = extract_params(flow)
         seen = set()
+        valid_points = []
         for point in points:
             key = (point.host + point.path, point.name, point.location)
             if key in seen:
                 continue
             seen.add(key)
-            await self._scanner._scan_point(point)
-        if self._scanner.finding_count > old_count:
-            yield Finding(
-                scanner="ssrf",
-                url=flow.url,
-                method=flow.method,
-                param_name="",
-                param_location="",
-                technique="scanner",
-                severity="high",
-                confidence="confirmed",
-                payload="",
-            )
-        
-        # Deep detection: integrate OOB callbacks
-        if depth == "deep":
-            from pwnproxy.shared.canary import get_registry
-            from pwnproxy.shared.http_server import get_server as get_http
-            
-            registry = get_registry()
-            canary = registry.create(flow.id)
-            
-            try:
-                server = await get_http()
-                if server.is_running:
-                    callback_url = server.get_callback_url(canary.token)
-                    # Note: actual injection via _scanner is handled internally
-                    await asyncio.sleep(0.5)  # brief wait for callback
-                    
-                    if canary.callback_received:
-                        yield Finding(
-                            scanner="ssrf",
-                            url=flow.url,
-                            method=flow.method,
-                            param_name="oob",
-                            param_location="callback",
-                            technique="out-of-band",
-                            severity="high",
-                            confidence="confirmed",
-                            payload=callback_url,
-                            evidence=f"Callback from {canary.callback_ip}",
-                        )
-            except Exception:
-                pass
+            valid_points.append(point)
+
+        if not valid_points:
+            return
+
+        replayer = RequestReplayer(flow)
+        scanner = SSRFScanner(
+            replayer,
+            depth=depth,
+            evasion=evasion_level,
+            callback_host=callback_host,
+            callback_port=callback_port,
+        )
+        findings = await scanner.scan(flow, valid_points)
+        for finding in findings:
+            yield finding

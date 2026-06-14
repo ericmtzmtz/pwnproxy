@@ -77,13 +77,7 @@ findings_manager = ConnectionManager()
 events_manager = ConnectionManager()
 room_manager = RoomManager()
 
-SCANNER_TABLES: Dict[str, str] = {
-    "sqli": "scan_findings",
-    "xss": "xss_findings",
-    "lfi": "lfi_findings",
-    "xxe": "xxe_findings",
-    "ssrf": "ssrf_findings",
-}
+FINDINGS_TABLE = "findings"
 
 
 @router.websocket("/ws/traffic")

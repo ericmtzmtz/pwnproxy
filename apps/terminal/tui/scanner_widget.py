@@ -178,6 +178,7 @@ class ScannerTab(Vertical):
             return
         mgr = getattr(self.app, "_scan_manager", None)
         if not mgr:
+            self.app.notify("Scanner controls not available in new architecture", severity="warning")
             return
         if bid.startswith("btn-scan-") and not bid.endswith("-all"):
             name = bid.replace("btn-scan-", "")

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import httpx
 
@@ -217,7 +217,7 @@ class DashboardApp(App):
         api_port: int = 8000,
         hook_bus: Optional[HookBus] = None,
         interceptor_controller: Optional[InterceptorController] = None,
-        scan_manager: Optional["ScanManager"] = None,
+        scan_manager: Any = None,
     ):
         super().__init__()
         self._host = host

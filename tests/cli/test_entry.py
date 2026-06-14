@@ -1,6 +1,6 @@
 from typer.testing import CliRunner
 
-from pwnproxy.cli import app
+from apps.terminal.cli import app
 
 runner = CliRunner()
 

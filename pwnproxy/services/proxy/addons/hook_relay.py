@@ -21,6 +21,7 @@ class HookRelayAddon:
         flow = Flow.from_mitmproxy(f)
         self.hook_bus.publish("response", flow)
         self.hook_bus.publish("done", flow)
+        self.hook_bus.publish("flow", flow)
 
     def error(self, f: mitmproxy.http.HTTPFlow):
         self.hook_bus.publish("error", Flow.from_mitmproxy(f))

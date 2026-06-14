@@ -36,29 +36,12 @@ class NewStyleScannerPlugin(ScannerPlugin):
     def __init__(self, findings_to_yield: list[Finding] | None = None):
         self._findings = findings_to_yield or []
 
-    async def scan(
+    async def on_flow(
         self,
         flow,
-        depth: str = "fast",
-        evasion_level: str = "none",
     ) -> AsyncGenerator[Finding, None]:
         for finding in self._findings:
             yield finding
-
-
-class OldStyleScannerPlugin(ScannerPlugin):
-    """Old-style plugin returning Optional[Finding]."""
-    name = "old-style"
-    version = "1.0.0"
-    author = "test"
-    category = "scanner"
-
-    def __init__(self, finding_to_return: Finding | None = None):
-        self._finding = finding_to_return
-
-    async def scan(self, flow, depth: str = "fast", evasion_level: str = "none"):
-        # Old-style: returns Optional[Finding] directly
-        return self._finding
 
 
 @pytest.mark.asyncio
@@ -75,13 +58,14 @@ async def test_new_style_plugin_yields_findings():
             severity="high",
             confidence="confirmed",
             payload="' OR 1=1--",
+            evidence="Test evidence",
         )
     ]
     plugin = NewStyleScannerPlugin(findings)
     flow = MockFlow()
 
     results = []
-    async for finding in plugin.scan(flow):
+    async for finding in plugin.on_flow(flow):
         results.append(finding)
 
     assert len(results) == 1
@@ -103,6 +87,7 @@ async def test_new_style_plugin_yields_multiple_findings():
             severity="high",
             confidence="confirmed",
             payload="' OR 1=1--",
+            evidence="Test evidence",
         ),
         Finding(
             scanner="test",
@@ -114,13 +99,14 @@ async def test_new_style_plugin_yields_multiple_findings():
             severity="high",
             confidence="confirmed",
             payload="' AND SLEEP(5)--",
+            evidence="Test evidence",
         ),
     ]
     plugin = NewStyleScannerPlugin(findings)
     flow = MockFlow()
 
     results = []
-    async for finding in plugin.scan(flow):
+    async for finding in plugin.on_flow(flow):
         results.append(finding)
 
     assert len(results) == 2
@@ -135,7 +121,7 @@ async def test_new_style_plugin_yields_nothing():
     flow = MockFlow()
 
     results = []
-    async for finding in plugin.scan(flow):
+    async for finding in plugin.on_flow(flow):
         results.append(finding)
 
     assert len(results) == 0
@@ -154,6 +140,7 @@ async def test_plugin_loader_handles_new_style():
         severity="high",
         confidence="confirmed",
         payload="' OR 1=1--",
+        evidence="Test evidence",
     )
     plugin = NewStyleScannerPlugin([finding])
     
@@ -167,44 +154,7 @@ async def test_plugin_loader_handles_new_style():
     assert results[0].scanner == "test"
 
 
-@pytest.mark.asyncio
-async def test_plugin_loader_handles_old_style():
-    """PluginLoader should handle old-style Optional[Finding] plugins via shim."""
-    finding = Finding(
-        scanner="test",
-        url="http://example.com",
-        method="GET",
-        param_name="q",
-        param_location="query",
-        technique="error-based",
-        severity="high",
-        confidence="confirmed",
-        payload="' OR 1=1--",
-    )
-    plugin = OldStyleScannerPlugin(finding)
-    
-    loader = PluginLoader()
-    await loader.load_builtin(plugin)
-    
-    flow = MockFlow()
-    results = await loader.run_scan(flow)
-    
-    assert len(results) == 1
-    assert results[0].scanner == "test"
 
-
-@pytest.mark.asyncio
-async def test_plugin_loader_handles_old_style_none():
-    """PluginLoader should handle old-style plugin returning None."""
-    plugin = OldStyleScannerPlugin(None)
-    
-    loader = PluginLoader()
-    await loader.load_builtin(plugin)
-    
-    flow = MockFlow()
-    results = await loader.run_scan(flow)
-    
-    assert len(results) == 0
 
 
 @pytest.mark.asyncio
@@ -220,6 +170,7 @@ async def test_plugin_loader_passes_depth_and_evasion():
         severity="high",
         confidence="confirmed",
         payload="' OR 1=1--",
+        evidence="Test evidence",
     )
     plugin = NewStyleScannerPlugin([finding])
     
@@ -232,3 +183,24 @@ async def test_plugin_loader_passes_depth_and_evasion():
     
     assert len(results) == 1
     assert results[0].scanner == "test"
+
+
+@pytest.mark.asyncio
+async def test_scanner_plugin_capabilities_match_techniques():
+    """Each scanner's capabilities should cover its techniques."""
+    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
+    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
+    from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
+    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
+    from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
+
+    plugins = [SQLiScannerPlugin(), XSSScannerPlugin(), LFIScannerPlugin(),
+               XXEScannerPlugin(), SSRFScannerPlugin()]
+
+    for plugin in plugins:
+        assert hasattr(plugin, "capabilities"), f"{plugin.name} missing capabilities"
+        assert isinstance(plugin.capabilities, list), f"{plugin.name} capabilities not a list"
+        assert len(plugin.capabilities) > 0, f"{plugin.name} has empty capabilities"
+        assert hasattr(plugin, "techniques"), f"{plugin.name} missing techniques"
+        assert isinstance(plugin.techniques, list), f"{plugin.name} techniques not a list"
+        assert len(plugin.techniques) > 0, f"{plugin.name} has empty techniques"

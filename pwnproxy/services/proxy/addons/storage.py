@@ -90,5 +90,6 @@ class StorageAddon:
                         error=flow.error,
                     )
                     self.hook_bus.publish("done", scan_flow)
+                self.hook_bus.publish("flow", scan_flow)
         except Exception as e:
             logger.error(f"Failed to store flow {flow.id}: {e}", exc_info=True)

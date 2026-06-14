@@ -4,18 +4,13 @@ from pathlib import Path
 import typer
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from pwnproxy.shared.findings.storage import FindingORM
+
 VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
-SCANNER_TABLES = {
-    "sqli": "scan_findings",
-    "xss": "xss_findings",
-    "lfi": "lfi_findings",
-    "xxe": "xxe_findings",
-    "ssrf": "ssrf_findings",
-}
 
 console = Console()
 
@@ -40,24 +35,21 @@ async def _list_findings(scanner: str | None, limit: int):
     engine = _get_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    scanners_to_query = [scanner] if scanner else VALID_SCANNERS
     all_findings = []
 
     async with factory() as session:
-        for s in scanners_to_query:
-            table_name = SCANNER_TABLES[s]
-            try:
-                result = await session.execute(
-                    text(f"SELECT * FROM {table_name} ORDER BY id DESC LIMIT :limit"),
-                    {"limit": limit},
-                )
-                rows = result.mappings().all()
-                for row in rows:
-                    item = dict(row)
-                    item["scanner"] = s
-                    all_findings.append(item)
-            except Exception:
-                pass
+        try:
+            query = select(FindingORM)
+            if scanner:
+                query = query.where(FindingORM.scanner == scanner)
+            query = query.order_by(FindingORM.id.desc()).limit(limit)
+            result = await session.execute(query)
+            rows = result.scalars().all()
+            for r in rows:
+                item = {c.name: getattr(r, c.name) for c in FindingORM.__table__.columns}
+                all_findings.append(item)
+        except Exception:
+            pass
 
     await engine.dispose()
 
@@ -67,9 +59,6 @@ async def _list_findings(scanner: str | None, limit: int):
         else:
             console.print("[yellow]No findings found.[/]")
         return
-
-    all_findings.sort(key=lambda x: x.get("id", 0), reverse=True)
-    all_findings = all_findings[:limit]
 
     table = Table(title=f"Scanner Findings ({len(all_findings)})")
     table.add_column("ID", style="dim")
@@ -84,7 +73,7 @@ async def _list_findings(scanner: str | None, limit: int):
             str(f.get("id", "")),
             f.get("scanner", ""),
             (f.get("url", "") or "")[:60],
-            f.get("param_name", "") or f.get("param", "") or "",
+            f.get("param_name", "") or "",
             (f.get("payload", "") or "")[:40],
             f.get("severity", "medium"),
         )

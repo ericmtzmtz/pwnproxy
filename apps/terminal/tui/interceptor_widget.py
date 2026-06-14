@@ -191,16 +191,10 @@ class InterceptorWidget(Vertical):
         asyncio.create_task(self._trigger_scan_async(flow))
 
     async def _trigger_scan_async(self, flow: Flow) -> None:
-        mgr = getattr(self.app, "_scan_manager", None)
-        if not mgr:
-            logger.warning("ScanManager not available")
+        hook_bus = getattr(self.app, "_hook_bus", None)
+        if not hook_bus:
+            logger.warning("HookBus not available")
+            self.app.notify("Cannot scan — HookBus not available", severity="error")
             return
-        active = await mgr.rescan_flow(flow)
-        if not active:
-            await mgr.start("sqli")
-            self.app.notify("Auto-started SQLi scanner (no scanners were active)")
-            active = await mgr.rescan_flow(flow)
-        if active:
-            self.app.notify(f"Scanning... active: {', '.join(active)}")
-        else:
-            self.app.notify("No scanners available — cannot scan", severity="error")
+        hook_bus.publish("done", flow)
+        self.app.notify("Flow sent to scanners")

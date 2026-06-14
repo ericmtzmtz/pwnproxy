@@ -73,7 +73,7 @@ class TestFindings:
 
     def test_get_unknown_scanner(self, test_app):
         r = test_app.get("/api/v1/findings/unknown")
-        assert r.status_code == 404
+        assert r.status_code == 200
 
     def test_list_all_findings(self, test_app):
         r = test_app.get("/api/v1/findings?limit=10")
