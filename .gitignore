@@ -33,3 +33,4 @@ apps/web/.astro/types.d.ts
 
 diag_*.py
 *.tmp
+pwnproxy_mcp
