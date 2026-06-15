@@ -96,6 +96,12 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
         bus = getattr(request.app.state, "bus", None)
         if bus is not None:
             await bus.publish("flow", f)
+        # Publish on per-scanner topics if specific scanners are requested
+        for scanner_name in body.scanners:
+            topic = f"flow.{scanner_name.lower()}"
+            hook_bus.publish(topic, f)
+            if bus is not None:
+                await bus.publish(topic, f)
 
     return {"status": "triggered", "flow_id": body.flow_id}
 

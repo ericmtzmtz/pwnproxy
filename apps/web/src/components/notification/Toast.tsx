@@ -37,13 +37,12 @@ export function Toast({ toast, onDismiss, duration = 4000 }: ToastProps) {
     return clearTimer;
   }, []);
 
-  const borderColor = {
-    critical: "border-l-red-500",
-    high: "border-l-orange-500",
-    medium: "border-l-yellow-500",
-    low: "border-l-blue-500",
-    info: "border-l-neutral-500",
-  }[toast.severity] ?? "border-l-primary-500";
+const borderColor = {
+      error: "border-l-red-500",
+      warning: "border-l-orange-500",
+      success: "border-l-green-500",
+      info: "border-l-blue-500",
+    }[toast.severity] ?? "border-l-neutral-500";
 
   return (
     <div
