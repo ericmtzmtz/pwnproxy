@@ -18,7 +18,6 @@ dependencies = [
 enterprise = [
     "uvicorn",
     "fastapi",
-    "httpx",
 ]
 
 [project.scripts]
