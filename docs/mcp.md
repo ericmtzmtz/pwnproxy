@@ -31,6 +31,58 @@ via HTTP and exposes each API endpoint as an MCP tool.
 
 3. The agent auto-discovers all tools and their schemas.
 
+## Agent Configuration
+
+Add the JSON snippet above to your agent's MCP configuration file:
+
+| Agent | Config File | Location |
+|---|---|---|
+| **OpenCode** | `opencode.jsonc` | `~/.config/opencode/opencode.jsonc` — add under `"mcpServers"` object |
+| **Claude Desktop** | `claude_desktop_config.json` | macOS: `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| | | Windows: `%APPDATA%\Claude\claude_desktop_config.json` |
+| **Cline / Roo** | `cline_mcp_settings.json` | `~/.config/cline/cline_mcp_settings.json` |
+| **Windsurf** | `mcp_config.json` | `.windsurf/` in project root |
+| **Continue (VS Code)** | `config.json` | `~/.continue/config.json` — add under `"experimental.mcpServers"` |
+
+### OpenCode example
+
+File `~/.config/opencode/opencode.jsonc`:
+```jsonc
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "python",
+      "args": ["-m", "apps.mcp.src.pwnproxy_mcp.server"]
+    }
+  }
+}
+```
+
+### Claude Desktop example (Windows)
+
+File `%APPDATA%\Claude\claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "python",
+      "args": ["-m", "apps.mcp.src.pwnproxy_mcp.server"]
+    }
+  }
+}
+```
+
+### Test the connection
+
+```bash
+# From the pwnproxy project root, run the MCP server directly:
+python -m apps.mcp.src.pwnproxy_mcp.server
+
+# It waits for JSON-RPC on stdin. Send a tools list request:
+echo '{"method":"list_tools","id":1}' | python -m apps.mcp.src.pwnproxy_mcp.server
+# Expected response lists all ~26 tools
+```
+
 ## Custom Ports
 
 If pwnproxy runs on non-default ports, call the `configure` tool first:

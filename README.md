@@ -59,7 +59,7 @@ pwnproxy ships a native MCP server at `apps/mcp/` — a thin wrapper over the RE
 Any MCP-compatible agent (Claude, Copilot, custom) can control the proxy, read
 traffic/findings, manage sessions, run scans, and export reports.
 
-**Setup:** Start pwnproxy (`pwnproxy start`), then configure your AI agent:
+**Setup:** Start pwnproxy (`pwnproxy start`), then add this to your agent's MCP config:
 
 ```json
 {
@@ -72,10 +72,20 @@ traffic/findings, manage sessions, run scans, and export reports.
 }
 ```
 
+Where to put it:
+
+| Agent | Config File | Path |
+|---|---|---|
+| **OpenCode** | `opencode.jsonc` | `~/.config/opencode/opencode.jsonc` — under `"mcpServers"` |
+| **Claude Desktop** | `claude_desktop_config.json` | Windows: `%APPDATA%\Claude\` — macOS: `~/Library/Application Support/Claude/` |
+| **Cline / Roo** | `cline_mcp_settings.json` | `~/.config/cline/` |
+| **Windsurf** | `mcp_config.json` | `.windsurf/` in project root |
+| **Continue (VS Code)** | `config.json` | `~/.continue/config.json` under `"experimental.mcpServers"` |
+
 **Custom ports:** Call the `configure` tool with your API URL and session name.
 Default: `http://127.0.0.1:8000/api/v1`.
 
-See `docs/mcp.md` for tool reference and workflow examples.
+See `docs/mcp.md` for tool reference, workflow examples, and per-agent setup details.
 
 ---
 
