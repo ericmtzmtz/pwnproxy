@@ -1,6 +1,36 @@
 import { useEffect, useState } from "preact/hooks";
 import { getFlow, deleteFlow, outscopeFlow } from "@/api/traffic/calls";
+import { sendRequest } from "@/api/repeater/calls";
 import type { FlowRecord } from "@/api/traffic/types";
+
+interface FlowRequestData {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+}
+
+function buildRawRequest(data: FlowRequestData): string {
+  const lines: string[] = [];
+  const urlObj = new URL(data.url);
+  const path = urlObj.pathname + urlObj.search;
+  lines.push(`${data.method} ${path} HTTP/1.1`);
+  lines.push(`Host: ${urlObj.host}`);
+  
+  for (const [key, value] of Object.entries(data.headers)) {
+    if (key.toLowerCase() !== "host") {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+  
+  lines.push("");
+  
+  if (data.body) {
+    lines.push(data.body);
+  }
+  
+  return lines.join("\n");
+}
 
 function toast(severity: "success" | "error", message: string) {
   const title = severity === "success" ? "Done" : "Error";
@@ -10,6 +40,7 @@ function toast(severity: "success" | "error", message: string) {
 interface FlowDetailProps {
   flowId: number;
   onDeleted?: (id: number) => void;
+  onSendToRepeater?: () => void;
 }
 
 function CollapsibleSection({ title, children, defaultOpen = true }: { title: string; children: preact.ComponentChildren; defaultOpen?: boolean }) {
@@ -57,12 +88,13 @@ function BodyBlock({ body, contentType }: { body: string | null; contentType?: s
   );
 }
 
-export function FlowDetail({ flowId, onDeleted }: FlowDetailProps) {
+export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailProps) {
   const [flow, setFlow] = useState<FlowRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [outscoping, setOutscoping] = useState(false);
+  const [sendingToRepeater, setSendingToRepeater] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +106,26 @@ export function FlowDetail({ flowId, onDeleted }: FlowDetailProps) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [flowId]);
+
+  const handleSendToRepeater = async () => {
+    if (!flow) return;
+    setSendingToRepeater(true);
+    try {
+      const rawRequest = buildRawRequest({
+        method: flow.method,
+        url: flow.url,
+        headers: flow.request_headers || {},
+        body: flow.request_body,
+      });
+      await sendRequest({ raw_request: rawRequest });
+      toast("success", "Sent request to Repeater");
+      onSendToRepeater?.();
+    } catch (err: any) {
+      toast("error", err.message || "Failed to send request");
+    } finally {
+      setSendingToRepeater(false);
+    }
+  };
 
   if (loading) return <p class="text-xs text-neutral-500">Loading…</p>;
   if (error) return <p class="text-xs text-red-400">Error: {error}</p>;
@@ -104,6 +156,16 @@ export function FlowDetail({ flowId, onDeleted }: FlowDetailProps) {
           </>
         )}
         <span class="ml-auto flex gap-2">
+          <button
+            onClick={async (e: MouseEvent) => {
+              e.stopPropagation();
+              await handleSendToRepeater();
+            }}
+            disabled={sendingToRepeater}
+            class="rounded bg-neutral-800 px-2 py-0.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 disabled:opacity-50"
+          >
+            {sendingToRepeater ? "..." : "Repeater"}
+          </button>
           <button
             onClick={async (e: MouseEvent) => {
               e.stopPropagation();

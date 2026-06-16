@@ -1,13 +1,24 @@
+/** @jsxImportSource preact */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { FlowTable } from "./FlowTable";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { listFlows, clearFlows } from "@/api/traffic/calls";
-import { getProxyStatus, startProxy, stopProxy, toggleProxy } from "@/api/proxy/calls";
+import { getProxyStatus, startProxy, stopProxy } from "@/api/proxy/calls";
 import type { FlowRecord } from "@/api/traffic/types";
 
 const API_BASE = import.meta.env.PUBLIC_API_BASE ?? "http://127.0.0.1:8000/api/v1";
 const PAGE_SIZE = 20;
 const METHODS = ["", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
+
+interface Finding {
+  id: number;
+  scanner: string;
+  url: string;
+  method: string;
+  severity: "info" | "low" | "medium" | "high";
+  title: string;
+  description: string;
+}
 
 export function ProxyPage() {
   const [flows, setFlows] = useState<FlowRecord[]>([]);
@@ -142,16 +153,6 @@ export function ProxyPage() {
     return () => clearInterval(t);
   }, []);
 
-  const handleClear = async () => {
-    try {
-      await clearFlows();
-    } catch { /* silent */ }
-    setFlows([]);
-    setFindings([]);
-    setFindingsMap({});
-    maxFlowIdRef.current = 0;
-    setPage(0);
-  };
 
   const handleDeleted = (id: number) => {
     setFlows((prev) => prev.filter((f) => f.id !== id));
@@ -167,33 +168,8 @@ export function ProxyPage() {
         <div class="flex items-center gap-3">
           <span class="flex items-center gap-1.5 text-xs text-neutral-500">
             <span class={`inline-flex h-2 w-2 rounded-full ${connected ? "bg-success-500" : "bg-yellow-500"}`} />
-            Listening on 127.0.0.1:8080
+            API connected to 127.0.0.1:8000
           </span>
-          <button
-            onClick={async () => {
-              try {
-                const status = await toggleProxy();
-                setCaptureEnabled(status.capture_enabled);
-              } catch { /* silent */ }
-            }}
-            class={`cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-              captureEnabled
-                ? "border-success-800 bg-success-900/20 text-success-400 hover:bg-success-900/40"
-                : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-            }`}
-            title={captureEnabled ? "Pause traffic capture" : "Resume traffic capture"}
-          >
-            <span class="inline-flex items-center gap-1.5">
-              <span class={`inline-flex h-2 w-2 rounded-full ${captureEnabled ? "bg-success-500" : "bg-neutral-500"}`} />
-              {captureEnabled ? "Capturing" : "Paused"}
-            </span>
-          </button>
-          <button
-            onClick={handleClear}
-            class="rounded-md border border-neutral-700 px-2.5 py-1 text-xs font-medium text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
-          >
-            Clear
-          </button>
         </div>
       </div>
 

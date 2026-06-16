@@ -3,8 +3,6 @@ import { API_BASE } from "@/core";
 export interface ScopeConfig {
   in_scope: string[];
   out_of_scope: string[];
-  include_subdomains: boolean;
-  ports: number[];
   enabled: boolean;
 }
 

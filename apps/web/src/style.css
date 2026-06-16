@@ -66,6 +66,16 @@
   50% { opacity: 0.5; }
 }
 
+/* Loading spinner */
+@keyframes spinner {
+  to { transform: rotate(360deg); }
+}
+
+.spinner {
+  animation: spinner 0.8s linear infinite;
+  border-radius: 50%;
+}
+
 @layer base {
   * { box-sizing: border-box; }
   html {

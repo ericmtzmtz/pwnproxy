@@ -1,7 +1,42 @@
 import { useState } from "preact/hooks";
 import { FlowDetail } from "./FlowDetail";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
+import { sendRequest } from "@/api/repeater/calls";
 import type { FlowRecord } from "@/api/traffic/types";
+
+interface FlowRequestData {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | null;
+}
+
+function buildRawRequest(data: FlowRequestData): string {
+  const lines: string[] = [];
+  const urlObj = new URL(data.url);
+  const path = urlObj.pathname + urlObj.search;
+  lines.push(`${data.method} ${path} HTTP/1.1`);
+  lines.push(`Host: ${urlObj.host}`);
+  
+  for (const [key, value] of Object.entries(data.headers)) {
+    if (key.toLowerCase() !== "host") {
+      lines.push(`${key}: ${value}`);
+    }
+  }
+  
+  lines.push("");
+  
+  if (data.body) {
+    lines.push(data.body);
+  }
+  
+  return lines.join("\n");
+}
+
+function toast(severity: "success" | "error", message: string) {
+  const title = severity === "success" ? "Done" : "Error";
+  window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title, message, severity } }));
+}
 
 interface FlowRowProps {
   flow: FlowRecord;
@@ -40,6 +75,22 @@ function truncateUrl(url: string, max = 60): string {
 export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
   const [expanded, setExpanded] = useState(false);
 
+  const handleSendToRepeater = async () => {
+    const rawRequest = buildRawRequest({
+      method: flow.method,
+      url: flow.url,
+      headers: flow.request_headers || {},
+      body: flow.request_body,
+    });
+    
+    try {
+      await sendRequest({ raw_request: rawRequest });
+      toast("success", `Sent request to Repeater`);
+    } catch (err: any) {
+      toast("error", err.message || "Failed to send request");
+    }
+  };
+
   return (
     <>
       <tr
@@ -72,7 +123,7 @@ export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
       {expanded && (
         <tr class="border-b border-neutral-800">
           <td colspan={6} class="bg-neutral-900 px-6 py-4">
-            <FlowDetail flowId={flow.id} onDeleted={onDeleted} />
+            <FlowDetail flowId={flow.id} onDeleted={onDeleted} onSendToRepeater={handleSendToRepeater} />
           </td>
         </tr>
       )}
