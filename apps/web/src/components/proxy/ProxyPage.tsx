@@ -93,7 +93,8 @@ export function ProxyPage() {
     }
   }, []);
 
-  const onWsMessage = useCallback(
+  const toastDebounceMap = new Map<string, number>();
+const onWsMessage = useCallback(
     (msg: { type: string; [key: string]: unknown }) => {
       wsConnectedRef.current = true;
       stopPolling();
@@ -111,6 +112,26 @@ export function ProxyPage() {
           if (prev.some((p) => p.scanner === finding.scanner && p.id === finding.id)) return prev;
           return [finding, ...prev].slice(0, 200);
         });
+        // Toast notification with debounce per scanner
+        const now = Date.now();
+        const last = toastDebounceMap.get(finding.scanner) ?? 0;
+        if (now - last > 1000) {
+          toastDebounceMap.set(finding.scanner, now);
+          const sevMap: Record<string, string> = {
+            critical: "error",
+            high: "error",
+            medium: "warning",
+            low: "info",
+          };
+          const toastSev = sevMap[finding.severity] ?? "info";
+          window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+            detail: {
+              title: `${finding.scanner} — ${finding.severity}`,
+              message: finding.url,
+              severity: toastSev,
+            },
+          }));
+        }
       }
     },
     [stopPolling],

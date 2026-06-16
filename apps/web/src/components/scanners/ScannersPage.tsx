@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
+import { sendRequest } from "@/api/repeater/calls";
 import { launchScan } from "@/api/scan/calls";
 import { listPlugins } from "@/api/plugins/calls";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
@@ -348,6 +349,7 @@ export function ScannersPage() {
                                   <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">Param</th>
                                   <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">Confidence</th>
                                   <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">Payload</th>
+                                   <th class="px-3 py-2 text-left font-semibold uppercase tracking-wider text-neutral-400">Action</th>
                                 </tr>
                               </thead>
                               <tbody class="divide-y divide-neutral-800">
@@ -363,6 +365,23 @@ export function ScannersPage() {
                                       </span>
                                     </td>
                                     <td class="max-w-[200px] truncate px-3 py-2 font-mono text-neutral-400" title={f.payload}>{f.payload || "-"}</td>
+                                       <td class="px-3 py-2">
+                                         <button
+                                           onClick={async () => {
+                                             try {
+                                               const rawRequest = `${f.method} ${new URL(f.url).pathname} HTTP/1.1\nHost: ${new URL(f.url).host}\n\n`;
+                                               await sendRequest({ raw_request: rawRequest });
+                                               window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Sent to Repeater", severity: "success", navTo: "/repeater" } }));
+                                             } catch {
+                                               window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Repeater error", message: "Failed to send", severity: "error" } }));
+                                             }
+                                           }}
+                                           class="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:text-primary-400 hover:bg-neutral-800"
+                                           title="Send to Repeater"
+                                         >
+                                           Repeater
+                                         </button>
+                                       </td>
                                   </tr>
                                 ))}
                               </tbody>

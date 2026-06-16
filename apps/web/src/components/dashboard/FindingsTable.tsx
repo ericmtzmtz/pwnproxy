@@ -126,7 +126,7 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                                 const tab = await createTab({ name: `${method} ${path.slice(0, 30)}`, raw_request: raw });
                                 new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
                                 window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
-                                  detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "success" },
+                                  detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "success", navTo: "/repeater" },
                                 }));
                               } catch {
                                 window.dispatchEvent(new CustomEvent("pwnproxy-toast", {

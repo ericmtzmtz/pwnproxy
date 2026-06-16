@@ -76,9 +76,12 @@ Used for: proxy subprocess → main process event forwarding.
 ┌─────────────────────────────────────────────────────────────────┐
 │  proxy_worker.py (subprocess)                                   │
 │                                                                 │
-│  mitmproxy → BridgeRelay → TcpBridgeServer                      │
-│  (captura HTTP)   (convierte    (escucha TCP, envía             │
-│                   a Flow.dict)   JSON lines a client)            │
+│  mitmproxy                                                      │
+│    ├── BridgeRelay (request/response/error → proxy.flow)        │
+│    │     └── TcpBridgeServer                                    │
+│    └── StorageAddon (flow_stored/done/finding → proxy.*)        │
+│          └── BridgeHookBus ──→ TcpBridgeServer                  │
+│  (ambos publican al mismo TcpBridgeServer)                      │
 │                                       │                         │
 └───────────────────────────────────────│─────────────────────────┘
                                         │ TCP / JSON lines
@@ -86,13 +89,13 @@ Used for: proxy subprocess → main process event forwarding.
 ┌───────────────────────────────────────│─────────────────────────┐
 │  main process (API + plugins)         │                         │
 │                                       v                         │
-│  TcpBridgeClient ──→ _on_proxy_event ──→ HookBus.publish("flow") │
-│  (conecta, lee       (deserializa:     (entrega a consumidores)  │
-│   JSON lines)        Flow.from_dict())                           │
+│  TcpBridgeClient ──→ _on_proxy_event ──→ HookBus.publish(...)   │
+│  (conecta, lee       (deserializa:     (entrega a consumidores) │
+│   JSON lines)        distingue topics)                          │
 │                                                                  │
 │  HookBus consumers:                                              │
 │  ├── PluginLoader → ScannerPlugin.on_flow(flow)                  │
-│  │     → DetectionChain → Finding                                │
+│  │     → DetectionChain → Finding                               │
 │  │     → publish("finding.new") → FindingStorage.save()         │
 │  ├── SessionConsumer (token extraction)                          │
 │  └── WS broadcaster (real-time traffic)                          │
@@ -106,6 +109,9 @@ Used for: proxy subprocess → main process event forwarding.
 2. mitmproxy (in `proxy_worker.py`) processes the HTTP flow
 3. `BridgeRelay.response(f)` is called — converts mitmproxy flow to pwnproxy `Flow` via `Flow.from_mitmproxy(f)`, then serializes to dict via `flow.to_dict()`
 4. `TcpBridgeServer.publish("proxy.flow", flow_dict)` sends the dict as JSON line over TCP
+4a. `StorageAddon._store_flow()` publishes `flow_stored` and (if auto-scan) `done`
+    events via `BridgeHookBus`, which wraps `TcpBridgeServer.publish()` with a `proxy.` topic prefix
+4b. `TcpBridgeServer` sends these as JSON lines over the same TCP connection
 5. `TcpBridgeClient._run()` receives the line, parses JSON, calls `self._on_event("proxy.flow", data)`
 6. `_on_proxy_event()` in `start.py` reconstructs `Flow.from_dict(data)`, then `hook_bus.publish("flow", flow)`
 7. `PluginLoader._run_consumer` gets the `Flow` from its HookBus queue, calls `_handle_flow(plugin, flow)`
@@ -167,6 +173,28 @@ assert received[0].data == {"hello": "world"}
 3. Subscribers and publishers do not need changes — they use the same `publish`/`subscribe` interface
 
 ## TcpBridge Details
+
+### BridgeHookBus (proxy worker only)
+
+The proxy subprocess (`proxy_worker.py`) does not have a `HookBus` instance. When
+`StorageAddon` needs to publish events (e.g., `flow_stored`, `done` findings), it
+expects a `hook_bus` object with a `publish(topic, data)` method.
+
+`BridgeHookBus` is an inline class created inside `ProxyWorker.start()` that wraps
+the `TcpBridgeServer` to satisfy this interface:
+
+```python
+class BridgeHookBus:
+    def __init__(self, bridge: TcpBridgeServer):
+        self._bridge = bridge
+    def publish(self, channel: str, data: dict) -> None:
+        asyncio.create_task(self._bridge.publish("proxy." + channel, data))
+```
+
+Events published via BridgeHookBus are prefixed with `proxy.` and sent as JSON lines
+over TCP, just like BridgeRelay events. The main process receives them through the
+same `TcpBridgeClient` and dispatches to `HookBus` via `_on_proxy_event`.
+
 
 ### Server (TcpBridgeServer)
 

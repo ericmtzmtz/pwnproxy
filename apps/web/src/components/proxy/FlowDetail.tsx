@@ -118,7 +118,7 @@ export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailPr
         body: flow.request_body,
       });
       await sendRequest({ raw_request: rawRequest });
-      toast("success", "Sent request to Repeater");
+      window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Done", message: "Sent request to Repeater", severity: "success", navTo: "/repeater" } }));
       onSendToRepeater?.();
     } catch (err: any) {
       toast("error", err.message || "Failed to send request");

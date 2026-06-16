@@ -72,7 +72,16 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     from pwnproxy.services.findings.engine import ExportEngine
 
     main_loader = getattr(request.app.state, "plugin_loader", None)
-    loader = await _build_scan_loader()
+    scanners = config.get("scanners")
+    if scanners is not None:
+        # ensure it's a set of strings
+        if isinstance(scanners, str):
+            scanners = set([s.strip() for s in scanners.split(",") if s.strip()])
+        elif isinstance(scanners, list):
+            scanners = set(scanners)
+        else:
+            scanners = None
+    loader = await _build_scan_loader(scanners)
     if main_loader is not None:
         disabled = main_loader.watchdog_stats().get("disabled", [])
         for name in disabled:

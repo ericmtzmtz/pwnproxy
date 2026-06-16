@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { runIntruder, listWordlists } from "@/api/intruder/calls";
+import { sendRequest } from "@/api/repeater/calls";
 import type { IntruderResult, WordlistEntry } from "@/api/intruder/types";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
@@ -227,13 +228,26 @@ export function IntruderPage() {
     }));
   }
 
-  function handlePreview(payload: string) {
-    const row = results.find((r) => r.payload === payload);
-    if (!row) return;
-    setPreview(row);
-    setShowFullBody(false);
-    setRenderMode("raw");
+function handlePreview(payload: string) {
+  const row = results.find((r) => r.payload === payload);
+  if (!row) return;
+  setPreview(row);
+  setShowFullBody(false);
+  setRenderMode("raw");
+}
+
+async function handleSendToRepeater(rawReq: string) {
+  try {
+    await sendRequest({ raw_request: rawReq });
+    window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+      detail: { title: "Sent to Repeater", message: "", severity: "info", navTo: "/repeater" },
+    }));
+  } catch (err: any) {
+    window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+      detail: { title: "Error", message: err.message ?? "Failed to send to repeater", severity: "error" },
+    }));
   }
+}
 
   function toggleSort(col: SortKey) {
     if (sortKey === col) {
@@ -533,14 +547,20 @@ export function IntruderPage() {
                               <td class={`px-3 py-1 font-semibold lg:px-2 ${statusColor(r.status_code)}`}>{r.status_code}</td>
                               <td class="px-3 py-1 text-neutral-400 lg:px-2">{fmtBytes(r.response_length)}</td>
                               <td class="px-3 py-1 text-neutral-500 lg:px-2">{r.timing_ms?.toFixed(0)}ms</td>
-                              <td class="px-3 py-1 lg:px-2">
-                                <button onClick={() => handlePreview(r.payload)}
-                                  class="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
-                                  title="Preview response"
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                                </button>
-                              </td>
+<td class="px-3 py-1 lg:px-2">
+                                  <button onClick={() => handlePreview(r.payload)}
+                                    class="rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
+                                    title="Preview response"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                                  </button>
+                                  <button onClick={() => handleSendToRepeater(r.raw_request ?? r.payload)}
+                                    class="ml-1 rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
+                                    title="Send to Repeater"
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h4l3-8 4 16 3-8h4"/></svg>
+                                  </button>
+                                </td>
                             </tr>
                           ))}
                         </tbody>

@@ -85,7 +85,7 @@ export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
     
     try {
       await sendRequest({ raw_request: rawRequest });
-      toast("success", `Sent request to Repeater`);
+      window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Done", message: "Sent request to Repeater", severity: "success", navTo: "/repeater" } }));
     } catch (err: any) {
       toast("error", err.message || "Failed to send request");
     }

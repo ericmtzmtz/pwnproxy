@@ -31,7 +31,7 @@ def url(
     output_file: Optional[str] = typer.Option(None, "--output-file", "-f", help="Output file path (default: stdout)"),
 ):
     async def _run():
-        loader = await _build_scan_loader()
+        loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None)
         findings = await _scan_target(loader, target, timeout)
         _output_findings(findings, output, output_file)
         if findings:
@@ -48,7 +48,7 @@ def url(
         raise typer.Exit(2)
 
 
-async def _build_scan_loader() -> PluginLoader:
+async def _build_scan_loader(scanners: Optional[set[str]] = None) -> PluginLoader:
     from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
     from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
@@ -57,11 +57,21 @@ async def _build_scan_loader() -> PluginLoader:
     from pwnproxy.plugins.core.loader import PluginLoader
 
     loader = PluginLoader()
-    await loader.load_builtin(SQLiScannerPlugin())
-    await loader.load_builtin(XSSScannerPlugin())
-    await loader.load_builtin(LFIScannerPlugin())
-    await loader.load_builtin(XXEScannerPlugin())
-    await loader.load_builtin(SSRFScannerPlugin())
+    builtin_plugins = {
+        "sqli": SQLiScannerPlugin,
+        "xss": XSSScannerPlugin,
+        "lfi": LFIScannerPlugin,
+        "xxe": XXEScannerPlugin,
+        "ssrf": SSRFScannerPlugin,
+    }
+    if scanners:
+        for name in scanners:
+            if name not in builtin_plugins:
+                raise ValueError(f"Unknown scanner: {name}")
+            await loader.load_builtin(builtin_plugins[name]())
+    else:
+        for plugin_cls in builtin_plugins.values():
+            await loader.load_builtin(plugin_cls())
     return loader
 
 
