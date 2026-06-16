@@ -177,7 +177,7 @@ def start(
         from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
         from pwnproxy.services.proxy.interceptor.controller import InterceptorController
         intercept_queue: asyncio.Queue = asyncio.Queue()
-        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=flow_filter)
+        intercept_addon = InterceptorAddon(intercept_queue, flow_filter=flow_filter)
         interceptor_controller = InterceptorController(intercept_addon, on_intercepted=lambda f: None)
         interceptor_controller.start()
         session_manager.set_module_providers(interceptor_controller=interceptor_controller)
