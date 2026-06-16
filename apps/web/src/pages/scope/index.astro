@@ -71,7 +71,6 @@ import Card from "@/ui/Card.astro";
              <span class="text-xs text-neutral-500">Scope file</span>
              <p id="summary-file" class="text-sm font-mono text-neutral-400 break-all">~/.pwnproxy/sessions/default/scope.json</p>
            </div>
-           <div id="scope-toggle-container"></div>
         </div>
       </Card>
     </div>
@@ -89,7 +88,6 @@ import Card from "@/ui/Card.astro";
   const excludeList = document.getElementById("exclude-list") as HTMLDivElement;
   const summaryInclude = document.getElementById("summary-include") as HTMLParagraphElement;
   const summaryExclude = document.getElementById("summary-exclude") as HTMLParagraphElement;
-  const scopeToggleContainer = document.getElementById("scope-toggle-container") as HTMLDivElement;
   const inScopeInput = document.getElementById("in-scope-input") as HTMLInputElement;
   const excludeInput = document.getElementById("exclude-input") as HTMLInputElement;
   const fileInput = document.getElementById("burp-file") as HTMLInputElement;
@@ -99,7 +97,6 @@ import Card from "@/ui/Card.astro";
   async function loadScope() {
     try {
       scope = await getScope();
-      createScopeToggle();
       renderAll();
     } catch { /* silent */ }
   }
@@ -108,25 +105,6 @@ import Card from "@/ui/Card.astro";
     try {
       await updateScope(scope);
     } catch { /* silent */ }
-  }
-
-  // Create the scope toggle button
-  function createScopeToggle() {
-    scopeToggleContainer.innerHTML = `<button
-      id="scope-enabled"
-      class="cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors"
-    ></button>`;
-    const btn = document.getElementById("scope-enabled") as HTMLButtonElement;
-    if (btn) {
-      btn.addEventListener("click", async () => {
-        scope.enabled = !scope.enabled;
-        await saveScope();
-        updateScopeToggle();
-        window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
-          detail: { title: scope.enabled ? "Scope enabled" : "Scope disabled", message: `Scope filtering is now ${scope.enabled ? "ON" : "OFF"}`, severity: "info" },
-        }));
-      });
-    }
   }
 
   // Render scope status bar
