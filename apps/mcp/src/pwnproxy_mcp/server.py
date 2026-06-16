@@ -105,12 +105,18 @@ def _register_tools(mcp):
     c = get_client()
 
     @mcp.tool()
+    async def configure(api_base: str = "http://127.0.0.1:8000/api/v1", session: str = "") -> str:
+        global _client
+        _client = MCPApiClient(base_url=api_base, session=session or None)
+        return _ok({"status": "configured", "api_base": api_base})
+
+    @mcp.tool()
     async def proxy_status() -> str:
         return _ok(await c.get("/proxy/status"))
 
     @mcp.tool()
-    async def proxy_toggle(enabled: bool) -> str:
-        return _ok(await c.put("/proxy/toggle", json={"enabled": enabled}))
+    async def proxy_toggle() -> str:
+        return _ok(await c.put("/proxy/toggle"))
 
     @mcp.tool()
     async def list_flows(limit: int = 50, offset: int = 0) -> str:
@@ -155,8 +161,8 @@ def _register_tools(mcp):
         return _ok(await c.put("/sessions/scope", json={"in_scope": in_scope, "out_of_scope": out_of_scope, "enabled": enabled}))
 
     @mcp.tool()
-    async def repeater_send(method: str, url: str, headers: dict = {}, body: str = "") -> str:
-        return _ok(await c.post("/repeater/send", json={"method": method, "url": url, "headers": headers, "body": body}))
+    async def repeater_send(raw_request: str, tab_id: int = 0) -> str:
+        return _ok(await c.post("/repeater/send", json={"raw_request": raw_request, "tab_id": tab_id}))
 
     @mcp.tool()
     async def list_repeater_tabs() -> str:
@@ -238,8 +244,9 @@ def _register_resources(mcp):
 
 
 TOOL_DEFINITIONS = [
+    {"name": "configure", "description": "Configure MCP client API base and session", "inputSchema": {"type": "object", "properties": {"api_base": {"type": "string"}, "session": {"type": "string"}}}},
     {"name": "proxy_status", "description": "Get proxy capture status", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "proxy_toggle", "description": "Toggle proxy capture on/off", "inputSchema": {"type": "object", "properties": {"enabled": {"type": "boolean"}}, "required": ["enabled"]}},
+    {"name": "proxy_toggle", "description": "Toggle proxy capture on/off", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "list_flows", "description": "List proxied flows from DB", "inputSchema": {"type": "object", "properties": {"limit": {"type": "integer"}, "offset": {"type": "integer"}}}},
     {"name": "get_flow", "description": "Get flow by ID", "inputSchema": {"type": "object", "properties": {"flow_id": {"type": "integer"}}, "required": ["flow_id"]}},
     {"name": "delete_flow", "description": "Delete a flow", "inputSchema": {"type": "object", "properties": {"flow_id": {"type": "integer"}}, "required": ["flow_id"]}},
@@ -250,7 +257,7 @@ TOOL_DEFINITIONS = [
     {"name": "switch_session", "description": "Switch to a different session", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
     {"name": "get_scope", "description": "Get current scope config", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "update_scope", "description": "Update scope rules", "inputSchema": {"type": "object", "properties": {"in_scope": {"type": "array", "items": {"type": "string"}}, "out_of_scope": {"type": "array", "items": {"type": "string"}}, "enabled": {"type": "boolean"}}}},
-    {"name": "repeater_send", "description": "Send raw HTTP request via repeater", "inputSchema": {"type": "object", "properties": {"method": {"type": "string"}, "url": {"type": "string"}, "headers": {"type": "object"}, "body": {"type": "string"}}, "required": ["method", "url"]}},
+    {"name": "repeater_send", "description": "Send raw HTTP request via repeater", "inputSchema": {"type": "object", "properties": {"raw_request": {"type": "string"}, "tab_id": {"type": "integer"}}, "required": ["raw_request"]}},
     {"name": "list_repeater_tabs", "description": "List repeater tabs", "inputSchema": {"type": "object", "properties": {}}},
     {"name": "intruder_run", "description": "Launch intruder attack", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "payload_positions": {"type": "array", "items": {"type": "string"}}, "wordlist": {"type": "array", "items": {"type": "string"}}, "mode": {"type": "string"}, "concurrency": {"type": "integer"}}, "required": ["url"]}},
     {"name": "get_intruder_results", "description": "Get intruder attack results", "inputSchema": {"type": "object", "properties": {"attack_id": {"type": "string"}}, "required": ["attack_id"]}},
@@ -272,11 +279,20 @@ RESOURCE_DEFINITIONS = [
 ]
 
 
+def _handle_configure(arguments: dict) -> dict:
+    global _client
+    api_base = arguments.get("api_base", "http://127.0.0.1:8000/api/v1")
+    session = arguments.get("session", "") or None
+    _client = MCPApiClient(base_url=api_base, session=session)
+    return {"status": "configured", "api_base": api_base}
+
+
 async def handle_call(tool_name: str, arguments: dict) -> Any:
     c = get_client()
     mapping = {
+        "configure": lambda: _handle_configure(arguments),
         "proxy_status": lambda: c.get("/proxy/status"),
-        "proxy_toggle": lambda: c.put("/proxy/toggle", json={"enabled": arguments["enabled"]}),
+        "proxy_toggle": lambda: c.put("/proxy/toggle"),
         "list_flows": lambda: c.get("/flows", params={"limit": arguments.get("limit", 50), "offset": arguments.get("offset", 0)}),
         "get_flow": lambda: c.get(f"/flows/{arguments['flow_id']}"),
         "delete_flow": lambda: c.delete(f"/flows/{arguments['flow_id']}"),
@@ -287,7 +303,7 @@ async def handle_call(tool_name: str, arguments: dict) -> Any:
         "switch_session": lambda: c.post("/sessions/manage", json={"action": "load", "name": arguments["name"]}),
         "get_scope": lambda: c.get("/sessions/scope"),
         "update_scope": lambda: c.put("/sessions/scope", json={"in_scope": arguments.get("in_scope", []), "out_of_scope": arguments.get("out_of_scope", []), "enabled": arguments.get("enabled", True)}),
-        "repeater_send": lambda: c.post("/repeater/send", json={"method": arguments["method"], "url": arguments["url"], "headers": arguments.get("headers", {}), "body": arguments.get("body", "")}),
+        "repeater_send": lambda: c.post("/repeater/send", json={"raw_request": arguments["raw_request"], "tab_id": arguments.get("tab_id", 0)}),
         "list_repeater_tabs": lambda: c.get("/repeater/tabs"),
         "intruder_run": lambda: c.post("/intruder/run", json={"url": arguments["url"], "payload_positions": arguments.get("payload_positions", []), "wordlist": arguments.get("wordlist", []), "mode": arguments.get("mode", "sniper"), "concurrency": arguments.get("concurrency", 5)}),
         "get_intruder_results": lambda: c.get(f"/intruder/attack/{arguments['attack_id']}"),

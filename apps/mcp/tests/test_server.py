@@ -47,7 +47,7 @@ class TestMCPApiClient:
         client = MCPApiClient(base_url="http://localhost:8000/api/v1")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"capture_enabled": True}
+        mock_resp.json = MagicMock(return_value={"capture_enabled": True})
         client._client = AsyncMock()
         client._client.request = AsyncMock(return_value=mock_resp)
         result = await client.get("/proxy/status")
@@ -60,7 +60,7 @@ class TestMCPApiClient:
         client = MCPApiClient(base_url="http://localhost:8000/api/v1")
         mock_resp = MagicMock()
         mock_resp.status_code = 200
-        mock_resp.json.return_value = {"task_id": "abc123"}
+        mock_resp.json = MagicMock(return_value={"task_id": "abc123"})
         client._client = AsyncMock()
         client._client.request = AsyncMock(return_value=mock_resp)
         result = await client.post("/scan", params={"url": "http://target.com"})
@@ -85,7 +85,7 @@ class TestMCPApiClient:
         client = MCPApiClient(base_url="http://localhost:8000/api/v1")
         mock_resp = MagicMock()
         mock_resp.status_code = 404
-        mock_resp.json.return_value = {"detail": "Not found"}
+        mock_resp.json = MagicMock(return_value={"detail": "Not found"})
         mock_resp.text = "Not found"
         client._client = AsyncMock()
         client._client.request = AsyncMock(return_value=mock_resp)
@@ -118,6 +118,45 @@ class TestMCPApiClient:
         assert "timed out" in result["error"]
         await client.close()
 
+    @pytest.mark.asyncio
+    async def test_configure(self):
+        from pwnproxy_mcp.server import MCPApiClient
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1")
+        assert str(client._client.base_url) == "http://localhost:8000/api/v1/"
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_proxy_toggle_no_body(self):
+        from pwnproxy_mcp.server import MCPApiClient
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json = MagicMock(return_value={"capture_enabled": False})
+        client._client = AsyncMock()
+        client._client.request = AsyncMock(return_value=mock_resp)
+        result = await client.put("/proxy/toggle")
+        assert result == {"capture_enabled": False}
+        # Verify no json body was sent (proxy_toggle sends no payload)
+        call_kwargs = client._client.request.call_args
+        assert "json" not in call_kwargs.kwargs
+        await client.close()
+
+    @pytest.mark.asyncio
+    async def test_repeater_send_raw_request(self):
+        from pwnproxy_mcp.server import MCPApiClient
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1")
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json = MagicMock(return_value={"task_id": "rpt-001"})
+        client._client = AsyncMock()
+        client._client.request = AsyncMock(return_value=mock_resp)
+        raw = "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n"
+        result = await client.post("/repeater/send", json={"raw_request": raw, "tab_id": 0})
+        assert result == {"task_id": "rpt-001"}
+        call_kwargs = client._client.request.call_args
+        assert call_kwargs.kwargs["json"]["raw_request"] == raw
+        await client.close()
+
 
 class TestSessionHeader:
     def test_session_header_set(self):
@@ -147,6 +186,7 @@ class TestJsonRpcFallback:
         assert "result" in response
         tools = response["result"]
         tool_names = [t["name"] for t in tools]
+        assert "configure" in tool_names
         assert "proxy_status" in tool_names
         assert "list_flows" in tool_names
         assert "list_findings" in tool_names

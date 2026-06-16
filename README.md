@@ -55,98 +55,27 @@ pwnproxy was designed for a world where security testing happens in pipelines, A
 
 ## AI Agent Integration (MCP)
 
-pwnproxy ships a native MCP server — a thin wrapper over the REST API. Any MCP-compatible agent (Claude, Copilot, custom) can control the proxy, read traffic/findings, manage sessions, run scans, and export reports.
+pwnproxy ships a native MCP server at `apps/mcp/` — a thin wrapper over the REST API.
+Any MCP-compatible agent (Claude, Copilot, custom) can control the proxy, read
+traffic/findings, manage sessions, run scans, and export reports.
 
-```bash
-pip install pwnproxy-mcp
-```
-
-**Prerequisite:** pwnproxy API must be running (`pwnproxy start`). The MCP server delegates all operations to the API.
-
-### Configuration
-
-| Env Var | Default | Description |
-|---------|---------|-------------|
-| `PUBLIC_API_BASE` | `http://127.0.0.1:8000/api/v1` | pwnproxy API base URL |
-| `PWNPROXY_SESSION` | _(none)_ | Session name — added as `X-Pwnproxy-Session` header |
-
-### Claude Desktop
-
-Add to your `claude_desktop_config.json`:
+**Setup:** Start pwnproxy (`pwnproxy start`), then configure your AI agent:
 
 ```json
 {
   "mcpServers": {
     "pwnproxy": {
-      "command": "pwnproxy-mcp",
-      "env": {
-        "PUBLIC_API_BASE": "http://127.0.0.1:8000/api/v1",
-        "PWNPROXY_SESSION": "my-pentest"
-      }
+      "command": "python",
+      "args": ["-m", "apps.mcp.src.pwnproxy_mcp.server"]
     }
   }
 }
 ```
 
-### Available MCP Tools
+**Custom ports:** Call the `configure` tool with your API URL and session name.
+Default: `http://127.0.0.1:8000/api/v1`.
 
-| Tool | Description |
-|------|-------------|
-| **Proxy** | |
-| `proxy_status` | Get capture status (enabled/disabled) |
-| `proxy_toggle` | Enable/disable proxy capture |
-| **Traffic** | |
-| `list_flows` | List proxied flows (paginated) |
-| `get_flow` | Get flow by ID |
-| `delete_flow` | Delete a flow |
-| **Findings** | |
-| `list_findings` | List scanner findings (filter by scanner/severity) |
-| `delete_finding` | Delete a finding |
-| **Sessions** | |
-| `list_sessions` | List all sessions |
-| `create_session` | Create new session |
-| `switch_session` | Switch active session |
-| `get_scope` | Get scope config |
-| `update_scope` | Update scope rules |
-| **Repeater** | |
-| `repeater_send` | Send raw HTTP request |
-| `list_repeater_tabs` | List repeater tabs |
-| **Intruder** | |
-| `intruder_run` | Launch intruder attack |
-| `get_intruder_results` | Get attack results |
-| **Tasks** | |
-| `list_tasks` | List tasks (scan/intruder/repeater) |
-| `get_task` | Get task status/result |
-| `cancel_task` | Cancel running task |
-| **Plugins** | |
-| `list_plugins` | List loaded plugins |
-| `toggle_plugin` | Enable/disable plugin |
-| **Scanning** | |
-| `trigger_scan` | Scan URL with specified scanners |
-| `get_scan_results` | Get scan results |
-| `export_results` | Export as JSON/SARIF/HTML/PDF |
-| **Health** | |
-| `health_check` | Check API health |
-
-### MCP Resources
-
-| Resource | Description |
-|----------|-------------|
-| `flows://{flow_id}` | Flow details by ID |
-| `findings://{scanner}/{finding_id}` | Finding by scanner and ID |
-| `sessions://{name}` | Session info by name |
-
-### Migration from v0.1
-
-Old tools (`scan_url`, `get_flow`, `list_flows`, `list_findings`, `get_status`) operated standalone. New tools delegate to the REST API.
-
-| Old Tool | New Equivalent |
-|----------|----------------|
-| `scan_url` | `trigger_scan` + `get_scan_results` (async) |
-| `get_flow` | `get_flow` (now reads from proxy DB) |
-| `list_flows` | `list_flows` (now reads from proxy DB) |
-| `list_findings` | `list_findings` (now returns actual findings, not plugins) |
-| `get_status` | `health_check` + `list_plugins` |
+See `docs/mcp.md` for tool reference and workflow examples.
 
 ---
 
