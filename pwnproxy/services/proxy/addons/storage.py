@@ -12,7 +12,7 @@ from pwnproxy.shared.models import Flow
 logger = logging.getLogger(__name__)
 
 _AUTO_SCAN = os.environ.get("PWNPROXY_AUTO_SCAN", "true").lower() != "false"
-_SCOPE_FILTER_ENABLED = os.environ.get("PWNPROXY_CAPTURE_SCOPE_FILTER", "true").lower() != "false"
+
 
 
 class StorageAddon:
@@ -22,11 +22,11 @@ class StorageAddon:
     so scanners automatically process every captured flow.
     """
 
-    def __init__(        self, db_engine: AsyncEngine, scope_filter: Optional[Callable[[str], bool]] = None, hook_bus=None, capture_enabled_fn: Optional[Callable[[], bool]] = None):
+    def __init__(self, db_engine: AsyncEngine, hook_bus=None):
         self.db_engine = db_engine
-        self.scope_filter = scope_filter if _SCOPE_FILTER_ENABLED else None
+        
         self.hook_bus = hook_bus
-        self._capture_enabled_fn = capture_enabled_fn
+        
         self._auto_scan = _AUTO_SCAN
         self.session_factory = sessionmaker(
             self.db_engine, class_=AsyncSession, expire_on_commit=False
@@ -35,11 +35,7 @@ class StorageAddon:
 
     def response(self, f: mitmproxy.http.HTTPFlow):
         try:
-            if self._capture_enabled_fn and not self._capture_enabled_fn():
-                return
             pwn_flow = Flow.from_mitmproxy(f)
-            if self.scope_filter and not self.scope_filter(pwn_flow.url):
-                return
             task = asyncio.create_task(self._store_flow(pwn_flow))
             self._background_tasks.add(task)
             task.add_done_callback(self._background_tasks.discard)

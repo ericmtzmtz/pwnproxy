@@ -14,6 +14,7 @@ from apps.api.server import start_api_server
 from pwnproxy.shared.db import create_engine as create_traffic_engine, init_db
 from pwnproxy.services.proxy.proxy_process import ProxyProcess
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
 
 logger = logging.getLogger(__name__)
@@ -165,10 +166,8 @@ def start(
             token_storage=token_storage,
         )
 
-        # Dynamic scope filter: always reads from the current session_manager.scope
-        # at runtime, so it stays in sync when scope is updated via API or session switch.
-        scope_check = lambda url: session_manager.scope.is_in_scope(url)
-        intercept_scope_check = lambda url: session_manager.scope.is_in_scope(url)
+        # Dynamic scope filter using FlowFilter, stays in sync with session scope
+        flow_filter = FlowFilter(session_manager.scope)
 
         proxy = ProxyProcess()
         session_manager.set_proxy_engine(proxy)
@@ -178,7 +177,7 @@ def start(
         from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
         from pwnproxy.services.proxy.interceptor.controller import InterceptorController
         intercept_queue: asyncio.Queue = asyncio.Queue()
-        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=intercept_scope_check)
+        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=flow_filter)
         interceptor_controller = InterceptorController(intercept_addon, on_intercepted=lambda f: None)
         interceptor_controller.start()
         session_manager.set_module_providers(interceptor_controller=interceptor_controller)
@@ -212,8 +211,8 @@ def start(
         scanner_engine = session_manager.get_scanner_engine()
         token_storage = session_manager.get_token_storage()
 
-        hook_bus.set_scope_filter(scope_check)
-        intercept_addon.set_scope_filter(intercept_scope_check)
+        # HookBus no longer needs a scope filter
+        intercept_addon.set_scope_filter(flow_filter)
 
         from pwnproxy.services.intruder.engine import IntruderEngine
         from pwnproxy.services.repeater.engine import RepeaterEngine

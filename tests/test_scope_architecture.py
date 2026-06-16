@@ -47,33 +47,7 @@ class TestScopeConfigSanitization:
         assert cfg.is_in_scope("http://evil.com/admin?x=1") is False
 
 
-class TestHookBusScopeFilter:
-    def test_flow_channel_filtered(self):
-        """Out-of-scope URL filtered on flow channel."""
-        cfg = ScopeConfig({"enabled": True, "in_scope": ["*.example.com"], "out_of_scope": ["*.evil.com"]})
-        bus = HookBus()
-        bus.set_scope_filter(cfg.is_in_scope)
-        q = bus.register("flow")
-        bus.publish("flow", {"url": "http://evil.com/test"})
-        assert q.empty()
-
-    def test_flow_channel_allowed(self):
-        """In-scope URL delivered on flow channel."""
-        cfg = ScopeConfig({"enabled": True, "in_scope": ["*.example.com"], "out_of_scope": []})
-        bus = HookBus()
-        bus.set_scope_filter(cfg.is_in_scope)
-        q = bus.register("flow")
-        data = {"url": "http://example.com/home"}
-        bus.publish("flow", data)
-        assert not q.empty()
-        assert q.get_nowait() == data
-
-    def test_no_scope_filter_passes_all(self):
-        """No filter set: all data passes."""
-        bus = HookBus()
-        q = bus.register("flow")
-        bus.publish("flow", {"url": "http://example.com/any"})
-        assert not q.empty()
+# Scope filter tests moved to FlowFilter implementation. HookBus no longer filters.
 
 
 class TestProxyWorkerScope:

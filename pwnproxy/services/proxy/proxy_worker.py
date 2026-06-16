@@ -1,4 +1,5 @@
 import argparse
+from pwnproxy.shared.flow_filter import FlowFilter
 import asyncio
 import json
 import logging
@@ -55,6 +56,7 @@ class ProxyWorker:
         self._bridge = TcpBridgeServer()
         self._running = False
         self._scope_config: Optional[ScopeConfig] = None
+        self._flow_filter: Optional[FlowFilter] = None
         self._watch_task: Optional[asyncio.Task] = None
         if args.scope_enabled:
             # Build ScopeConfig from enabled flag and patterns
@@ -65,6 +67,8 @@ class ProxyWorker:
                 self._scope_config = ScopeConfig(json.loads(args.scope_json))
             except (json.JSONDecodeError, Exception) as e:
                 logger.warning(f"Failed to parse --scope-json: {e}")
+        # Initialize FlowFilter based on scope config
+        self._flow_filter = FlowFilter(self._scope_config) if self._scope_config else FlowFilter(ScopeConfig())
 
     async def start(self) -> None:
         # Start TCP bridge server
@@ -82,14 +86,17 @@ class ProxyWorker:
         opts.update(confdir=_os.path.expanduser(self._args.confdir))
 
         class BridgeRelay:
-            def __init__(self, bridge: TcpBridgeServer):
+            def __init__(self, bridge: TcpBridgeServer, flow_filter: FlowFilter):
                 self._bridge = bridge
+                self._flow_filter = flow_filter
 
             def request(self, f):
                 flow = Flow.from_mitmproxy(f)
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
             def response(self, f):
+                if not self._flow_filter.allow(f.request.pretty_url):
+                    return
                 flow = Flow.from_mitmproxy(f)
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
@@ -97,7 +104,7 @@ class ProxyWorker:
                 flow = Flow.from_mitmproxy(f)
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
-        self._master.addons.add(BridgeRelay(self._bridge))
+        self._master.addons.add(BridgeRelay(self._bridge, self._flow_filter))
 
         if self._args.db_path:
             from sqlalchemy.ext.asyncio import create_async_engine
@@ -113,9 +120,7 @@ class ProxyWorker:
             self._master.addons.add(
                 StorageAddon(
                     db_engine=engine,
-                    scope_filter=self._scope_filter,
                     hook_bus=BridgeHookBus(self._bridge),
-                    capture_enabled_fn=lambda: self._args.capture_enabled,
                 )
             )
 

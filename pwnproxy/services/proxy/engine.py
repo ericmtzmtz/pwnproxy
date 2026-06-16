@@ -13,12 +13,12 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, scope_filter: Optional[Callable[[str], bool]] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog
         self._upstream = upstream
-        self._scope_filter = scope_filter
+
         self._host = host
         self._port = port
         self._ssl_insecure = ssl_insecure
@@ -70,9 +70,7 @@ class ProxyEngine:
         if self.db_engine:
             self._master.addons.add(StorageAddon(
                 self.db_engine,
-                scope_filter=self._scope_filter,
                 hook_bus=self.hook_bus,
-                capture_enabled_fn=lambda: self._capture_enabled,
             ))
         for addon in self._extra_addons:
             self._master.addons.add(addon)
@@ -115,7 +113,7 @@ class ProxyEngine:
             except (asyncio.CancelledError, Exception):
                 pass
 
-    def configure(self, host: str = None, port: int = None, ssl_insecure: bool = None, upstream: Optional[str] = None, db_engine = None, capture_enabled: bool = None, scope_filter=None) -> None:
+    def configure(self, host: str = None, port: int = None, ssl_insecure: bool = None, upstream: Optional[str] = None, db_engine = None, capture_enabled: bool = None) -> None:
         """Update proxy configuration. Requires a restart if the proxy is already running."""
         if host is not None:
             self._host = host
@@ -129,5 +127,4 @@ class ProxyEngine:
             self.db_engine = db_engine
         if capture_enabled is not None:
             self._capture_enabled = capture_enabled
-        if scope_filter is not None:
-            self._scope_filter = scope_filter
+

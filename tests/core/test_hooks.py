@@ -148,31 +148,21 @@ class TestHookBus:
         assert data3 == "new_item"
 
     @pytest.mark.asyncio
-    async def test_scope_filter_with_flow_objects(self):
-        """Test that scope filter is applied to Flow objects."""
+    async def test_hookbus_no_longer_filters_scope(self):
+        """Test that HookBus no longer applies scope filtering (delegated to FlowFilter)."""
         bus = HookBus()
         
-        def mock_scope_filter(url: str) -> bool:
-            return "allowed" in url
+        # set_scope_filter still exists but is deprecated and does nothing
+        bus.set_scope_filter(lambda url: False)  # This filter should be IGNORED
         
-        bus.set_scope_filter(mock_scope_filter)
         queue = bus.register("request")
         
-        # Publish flow that should be filtered out (no "allowed" in URL)
-        filtered_data = {"url": "http://example.com/blocked"}
-        bus.publish("request", filtered_data)
+        # Publish data that would have been filtered before
+        bus.publish("request", {"url": "http://evil.com/test"})
         
-        # Publish flow that should pass through
-        allowed_data = {"url": "http://example.com/allowed"}
-        bus.publish("request", allowed_data)
-        
-        # Check that only the allowed data was published
+        # Data should still be delivered (HookBus no longer filters)
         data = await queue.get()
-        assert data == allowed_data
-        
-        # Queue should now be empty
-        with pytest.raises(asyncio.TimeoutError):
-            await asyncio.wait_for(queue.get(), timeout=0.1)
+        assert data == {"url": "http://evil.com/test"}
 
     @pytest.mark.asyncio
     async def test_scope_filter_not_applied_to_non_flow_objects(self):

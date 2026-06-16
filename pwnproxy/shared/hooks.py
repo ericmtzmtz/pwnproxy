@@ -14,10 +14,12 @@ class HookBus:
         self._subscriber_counts: Dict[str, int] = {}
         self._pending: Dict[str, List[Any]] = {}
         self._warned_channels: Set[str] = set()
-        self._scope_filter: Optional[Callable[[str], bool]] = None
 
-    def set_scope_filter(self, filter_fn: Optional[Callable[[str], bool]]) -> None:
-        self._scope_filter = filter_fn
+
+    def set_scope_filter(self, filter_fn: Optional[Callable[[Any], bool]]) -> None:
+        import warnings
+        warnings.warn("HookBus.set_scope_filter() is deprecated. Use FlowFilter instead.", DeprecationWarning, stacklevel=2)
+
 
     def register_channel(self, channel_name: str) -> None:
         if channel_name not in self._subscribers:
@@ -48,10 +50,7 @@ class HookBus:
                 logger.warning(f"Publishing to empty channel '{channel_name}'")
                 self._warned_channels.add(channel_name)
             return
-        if self._scope_filter and channel_name in {"request", "response", "error", "done", "flow"}:
-            url = data.url if hasattr(data, "url") else (data.get("url", str(data)) if isinstance(data, dict) else str(data))
-            if not self._scope_filter(str(url)):
-                return
+
         for queue in self._subscribers[channel_name]:
             try:
                 queue.put_nowait(data)
