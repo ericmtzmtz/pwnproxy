@@ -92,7 +92,14 @@ def main():
 
     try:
         from mcp.server.fastmcp import FastMCP
-        mcp = FastMCP("pwnproxy", instructions="pwnproxy MCP server — thin wrapper over pwnproxy REST API")
+        mcp = FastMCP("pwnproxy", instructions="""pwnproxy MCP server.
+
+Default API: http://127.0.0.1:8000/api/v1 (env: PUBLIC_API_BASE).
+
+If health_check returns Connection refused, ask the user for their 
+ pwnproxy API URL (e.g. http://192.168.1.93:8000/api/v1) and call 
+ configure(api_base=\"<url>\") to set it before retrying.
+""")
         _register_tools(mcp)
         _register_resources(mcp)
         mcp.run(transport="stdio")
