@@ -1,0 +1,179 @@
+---
+import Base from "@/layouts/Base.astro";
+import Card from "@/ui/Card.astro";
+---
+
+<Base title="Interceptor" page="/interceptor">
+  <div class="mb-6">
+    <h1 class="text-xl font-bold text-neutral-50">Interceptor</h1>
+    <p class="mt-0.5 text-sm text-neutral-400">
+      Intercept and review HTTP requests before they reach the target
+    </p>
+  </div>
+
+  <!-- Status bar -->
+  <div class="mb-4 flex items-center justify-between rounded-lg border border-neutral-800 bg-neutral-950 p-3">
+    <div class="flex items-center gap-3">
+      <span id="status-dot" class="inline-flex h-2.5 w-2.5 rounded-full bg-neutral-600" />
+      <span id="status-text" class="text-sm font-medium text-neutral-400">Loading...</span>
+      <span id="pending-badge" class="hidden rounded-full bg-neutral-800 px-2 py-0.5 text-xs text-neutral-400">0 pending</span>
+    </div>
+    <div class="flex gap-2">
+      <button id="forward-all-btn" class="hidden rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-success-800 hover:bg-success-900/20 hover:text-success-400 disabled:opacity-40">
+        Forward All
+      </button>
+      <button id="drop-all-btn" class="hidden rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-300 transition-colors hover:border-red-800 hover:bg-red-900/20 hover:text-red-400 disabled:opacity-40">
+        Drop All
+      </button>
+      <button id="toggle-btn" class="cursor-pointer rounded-md border px-3 py-1.5 text-xs font-medium transition-colors">
+        Loading...
+      </button>
+    </div>
+  </div>
+
+  <!-- Pending table -->
+  <div id="pending-list">
+    <div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-800 py-16 text-neutral-600">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3 h-10 w-10"><rect x="2" y="2" width="20" height="20" rx="2.5"/><path d="M8 7v10"/><path d="M12 7v10"/><path d="M16 7v10"/></svg>
+      <p class="text-sm">No intercepted requests</p>
+      <p class="mt-1 text-xs">Enable the interceptor and browse to a target</p>
+    </div>
+  </div>
+</Base>
+
+<script>
+  import { getStatus, toggleIntercept, getPending, forwardFlow, dropFlow, forwardAll, dropAll } from "@/api/interceptor/calls";
+  import type { PendingFlow, InterceptStatus } from "@/api/interceptor/types";
+
+  const statusDot = document.getElementById("status-dot")!;
+  const statusText = document.getElementById("status-text")!;
+  const pendingBadge = document.getElementById("pending-badge")!;
+  const toggleBtn = document.getElementById("toggle-btn") as HTMLButtonElement;
+  const forwardAllBtn = document.getElementById("forward-all-btn")!;
+  const dropAllBtn = document.getElementById("drop-all-btn")!;
+  const pendingList = document.getElementById("pending-list")!;
+
+  let expandedId: string | null = null;
+  let currentStatus: InterceptStatus = { enabled: false, pending_count: 0 };
+
+  function toast(title: string, severity: string, message = "") {
+    window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+      detail: { title, message, severity },
+    }));
+  }
+
+  function renderStatus(status: InterceptStatus) {
+    currentStatus = status;
+    if (status.enabled) {
+      statusDot.className = "inline-flex h-2.5 w-2.5 rounded-full bg-success-500";
+      statusText.textContent = "Intercepting";
+      toggleBtn.className = "cursor-pointer rounded-md border border-success-800 bg-success-900/20 px-3 py-1.5 text-xs font-medium text-success-400 transition-colors hover:bg-success-900/40";
+      toggleBtn.textContent = "Stop Intercepting";
+    } else {
+      statusDot.className = "inline-flex h-2.5 w-2.5 rounded-full bg-neutral-600";
+      statusText.textContent = "Paused";
+      toggleBtn.className = "cursor-pointer rounded-md border border-neutral-700 bg-neutral-800 px-3 py-1.5 text-xs font-medium text-neutral-400 transition-colors hover:bg-neutral-700";
+      toggleBtn.textContent = "Start Intercepting";
+    }
+  }
+
+  function renderPending(flows: PendingFlow[]) {
+    if (flows.length === 0) {
+      pendingList.innerHTML = `<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-800 py-16 text-neutral-600">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3 h-10 w-10"><rect x="2" y="2" width="20" height="20" rx="2.5"/><path d="M8 7v10"/><path d="M12 7v10"/><path d="M16 7v10"/></svg>
+        <p class="text-sm">No intercepted requests</p>
+        <p class="mt-1 text-xs">Enable the interceptor and browse to a target</p>
+      </div>`;
+      forwardAllBtn.classList.add("hidden");
+      dropAllBtn.classList.add("hidden");
+      pendingBadge.classList.add("hidden");
+      return;
+    }
+
+    forwardAllBtn.classList.remove("hidden");
+    dropAllBtn.classList.remove("hidden");
+    pendingBadge.classList.remove("hidden");
+    pendingBadge.textContent = `${flows.length} pending`;
+
+    const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
+
+    pendingList.innerHTML = `<div class="space-y-2">${flows.map((f) => {
+      const isOpen = expandedId === f.id;
+      return `<div class="group rounded-lg border border-neutral-800 bg-neutral-950">
+        <div class="flex items-center justify-between px-4 py-3">
+          <button onClick="toggleExpand('${f.id}')" class="flex items-center gap-3">
+            <svg class="h-4 w-4 text-neutral-500 transition-transform ${isOpen ? "rotate-90" : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+            <span class="inline-flex h-2 w-2 rounded-full bg-red-500" />
+            <span class="text-xs font-mono font-bold uppercase tracking-wider text-neutral-200">${f.method}</span>
+            <span class="max-w-[300px] truncate text-xs text-neutral-400" title="${f.url}">${f.url}</span>
+            <span class="text-xs text-neutral-500">${host(f.url)}</span>
+          </button>
+          <div class="flex items-center gap-1.5">
+            <button onClick="handleForward('${f.id}')" class="rounded px-2 py-1 text-xs font-medium text-neutral-400 transition-colors hover:bg-success-900/20 hover:text-success-400" title="Forward">Forward</button>
+            <button onClick="handleDrop('${f.id}')" class="rounded px-2 py-1 text-xs font-medium text-neutral-400 transition-colors hover:bg-red-900/20 hover:text-red-400" title="Drop">Drop</button>
+          </div>
+        </div>
+        ${isOpen ? `<div class="px-4 py-2 bg-neutral-900 text-xs text-neutral-300 whitespace-pre-wrap rounded-b-lg border-t border-neutral-800">${f.raw || ""}</div>` : ""}
+      </div>`;
+    }).join("")}</div>`;
+  }
+
+  async function handleForward(id: string) {
+    try {
+      await forwardFlow(id);
+      toast("Forwarded", "success");
+      await refresh();
+    } catch {
+      toast("Failed to forward", "error");
+      await refresh();
+    }
+  }
+
+  async function handleDrop(id: string) {
+    try {
+      await dropFlow(id);
+      toast("Dropped", "info");
+      await refresh();
+    } catch {
+      toast("Failed to drop", "error");
+      await refresh();
+    }
+  }
+
+  (window as any).handleForward = handleForward;
+  (window as any).handleDrop = handleDrop;
+  (window as any).toggleExpand = (id: string) => {
+    expandedId = expandedId === id ? null : id;
+    refresh();
+  };
+
+  async function refresh() {
+    try {
+      const [status, pending] = await Promise.all([getStatus(), getPending()]);
+      renderStatus(status);
+      renderPending(pending);
+    } catch { }
+  }
+
+  toggleBtn.addEventListener("click", async () => {
+    try {
+      const status = await toggleIntercept();
+      renderStatus(status);
+      toast(status.enabled ? "Interceptor enabled" : "Interceptor disabled", "info");
+      await refresh();
+    } catch { toast("Failed to toggle interceptor", "error"); }
+  });
+
+  forwardAllBtn.addEventListener("click", async () => {
+    try { const { count } = await forwardAll(); toast(`Forwarded all ${count} requests`, "success"); await refresh(); }
+    catch { toast("Failed to forward all", "error"); }
+  });
+
+  dropAllBtn.addEventListener("click", async () => {
+    try { const { count } = await dropAll(); toast(`Dropped all ${count} requests`, "info"); await refresh(); }
+    catch { toast("Failed to drop all", "error"); }
+  });
+
+  refresh();
+  setInterval(refresh, 1000);
+</script>
