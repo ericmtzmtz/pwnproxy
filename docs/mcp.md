@@ -31,6 +31,99 @@ via HTTP and exposes each API endpoint as an MCP tool.
 
 3. The agent auto-discovers all tools and their schemas.
 
+## Installation
+
+The MCP server lives at `apps/mcp/`. To use it on a new machine:
+
+```bash
+# Copy the folder
+scp -r apps/mcp user@remote:~/.pwnproxy-mcp
+
+# Install dependencies
+cd ~/.pwnproxy-mcp
+pip install httpx mcp
+
+# Or install as a package (creates pwnproxy-mcp command)
+pip install -e .
+
+# Run
+python -m pwnproxy_mcp.server
+```
+
+## Remote Setup
+
+The MCP server can run on a different machine than pwnproxy. Copy the folder and
+point your agent to it:
+
+```bash
+# Copy MCP server to remote machine
+scp -r apps/mcp user@remote:~/.pwnproxy-mcp
+```
+
+Then configure your agent with the remote path:
+
+```json
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "python",
+      "args": ["-m", "pwnproxy_mcp.server"],
+      "env": {
+        "PUBLIC_API_BASE": "http://192.168.1.93:8000/api/v1",
+        "PWNPROXY_SESSION": "default"
+      }
+    }
+  }
+}
+```
+
+The agent connects to the MCP server via stdio (SSH tunnel or local). The MCP
+server connects to pwnproxy's API via HTTP — update `PUBLIC_API_BASE` to point
+to your pwnproxy instance.
+
+### Using env vars (no configure tool needed)
+
+Set `PUBLIC_API_BASE` and `PWNPROXY_SESSION` in the agent's MCP config `env`
+block. The MCP server reads them at startup and skips needing a `configure()`
+call:
+
+```json
+{
+  "mcpServers": {
+    "pwnproxy": {
+      "command": "python",
+      "args": ["-m", "pwnproxy_mcp.server"],
+      "env": {
+        "PUBLIC_API_BASE": "http://192.168.1.93:8000/api/v1",
+        "PWNPROXY_SESSION": "my-session"
+      }
+    }
+  }
+}
+```
+
+## Docker (future)
+
+A Docker image will be provided in future releases. For now:
+
+```dockerfile
+FROM python:3.14-slim
+COPY apps/mcp /opt/pwnproxy-mcp
+RUN pip install httpx mcp
+CMD ["python", "-m", "pwnproxy_mcp.server"]
+```
+
+Build and run:
+```bash
+docker build -t pwnproxy-mcp .
+docker run -e PUBLIC_API_BASE=http://host.docker.internal:8000/api/v1 pwnproxy-mcp
+```
+
+Note: The MCP protocol requires stdio transport. For Docker, use `-i` flag:
+```bash
+docker run -i -e PUBLIC_API_BASE=http://host.docker.internal:8000/api/v1 pwnproxy-mcp
+```
+
 ## Agent Configuration
 
 Add the JSON snippet above to your agent's MCP configuration file:

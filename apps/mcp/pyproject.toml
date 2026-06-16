@@ -11,6 +11,7 @@ license = {text = "AGPL-3.0-or-later"}
 requires-python = ">=3.12"
 dependencies = [
     "mcp>=1.0.0,<2.0.0",
+    "httpx",
 ]
 
 [project.optional-dependencies]
