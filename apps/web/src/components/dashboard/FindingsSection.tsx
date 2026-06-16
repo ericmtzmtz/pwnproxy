@@ -35,10 +35,7 @@ export function FindingsSection({ liveFindings }: FindingsSectionProps) {
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const perPage = 15;
 
-  const visibleFindings = liveFindings.filter((f) => {
-    const key = `${f.scanner}-${f.id}`;
-    return !deletedIds.has(key);
-  });
+  const visibleFindings = liveFindings.filter((f) => !deletedIds.has(String(f.id)));
   const filteredFindings = severity
     ? visibleFindings.filter((f) => f.severity === severity)
     : visibleFindings;
@@ -58,8 +55,8 @@ export function FindingsSection({ liveFindings }: FindingsSectionProps) {
       .catch(() => {});
   }, [page, severity]);
 
-  const handleDeleted = (scanner: string, id: number) => {
-    setDeletedIds((prev) => new Set(prev).add(`${scanner}-${id}`));
+  const handleDeleted = (id: number) => {
+    setDeletedIds((prev) => new Set(prev).add(String(id)));
     setTotal((t) => Math.max(0, t - 1));
   };
 

@@ -22,12 +22,14 @@ class XXEScannerPlugin(ScannerPlugin):
     techniques = ["xxe-error-based", "xxe-json-mutation", "xxe-oob"]
     capabilities = ["xml-external-entity", "xxe"]
 
-    def __init__(self, scanner=None):
-        self._scanner = scanner
-
-    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+    async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        self._replayer = XxeReplayer()
+        self._scanner = XXEScanner(self._replayer, depth=depth, evasion=evasion_level)
+
+    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+        self._replayer.flow = flow
         points = extract_params(flow)
         seen = set()
         valid_points = []
@@ -41,8 +43,9 @@ class XXEScannerPlugin(ScannerPlugin):
         if not valid_points:
             return
 
-        replayer = XxeReplayer(flow)
-        scanner = XXEScanner(replayer, depth=depth, evasion=evasion_level)
-        findings = await scanner.scan(flow, valid_points)
+        findings = await self._scanner.scan(flow, valid_points)
         for finding in findings:
             yield finding
+
+    async def on_unload(self) -> None:
+        await self._replayer.close()

@@ -22,35 +22,30 @@ class SSRFScannerPlugin(ScannerPlugin):
     techniques = ["ssrf-simple", "ssrf-redirect", "ssrf-oob"]
     capabilities = ["server-side-request-forgery", "ssrf"]
 
-    def __init__(self, scanner=None):
-        self._scanner = scanner
-
-    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+    async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
         callback_host = self.context.config.get("callback_host", "127.0.0.1")
         callback_port = int(self.context.config.get("callback_port", 18080))
-        points = extract_params(flow)
-        seen = set()
-        valid_points = []
-        for point in points:
-            key = (point.host + point.path, point.name, point.location)
-            if key in seen:
-                continue
-            seen.add(key)
-            valid_points.append(point)
-
-        if not valid_points:
-            return
-
-        replayer = RequestReplayer(flow)
-        scanner = SSRFScanner(
-            replayer,
+        self._replayer = RequestReplayer()
+        self._scanner = SSRFScanner(
+            self._replayer,
             depth=depth,
             evasion=evasion_level,
             callback_host=callback_host,
             callback_port=callback_port,
         )
-        findings = await scanner.scan(flow, valid_points)
-        for finding in findings:
-            yield finding
+
+    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+        points = extract_params(flow)
+        seen = set()
+        for point in points:
+            key = (point.host + point.path, point.name, point.location)
+            if key in seen:
+                continue
+            seen.add(key)
+            async for finding in self._scanner._scan_point(point):
+                yield finding
+
+    async def on_unload(self) -> None:
+        await self._replayer.close()

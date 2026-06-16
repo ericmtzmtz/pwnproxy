@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, scope_filter=None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, scope_filter: Optional[Callable[[str], bool]] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog

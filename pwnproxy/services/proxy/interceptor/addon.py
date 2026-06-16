@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Callable, Optional
 
 import mitmproxy.http
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class InterceptorAddon:
     """Mitmproxy addon that intercepts flows for user inspection."""
 
-    def __init__(self, output_queue: asyncio.Queue, scope_filter=None):
+    def __init__(self, output_queue: asyncio.Queue, scope_filter: Optional[Callable[[str], bool]] = None):
         self._output_queue = output_queue
         self._intercepted: dict[str, mitmproxy.http.HTTPFlow] = {}
         self._enabled: bool = False
@@ -25,7 +25,7 @@ class InterceptorAddon:
     def set_enabled(self, value: bool) -> None:
         self._enabled = value
 
-    def set_scope_filter(self, scope_filter) -> None:
+    def set_scope_filter(self, scope_filter: Optional[Callable[[str], bool]]) -> None:
         self._scope_filter = scope_filter
 
     def request(self, f: mitmproxy.http.HTTPFlow) -> None:

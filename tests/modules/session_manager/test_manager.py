@@ -46,11 +46,22 @@ class TestScopeConfig:
             "enabled": True,
             "in_scope": ["*.target.com"],
             "out_of_scope": ["https://ads.target.com"],
+        }
+        scope = ScopeConfig(data)
+        assert scope.to_dict() == data
+
+    def test_to_dict_ignores_dead_fields(self):
+        data = {
+            "enabled": True,
+            "in_scope": ["*.target.com"],
+            "out_of_scope": [],
             "include_subdomains": True,
             "ports": [80, 443],
         }
         scope = ScopeConfig(data)
-        assert scope.to_dict() == data
+        result = scope.to_dict()
+        assert "include_subdomains" not in result
+        assert "ports" not in result
 
 
 def test_list_empty(mock_sessions_root):

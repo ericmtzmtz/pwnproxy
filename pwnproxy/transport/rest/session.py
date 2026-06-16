@@ -105,5 +105,20 @@ async def update_scope(request: Request):
         body["enabled"] = True
     manager.scope = ScopeConfig(body)
     await manager.save()
-    await manager._apply_proxy_config()
+
+    # ── Push scope filter to running components ──
+    # HookBus: dynamic lambda, scope is already updated on SessionManager
+    # Interceptor addon (embedded mode): re-wire if available
+    intercept = getattr(request.app.state, "interceptor_controller", None)
+    if intercept and hasattr(intercept, "_addon"):
+        intercept._addon.set_scope_filter(lambda url: manager.scope.is_in_scope(url))
+
+    # Proxy (subprocess mode): live reload if supported, else restart
+    proxy = manager.get_proxy_engine()
+    if proxy and hasattr(proxy, "running") and proxy.running:
+        if hasattr(proxy, "send_scope_update"):
+            await proxy.send_scope_update(scope_json=json.dumps(manager.scope.to_dict()))
+        else:
+            await manager._apply_proxy_config()
+
     return {"status": "ok", "message": "Scope updated"}

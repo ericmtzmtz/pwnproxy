@@ -97,6 +97,25 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
         progress=1,
         result={"findings": result_data, "count": len(result_data)},
     )
+    hook_bus = request.app.state.hook_bus
+    if hook_bus:
+        # Calculate duration
+        task = await store.get(task_id)
+        duration_ms = 0
+        if task and task.get("completed_at") and task.get("created_at"):
+            try:
+                completed_at = datetime.fromisoformat(task["completed_at"])
+                created_at = datetime.fromisoformat(task["created_at"])
+                duration_ms = int((completed_at - created_at).total_seconds() * 1000)
+            except (ValueError, TypeError):
+                logger.warning(f"Could not calculate duration for task {task_id}")
+
+        await hook_bus.publish("scan.completed", {
+            "task_id": task_id,
+            "findings_count": len(result_data) if result_data else 0,
+            "duration_ms": duration_ms,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
 
 
 async def _run_intruder(config: dict, task_id: str, store: TaskStore, request: Request) -> None:

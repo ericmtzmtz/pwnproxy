@@ -20,27 +20,22 @@ class XSSScannerPlugin(ScannerPlugin):
     techniques = ["reflected-xss", "stored-xss", "context-aware-xss"]
     capabilities = ["cross-site-scripting", "reflected-xss", "stored-xss"]
 
-    def __init__(self, scanner=None):
-        self._scanner = scanner
-
-    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
+    async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        self._replayer = RequestReplayer()
+        self._scanner = XSSScanner(self._replayer, depth=depth, evasion=evasion_level)
+
+    async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
         points = extract_params(flow)
         seen = set()
-        valid_points = []
         for point in points:
             key = (point.host + point.path, point.name, point.location)
             if key in seen:
                 continue
             seen.add(key)
-            valid_points.append(point)
+            async for finding in self._scanner._scan_point(point):
+                yield finding
 
-        if not valid_points:
-            return
-
-        replayer = RequestReplayer(flow)
-        scanner = XSSScanner(replayer, depth=depth, evasion=evasion_level)
-        findings = await scanner.scan(flow, valid_points)
-        for finding in findings:
-            yield finding
+    async def on_unload(self) -> None:
+        await self._replayer.close()

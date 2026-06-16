@@ -22,7 +22,7 @@ class StorageAddon:
     so scanners automatically process every captured flow.
     """
 
-    def __init__(self, db_engine: AsyncEngine, scope_filter: Optional[Callable[[Flow], bool]] = None, hook_bus=None, capture_enabled_fn: Optional[Callable[[], bool]] = None):
+    def __init__(        self, db_engine: AsyncEngine, scope_filter: Optional[Callable[[str], bool]] = None, hook_bus=None, capture_enabled_fn: Optional[Callable[[], bool]] = None):
         self.db_engine = db_engine
         self.scope_filter = scope_filter if _SCOPE_FILTER_ENABLED else None
         self.hook_bus = hook_bus
@@ -38,7 +38,7 @@ class StorageAddon:
             if self._capture_enabled_fn and not self._capture_enabled_fn():
                 return
             pwn_flow = Flow.from_mitmproxy(f)
-            if self.scope_filter and not self.scope_filter(pwn_flow):
+            if self.scope_filter and not self.scope_filter(pwn_flow.url):
                 return
             task = asyncio.create_task(self._store_flow(pwn_flow))
             self._background_tasks.add(task)
@@ -76,20 +76,18 @@ class StorageAddon:
                     "status_code": flow.status_code,
                 })
                 if self._auto_scan:
-                    scan_flow = Flow(
-                        id=str(db_id),
-                        method=flow.method,
-                        url=flow.url,
-                        request_headers=flow.request_headers,
-                        request_body=flow.request_body,
-                        status_code=flow.status_code,
-                        response_headers=flow.response_headers,
-                        response_body=flow.response_body,
-                        duration_ms=flow.duration_ms,
-                        tls=flow.tls,
-                        error=flow.error,
-                    )
-                    self.hook_bus.publish("done", scan_flow)
-                self.hook_bus.publish("flow", scan_flow)
+                    self.hook_bus.publish("done", {
+                        "id": str(db_id),
+                        "method": flow.method,
+                        "url": flow.url,
+                        "request_headers": flow.request_headers,
+                        "request_body": flow.request_body,
+                        "status_code": flow.status_code,
+                        "response_headers": flow.response_headers,
+                        "response_body": flow.response_body,
+                        "duration_ms": flow.duration_ms,
+                        "tls": flow.tls,
+                        "error": flow.error,
+                    })
         except Exception as e:
             logger.error(f"Failed to store flow {flow.id}: {e}", exc_info=True)

@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-_MCP_SRC = _REPO_ROOT / "pwnproxy-mcp" / "src"
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+_MCP_SRC = _REPO_ROOT / "apps/mcp/src"
 for p in (_REPO_ROOT, _MCP_SRC):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))

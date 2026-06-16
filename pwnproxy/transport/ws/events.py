@@ -129,31 +129,49 @@ async def ws_events(ws: WebSocket):
     hook_bus = ws.app.state.hook_bus
     flow_queue = hook_bus.register("flow_stored")
     finding_queue = hook_bus.register("finding")
+    scan_started_queue = hook_bus.register("scan.started")
+    scan_completed_queue = hook_bus.register("scan.completed")
 
     try:
         while True:
+            # Create a separate task for each queue get operation
+            flow_task = asyncio.create_task(flow_queue.get())
+            finding_task = asyncio.create_task(finding_queue.get())
+            started_task = asyncio.create_task(scan_started_queue.get())
+            completed_task = asyncio.create_task(scan_completed_queue.get())
+
             done, _ = await asyncio.wait(
-                [asyncio.create_task(flow_queue.get()), asyncio.create_task(finding_queue.get())],
+                [flow_task, finding_task, started_task, completed_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in done:
                 result = task.result()
-                if isinstance(result, dict) and "scanner" in result:
-                    payload = json.dumps({"type": "finding", **result}, default=str)
-                elif isinstance(result, dict):
-                    payload = json.dumps(
-                        {
-                            "type": "flow",
-                            "id": result.get("id"),
-                            "method": result.get("method", ""),
-                            "url": result.get("url", ""),
-                            "status_code": result.get("status_code"),
-                        },
-                        default=str,
-                    )
-                else:
-                    payload = json.dumps({"type": "unknown", "data": str(result)}, default=str)
-                await ws.send_text(payload)
+                payload = None
+                if task is flow_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps(
+                            {
+                                "type": "flow",
+                                "id": result.get("id"),
+                                "method": result.get("method", ""),
+                                "url": result.get("url", ""),
+                                "status_code": result.get("status_code"),
+                            },
+                            default=str,
+                        )
+                elif task is finding_task:
+                    if isinstance(result, dict) and "scanner" in result:
+                        payload = json.dumps({"type": "finding", **result}, default=str)
+                elif task is started_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "scan.started", **result}, default=str)
+                elif task is completed_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "scan.completed", **result}, default=str)
+
+                if payload:
+                    await ws.send_text(payload)
+
     except WebSocketDisconnect:
         events_manager.disconnect(ws)
     except asyncio.CancelledError:

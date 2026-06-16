@@ -81,6 +81,18 @@ async def list_all_findings(
             return {"items": [], "total": 0, "page": page, "per_page": per_page}
 
 
+@router.delete("/findings", status_code=204)
+async def delete_all_findings(request: Request):
+    engine = request.app.state.session_manager.get_scanner_engine()
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        try:
+            await session.execute(FindingORM.__table__.delete())
+            await session.commit()
+        except Exception as exc:
+            logger.warning(f"Could not delete findings: {exc}")
+
+
 @router.delete("/findings/{finding_id}", status_code=204)
 async def delete_finding(finding_id: int, request: Request):
     engine = request.app.state.session_manager.get_scanner_engine()

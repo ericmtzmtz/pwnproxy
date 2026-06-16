@@ -85,6 +85,14 @@ async def launch_scan(
     coro = _launch_task_runner("scan", config, task_id, store, request)
     store.track(task_id, coro)
 
+    hook_bus = request.app.state.hook_bus
+    if hook_bus:
+        hook_bus.publish("scan.started", {
+            "task_id": task_id,
+            "scanners": scanners,
+            "target": url,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
     return {"scan_id": task_id, "task_id": task_id, "status": "running"}
 
 

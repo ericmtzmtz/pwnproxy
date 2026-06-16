@@ -1,8 +1,10 @@
 
 import asyncio
+import json
 from typing import Optional, Callable, Any
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient
 import logging
+import signal
 import sys
 from typing import Optional
 
@@ -33,12 +35,17 @@ class ProxyProcess:
         """
         self._on_event = callback
 
-    async def start(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None) -> None:
+    async def start(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None, scope_json: Optional[str] = None) -> None:
         """Start the proxy subprocess and event bridge.
 
         The caller can set an event callback via ``set_event_callback`` before
         calling ``start``. The ``TcpBridgeClient`` will forward any event payload
         received from the worker to that callback.
+
+        If ``scope_json`` is provided (preferred), it is passed as ``--scope-json``
+        to the worker, which deserializes it into a ``ScopeConfig``. The older
+        ``scope`` parameter (list of in_scope patterns) is kept for backward
+        compat but deprecated.
         """
         await self.stop()
 
@@ -53,10 +60,14 @@ class ProxyProcess:
             args.extend(["--upstream", config.upstream])
         if db_path:
             args.extend(["--db-path", db_path])
-        if scope:
+        # Prefer scope_json (full config) over legacy scope list
+        if scope_json:
+            args.extend(["--scope-json", scope_json])
+        elif scope:
+            # Use new flag based scope configuration
             args.append("--scope-enabled")
-            for p in scope:
-                args.extend(["--scope-pattern", p])
+            for pattern in scope:
+                args.extend(["--scope-pattern", pattern])
 
         logger.info(f"Starting proxy subprocess on {config.host}:{config.port}")
         self._proc = await asyncio.create_subprocess_exec(
@@ -118,6 +129,18 @@ class ProxyProcess:
         self._proc = None
         self._event_port = 0
 
-    async def restart(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None) -> None:
+    async def restart(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None, scope_json: Optional[str] = None) -> None:
         await self.stop()
-        await self.start(config, db_path=db_path, scope=scope)
+        await self.start(config, db_path=db_path, scope=scope, scope_json=scope_json)
+
+    async def send_scope_update(self, scope_json: str) -> None:
+        if not self._proc or self._proc.returncode is not None:
+            return
+        import sys
+        if sys.platform != "win32":
+            self._proc.send_signal(signal.SIGUSR1)
+        else:
+            # Windows: file-watch in ProxyWorker polls scope.json mtime.
+            # The scope JSON has already been written by the caller.
+            # No additional signal needed.
+            pass

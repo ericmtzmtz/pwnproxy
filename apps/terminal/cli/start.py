@@ -130,14 +130,19 @@ def start(
 
         def _on_proxy_event(topic: str, data: dict) -> None:
             """Bridge events from proxy worker to HookBus (PluginLoader consumers)."""
-            if topic == "proxy.flow":
-                from pwnproxy.shared.models import Flow
+            from pwnproxy.shared.models import Flow
+
+            if topic in ("proxy.flow", "proxy.done"):
                 flow = Flow.from_dict(data)
-                hook_bus.publish("flow", flow)
-                asyncio.create_task(bus.publish("flow", flow))
+                channel = topic.split(".", 1)[1]
+                hook_bus.publish(channel, flow)
+                asyncio.create_task(bus.publish(channel, flow))
+            elif topic == "proxy.flow_stored":
+                hook_bus.publish("flow_stored", data)
             else:
-                hook_bus.publish(topic, data)
-                asyncio.create_task(bus.publish(topic, data))
+                channel = topic.removeprefix("proxy.") if topic.startswith("proxy.") else topic
+                hook_bus.publish(channel, data)
+                asyncio.create_task(bus.publish(channel, data))
 
         traffic_engine = create_traffic_engine()
         await init_db(traffic_engine)
@@ -160,7 +165,11 @@ def start(
             token_storage=token_storage,
         )
 
-        scope_check = lambda flow: session_manager.scope.is_in_scope(flow.url)
+        # Dynamic scope filter: always reads from the current session_manager.scope
+        # at runtime, so it stays in sync when scope is updated via API or session switch.
+        scope_check = lambda url: session_manager.scope.is_in_scope(url)
+        intercept_scope_check = lambda url: session_manager.scope.is_in_scope(url)
+
         proxy = ProxyProcess()
         session_manager.set_proxy_engine(proxy)
         proxy.set_event_callback(_on_proxy_event)
@@ -169,7 +178,7 @@ def start(
         from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
         from pwnproxy.services.proxy.interceptor.controller import InterceptorController
         intercept_queue: asyncio.Queue = asyncio.Queue()
-        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=lambda url: True)
+        intercept_addon = InterceptorAddon(intercept_queue, scope_filter=intercept_scope_check)
         interceptor_controller = InterceptorController(intercept_addon, on_intercepted=lambda f: None)
         interceptor_controller.start()
         session_manager.set_module_providers(interceptor_controller=interceptor_controller)
@@ -204,7 +213,7 @@ def start(
         token_storage = session_manager.get_token_storage()
 
         hook_bus.set_scope_filter(scope_check)
-        intercept_addon.set_scope_filter(session_manager.scope.is_in_scope)
+        intercept_addon.set_scope_filter(intercept_scope_check)
 
         from pwnproxy.services.intruder.engine import IntruderEngine
         from pwnproxy.services.repeater.engine import RepeaterEngine

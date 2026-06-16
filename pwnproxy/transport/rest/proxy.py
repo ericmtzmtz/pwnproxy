@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/v1", tags=["proxy"])
@@ -41,21 +42,21 @@ async def proxy_toggle(request: Request):
 
 
 def _build_proxy_params(sm):
+    """Build parameters for proxy start/restart, passing full scope config as JSON."""
     db_path = None
-    scope = None
+    scope_json = None
     if sm.has_active_session:
         db_path = str(sm.active_path / "traffic.db")
-        if sm.scope.enabled and sm.scope.in_scope:
-            scope = list(sm.scope.in_scope)
-    return db_path, scope
+        scope_json = json.dumps(sm.scope.to_dict())
+    return db_path, scope_json
 
 
 @router.post("/proxy/start")
 async def proxy_start(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)
-    db_path, scope = _build_proxy_params(sm)
-    await proxy.start(sm.proxy_config, db_path=db_path, scope=scope)
+    db_path, scope_json = _build_proxy_params(sm)
+    await proxy.start(sm.proxy_config, db_path=db_path, scope_json=scope_json)
     return await proxy_status(request)
 
 
@@ -70,6 +71,6 @@ async def proxy_stop(request: Request):
 async def proxy_restart(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)
-    db_path, scope = _build_proxy_params(sm)
-    await proxy.restart(sm.proxy_config, db_path=db_path, scope=scope)
+    db_path, scope_json = _build_proxy_params(sm)
+    await proxy.restart(sm.proxy_config, db_path=db_path, scope_json=scope_json)
     return await proxy_status(request)

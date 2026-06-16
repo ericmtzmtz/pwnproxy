@@ -6,7 +6,7 @@ import { formatTimeOnly } from "@/utils/formatTimestamp";
 
 interface FindingsTableProps {
   findings: Finding[];
-  onDeleted?: (scanner: string, id: number) => void;
+  onDeleted?: (id: number) => void;
 }
 
 const severityColors: Record<string, string> = {
@@ -147,9 +147,9 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                               e.stopPropagation();
                               setBusy((prev) => ({ ...prev, [key]: true }));
                               try {
-                                await deleteFinding(f.scanner, f.id);
+                                await deleteFinding(f.id);
                                 toast("success", `Deleted finding #${f.id}`);
-                                onDeleted?.(f.scanner, f.id);
+                                onDeleted?.(f.id);
                               } catch (err: any) {
                                 toast("error", err.message);
                               } finally {
@@ -166,9 +166,9 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                               e.stopPropagation();
                               setBusy((prev) => ({ ...prev, [key]: true }));
                               try {
-                                await deleteFinding(f.scanner, f.id);
+                                await deleteFinding(f.id);
                                 toast("success", `Marked #${f.id} as false positive`);
-                                onDeleted?.(f.scanner, f.id);
+                                onDeleted?.(f.id);
                               } catch (err: any) {
                                 toast("error", err.message);
                               } finally {

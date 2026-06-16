@@ -19,7 +19,12 @@ export async function listFindingsSince(sinceId: number): Promise<PaginatedFindi
   return res.json();
 }
 
-export async function deleteFinding(scanner: string, id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/findings/${scanner}/${id}`, { method: "DELETE" });
+export async function deleteFinding(id: number): Promise<void> {
+  const res = await fetch(`${API_BASE}/findings/${id}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete finding`);
+}
+
+export async function deleteAllFindings(): Promise<void> {
+  const res = await fetch(`${API_BASE}/findings`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete findings`);
 }

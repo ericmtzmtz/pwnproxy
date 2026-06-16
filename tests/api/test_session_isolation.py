@@ -64,7 +64,7 @@ class TestProxyProcessArgs:
                 await proc.restart(config, db_path="/db", scope=["*://x.com/*"])
                 mock_stop.assert_awaited_once()
                 mock_start.assert_awaited_once_with(
-                    config, db_path="/db", scope=["*://x.com/*"]
+                    config, db_path="/db", scope=["*://x.com/*"], scope_json=None
                 )
 
 
@@ -78,6 +78,7 @@ class TestSessionManagerApplyProxyConfig:
         )
         sm._proxy_engine = AsyncMock()
         sm._proxy_engine.restart = AsyncMock()
+        sm._proxy_engine.running = False
         sm._active_name = "test-session"
         sm._active_path = MagicMock()
         sm._active_path.__truediv__ = lambda self, other: MagicMock(
@@ -176,50 +177,34 @@ class TestSessionAtoBIsolation:
 class TestScopeFilterCapture:
     """Integration: scope_filter callback in proxy_worker filters flows at capture time."""
 
-    def test_scope_check_passes_in_scope(self):
-        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
+    def _make_args(self, scope_enabled=True, scope_pattern=None):
         import argparse
-        args = argparse.Namespace(
-            scope_enabled=True,
-            scope_pattern=["*://allowed.example.com/*"],
+        return argparse.Namespace(
+            scope_enabled=scope_enabled,
+            scope_pattern=scope_pattern or [],
+            scope_json=None,
             listen_host="127.0.0.1", listen_port=8080,
             ssl_insecure=True, upstream=None,
             capture_enabled=True, db_path=None, confdir="~/.mitmproxy",
         )
-        worker = ProxyWorker(args)
-        from pwnproxy.shared.models import Flow
-        in_scope = Flow(id="1", method="GET", url="http://allowed.example.com/path",
-                        request_headers={}, request_body=None)
-        assert worker._scope_check(in_scope) is True
+
+    def test_scope_check_passes_in_scope(self):
+        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
+        worker = ProxyWorker(self._make_args(
+            scope_enabled=True,
+            scope_pattern=["*://allowed.example.com/*"],
+        ))
+        assert worker._scope_filter("http://allowed.example.com/path") is True
 
     def test_scope_check_blocks_out_of_scope(self):
         from pwnproxy.services.proxy.proxy_worker import ProxyWorker
-        import argparse
-        args = argparse.Namespace(
+        worker = ProxyWorker(self._make_args(
             scope_enabled=True,
             scope_pattern=["*://allowed.example.com/*"],
-            listen_host="127.0.0.1", listen_port=8080,
-            ssl_insecure=True, upstream=None,
-            capture_enabled=True, db_path=None, confdir="~/.mitmproxy",
-        )
-        worker = ProxyWorker(args)
-        from pwnproxy.shared.models import Flow
-        out_of_scope = Flow(id="2", method="GET", url="http://evil.com/",
-                            request_headers={}, request_body=None)
-        assert worker._scope_check(out_of_scope) is False
+        ))
+        assert worker._scope_filter("http://evil.com/") is False
 
     def test_scope_check_passes_when_disabled(self):
         from pwnproxy.services.proxy.proxy_worker import ProxyWorker
-        import argparse
-        args = argparse.Namespace(
-            scope_enabled=False,
-            scope_pattern=[],
-            listen_host="127.0.0.1", listen_port=8080,
-            ssl_insecure=True, upstream=None,
-            capture_enabled=True, db_path=None, confdir="~/.mitmproxy",
-        )
-        worker = ProxyWorker(args)
-        from pwnproxy.shared.models import Flow
-        flow = Flow(id="3", method="GET", url="http://anything.com/",
-                    request_headers={}, request_body=None)
-        assert worker._scope_check(flow) is True
+        worker = ProxyWorker(self._make_args(scope_enabled=False))
+        assert worker._scope_filter("http://anything.com/") is True

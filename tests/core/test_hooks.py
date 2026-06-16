@@ -152,22 +152,21 @@ class TestHookBus:
         """Test that scope filter is applied to Flow objects."""
         bus = HookBus()
         
-        def mock_scope_filter(flow):
-            return flow.get("allowed", False)
+        def mock_scope_filter(url: str) -> bool:
+            return "allowed" in url
         
         bus.set_scope_filter(mock_scope_filter)
         queue = bus.register("request")
         
-        # Publish flow that should be filtered out
-        filtered_data = {"allowed": False}
+        # Publish flow that should be filtered out (no "allowed" in URL)
+        filtered_data = {"url": "http://example.com/blocked"}
         bus.publish("request", filtered_data)
         
         # Publish flow that should pass through
-        allowed_data = {"allowed": True}
+        allowed_data = {"url": "http://example.com/allowed"}
         bus.publish("request", allowed_data)
         
         # Check that only the allowed data was published
-        # Get the first item (should be the allowed one)
         data = await queue.get()
         assert data == allowed_data
         

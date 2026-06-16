@@ -26,20 +26,18 @@ class ScopeConfig:
         d = data or {}
         self.in_scope: list[str] = d.get("in_scope", [])
         self.out_of_scope: list[str] = d.get("out_of_scope", [])
-        self.include_subdomains: bool = d.get("include_subdomains", True)
-        self.ports: list[int] = d.get("ports", [80, 443])
         enabled = d.get("enabled")
         if enabled is None:
             self.enabled = len(self.in_scope) > 0
         else:
             self.enabled = enabled
+        if self.enabled and not self.in_scope:
+            logger.warning("ScopeConfig enabled with empty in_scope list")
 
     def to_dict(self) -> dict:
         return {
             "in_scope": self.in_scope,
             "out_of_scope": self.out_of_scope,
-            "include_subdomains": self.include_subdomains,
-            "ports": self.ports,
             "enabled": self.enabled,
         }
 
@@ -60,7 +58,7 @@ class ScopeConfig:
         from urllib.parse import urlparse
         parsed = urlparse(url)
         host = parsed.hostname or ""
-        combined = f"{parsed.scheme}://{host}{parsed.path}"
+        combined = url  # Use full URL including query string
         for pattern in self.out_of_scope:
             if self._match(pattern, combined) or self._match(pattern, host):
                 return False
@@ -132,20 +130,20 @@ class SessionManager:
         return self._proxy_engine
 
     async def _apply_proxy_config(self) -> None:
-        # Proxy no auto-start on session load. Debe iniciarse manual vía API.
-        # if not self._proxy_engine:
-        #     return
-        # db_path = None
-        # scope = None
-        # if self._active_name and self._active_path:
-        #     db_path = str(self._active_path / "traffic.db")
-        #     if self.scope.enabled and self.scope.in_scope:
-        #         scope = list(self.scope.in_scope)
-        # try:
-        #     await self._proxy_engine.restart(self.proxy_config, db_path=db_path, scope=scope)
-        # except Exception as e:
-        #     logger.error(f"Error restarting proxy: {e}")
-        pass
+        if not self._proxy_engine:
+            return
+        if not getattr(self._proxy_engine, "running", False):
+            return
+        db_path = None
+        scope_json = None
+        if self._active_name and self._active_path:
+            db_path = str(self._active_path / "traffic.db")
+            scope_json = json.dumps(self.scope.to_dict())
+        try:
+            if hasattr(self._proxy_engine, "restart"):
+                await self._proxy_engine.restart(self.proxy_config, db_path=db_path, scope_json=scope_json)
+        except Exception as e:
+            logger.error(f"Error restarting proxy: {e}")
 
     @property
     def active_name(self) -> Optional[str]:

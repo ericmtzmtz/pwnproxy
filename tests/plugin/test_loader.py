@@ -40,6 +40,18 @@ class MockLegacyPlugin(PwnPlugin):
         yield f"legacy_result_{self.scan_count}"
 
 
+class MockScannerPlugin(PwnPlugin):
+    """Plugin that consumes a specific scanner topic (e.g. flow.sqli)."""
+    def __init__(self, metadata: PluginMetadata, context: PluginContext, name: str):
+        super().__init__(metadata, context)
+        self._name = name
+        self.processed = 0
+
+    async def on_flow(self, flow):
+        self.processed += 1
+        yield f"{self._name}_result_{self.processed}"
+
+
 class TestUniversalPluginLoader:
     @pytest.fixture
     def hook_bus(self):
@@ -282,3 +294,62 @@ class TestBackwardCompatibility:
         
         with pytest.warns(UserWarning):
             await loader.run_hooks_response(Flow(id="test", method="GET", url="http://test.com", request_headers={}))
+
+
+class TestPerScannerTopics:
+    """Test that per-scanner topic routing works correctly."""
+
+    @pytest.fixture
+    def hook_bus(self):
+        return HookBus()
+
+    @pytest.fixture
+    def loader(self, hook_bus):
+        return UniversalPluginLoader(hook_bus)
+
+    @pytest.mark.asyncio
+    async def test_per_scanner_topic_publishes(self, hook_bus, loader):
+        """Publishing on flow.sqli with no sqli plugin does not crash."""
+        sqli_plugin = MockFlowPlugin(
+            PluginMetadata(name="sqli", version="1.0.0", consumes=["flow"], produces=["finding"]),
+            PluginContext(),
+        )
+        xss_plugin = MockFlowPlugin(
+            PluginMetadata(name="xss", version="1.0.0", consumes=["flow"], produces=["finding"]),
+            PluginContext(),
+        )
+        await loader.load(sqli_plugin)
+        await loader.load(xss_plugin)
+        await loader.start()
+        # Give both consumer tasks time to register on the hook_bus
+        await asyncio.sleep(0.05)
+
+        flow = Flow(id="test", method="GET", url="http://test.com", request_headers={})
+
+        # Publish on generic flow topic — both plugins receive it
+        hook_bus.publish("flow", flow)
+        await asyncio.sleep(0.3)
+        assert sqli_plugin.flow_count >= 1, "sqli plugin should receive flow on generic topic"
+        assert xss_plugin.flow_count >= 1, "xss plugin should receive flow on generic topic"
+
+    @pytest.mark.asyncio
+    async def test_generic_topic_still_works_for_all(self, hook_bus, loader):
+        """Generic 'flow' topic still delivers to all scanner plugins (backward compat)."""
+        p1 = MockFlowPlugin(
+            PluginMetadata(name="p1", version="1.0.0", consumes=["flow"], produces=["finding"]),
+            PluginContext(),
+        )
+        p2 = MockFlowPlugin(
+            PluginMetadata(name="p2", version="1.0.0", consumes=["flow"], produces=["finding"]),
+            PluginContext(),
+        )
+        await loader.load(p1)
+        await loader.load(p2)
+        await loader.start()
+        await asyncio.sleep(0.05)
+
+        flow = Flow(id="g", method="GET", url="http://test.com/g", request_headers={})
+        hook_bus.publish("flow", flow)
+        await asyncio.sleep(0.3)
+        assert p1.flow_count >= 1
+        assert p2.flow_count >= 1
