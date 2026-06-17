@@ -363,11 +363,16 @@ class SessionManager:
         else:
             self.scope = ScopeConfig()
             
+        # Preserve host/port from current config
+        current_host = self.proxy_config.host
+        current_port = self.proxy_config.port
         proxy_file = default / "proxy.json"
         if proxy_file.exists():
             self.proxy_config = ProxyConfig(json.loads(proxy_file.read_text()))
         else:
             self.proxy_config = ProxyConfig()
+        self.proxy_config.host = current_host
+        self.proxy_config.port = current_port
             
         modules_file = default / "modules.json"
         if modules_file.exists():
