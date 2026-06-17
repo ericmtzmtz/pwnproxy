@@ -236,12 +236,14 @@ def start(
         from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
         from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
         from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
+        from pwnproxy.plugins.scanners.command_injection import CommandInjectionScannerPlugin
         plugin_loader = PluginLoader(hook_bus=hook_bus, bus=bus)
         await plugin_loader.load_builtin(SQLiScannerPlugin())
         await plugin_loader.load_builtin(XSSScannerPlugin())
         await plugin_loader.load_builtin(LFIScannerPlugin())
         await plugin_loader.load_builtin(XXEScannerPlugin())
         await plugin_loader.load_builtin(SSRFScannerPlugin())
+        await plugin_loader.load_builtin(CommandInjectionScannerPlugin())
         session_manager.set_module_providers(plugin_loader=plugin_loader)
         # Wire PluginLoader with SessionManager and start it
         plugin_loader._session_manager = session_manager
