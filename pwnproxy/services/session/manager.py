@@ -79,8 +79,7 @@ class ProxyConfig:
 
     def to_dict(self) -> dict:
         return {
-            "host": self.host,
-            "port": self.port,
+            
             "ssl_insecure": self.ssl_insecure,
             "upstream": self.upstream,
             "capture_enabled": self.capture_enabled,

@@ -3,6 +3,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from datetime import datetime, timezone
 
 from pwnproxy.shared.schemas import (
     TaskCreateRequest,

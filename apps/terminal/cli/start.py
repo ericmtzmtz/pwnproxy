@@ -204,7 +204,10 @@ def start(
             await session_manager.create(session_name)
         elif session:
             await session_manager.load(session)
-        elif prompted and chosen and chosen != "__quit__":
+        # Override proxy host/port with CLI values (don't persist to proxy.json)
+        session_manager.proxy_config.host = host
+        session_manager.proxy_config.port = proxy_port
+        if prompted and chosen and chosen != "__quit__":
             await session_manager.load(chosen)
 
         traffic_engine = session_manager.get_traffic_engine()
