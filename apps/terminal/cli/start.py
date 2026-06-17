@@ -165,6 +165,9 @@ def start(
             scanner_engine=scanner_engine,
             token_storage=token_storage,
         )
+        # Override proxy host/port with CLI values BEFORE any session ops
+        session_manager.proxy_config.host = host
+        session_manager.proxy_config.port = proxy_port
 
         # Dynamic scope filter using FlowFilter, stays in sync with session scope
         flow_filter = FlowFilter(session_manager.scope)
@@ -204,9 +207,7 @@ def start(
             await session_manager.create(session_name)
         elif session:
             await session_manager.load(session)
-        # Override proxy host/port with CLI values (don't persist to proxy.json)
-        session_manager.proxy_config.host = host
-        session_manager.proxy_config.port = proxy_port
+
         if prompted and chosen and chosen != "__quit__":
             await session_manager.load(chosen)
 
