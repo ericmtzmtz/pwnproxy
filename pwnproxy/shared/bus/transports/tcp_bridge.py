@@ -36,7 +36,7 @@ class TcpBridgeServer:
             self._server = None
 
     async def publish(self, topic: str, data: dict) -> None:
-        payload = (json.dumps({"topic": topic, "data": data}) + "\n").encode()
+        payload = (json.dumps({"topic": topic, "data": data}, default=str) + "\n").encode()
         async with self._lock:
             dead: set[StreamWriter] = set()
             for w in self._writers:
