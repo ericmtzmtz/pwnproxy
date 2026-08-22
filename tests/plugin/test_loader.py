@@ -289,8 +289,8 @@ class TestBackwardCompatibility:
         with pytest.warns(UserWarning):
             await loader.load_from_package("test")
         
-        with pytest.warns(UserWarning):
-            await loader.activate("test")
+        result = await loader.activate("test")
+        assert result is False  # Unknown plugin
         
         with pytest.warns(UserWarning):
             await loader.run_hooks_response(Flow(id="test", method="GET", url="http://test.com", request_headers={}))

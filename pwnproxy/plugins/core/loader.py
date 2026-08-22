@@ -1,5 +1,8 @@
 import asyncio
+import importlib
+import importlib.util
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Type, Union
 from collections.abc import AsyncGenerator
 
@@ -19,9 +22,10 @@ class PluginLoadError(Exception):
 class UniversalPluginLoader:
     """Universal plugin loader that connects plugins based on contracts."""
     
-    def __init__(self, hook_bus: HookBus, bus=None):
+    def __init__(self, hook_bus: HookBus, bus=None, scanners_path: str | None = None):
         self.hook_bus = hook_bus
         self.bus = bus  # Optional MessageBus
+        self._scanners_path = scanners_path
         self._plugins: Dict[str, PwnPlugin] = {}
         self._plugin_tasks: Dict[str, asyncio.Task] = {}
         self._timeout = 0.1  # Short timeout for consumer loop responsiveness
@@ -181,8 +185,47 @@ class UniversalPluginLoader:
             channel_name = produce_type  # Default mapping
             self.hook_bus.publish(channel_name, result)
 
+    async def discover_scanners(self, scanners_path: str | None = None) -> None:
+        """Auto-discover ScannerPlugin subclasses from the scanners directory."""
+        path = scanners_path or self._scanners_path
+        if path is None:
+            from pwnproxy import __file__ as _pwnproxy_init
+            path = str(Path(_pwnproxy_init).parent / "plugins" / "scanners")
+            self._scanners_path = path
+        scanners_dir = Path(path)
+        if not scanners_dir.is_dir():
+            logger.warning("Scanners directory not found: %s", path)
+            return
+
+        for entry in sorted(scanners_dir.iterdir()):
+            if not entry.is_dir():
+                continue
+            plugin_file = entry / "plugin.py"
+            if not plugin_file.exists():
+                continue
+            try:
+                spec = importlib.util.spec_from_file_location(
+                    f"{entry.name}.plugin", str(plugin_file)
+                )
+                if spec is None or spec.loader is None:
+                    continue
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+
+                for name, obj in vars(module).items():
+                    if isinstance(obj, type) and issubclass(obj, ScannerPlugin) and obj is not ScannerPlugin:
+                        plugin_instance = obj()
+                        await self.load_builtin(plugin_instance)
+                        logger.info("Auto-discovered scanner: %s", plugin_instance.metadata.name)
+                        break
+            except Exception as e:
+                logger.warning("Failed to load scanner from %s: %s", entry.name, e)
+
     async def start(self, name: Optional[str] = None) -> None:
         """Start consumer tasks for plugins and wire FindingStorage to HookBus."""
+        # Auto-discover scanners from filesystem
+        await self.discover_scanners()
+
         # Existing plugin consumer startup
         plugins_to_start: Dict[str, PwnPlugin] = {}
         if name is not None:
@@ -279,6 +322,7 @@ class UniversalPluginLoader:
             "author": plugin.metadata.author,
             "category": plugin.metadata.category,
             "description": plugin.metadata.description,
+            "disabled": plugin.metadata.disabled,
             "consumes": plugin.metadata.consumes,
             "produces": plugin.metadata.produces,
             "capabilities": plugin.metadata.capabilities,
@@ -318,20 +362,48 @@ class PluginLoader(UniversalPluginLoader):
         return None
     
     async def activate(self, name: str) -> bool:
-        """Activate a plugin (placeholder for backward compatibility)."""
-        import warnings
-        warnings.warn("activate not implemented in new PluginLoader - plugins are always active", UserWarning)
-        logger.warning("activate not implemented in new PluginLoader - plugins are always active")
+        plugin = self._plugins.get(name)
+        if plugin is None:
+            logger.warning("Cannot activate unknown plugin: %s", name)
+            return False
+        if not plugin.metadata.disabled:
+            logger.debug("Plugin %s is already enabled", name)
+            return True
+        plugin.metadata.disabled = False
+        implicit_consumes = []
+        if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
+            implicit_consumes.append("finding")
+        if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
+            implicit_consumes.append("surface")
+        if hasattr(plugin, "on_evidence") and "evidence" not in plugin.metadata.consumes:
+            implicit_consumes.append("evidence")
+        all_consumes = list(plugin.metadata.consumes) + implicit_consumes
+        for consume_type in all_consumes:
+            channel_name = consume_type
+            task = asyncio.create_task(self._run_consumer(plugin, consume_type, channel_name))
+            self._plugin_tasks[f"{name}_{consume_type}"] = task
+        logger.info("Activated plugin: %s", name)
         return True
     
     def deactivate(self, name: str) -> bool:
-        """Deactivate a plugin (placeholder for backward compatibility)."""
-        logger.warning("deactivate not implemented in new PluginLoader - plugins are always active")
+        plugin = self._plugins.get(name)
+        if plugin is None:
+            logger.warning("Cannot deactivate unknown plugin: %s", name)
+            return False
+        if plugin.metadata.disabled:
+            logger.debug("Plugin %s is already disabled", name)
+            return True
+        plugin.metadata.disabled = True
+        for task_key in list(self._plugin_tasks.keys()):
+            if task_key.startswith(f"{name}_"):
+                task = self._plugin_tasks.pop(task_key)
+                task.cancel()
+        logger.info("Deactivated plugin: %s", name)
         return True
     
     def list_active(self) -> List[Dict[str, Any]]:
-        """List active plugins (backward compatibility)."""
-        return [self.get_plugin_info(name) for name in self.list_plugins() if self.get_plugin_info(name)]
+        return [self.get_plugin_info(name) for name in self.list_plugins()
+                if self.get_plugin_info(name) and not self._plugins[name].metadata.disabled]
     
     def list_available(self) -> List[Dict[str, Any]]:
         """List available plugins (placeholder for backward compatibility)."""
@@ -339,8 +411,8 @@ class PluginLoader(UniversalPluginLoader):
         return []
     
     def watchdog_stats(self) -> Dict[str, Any]:
-        """Get watchdog stats (placeholder for backward compatibility)."""
-        return {"disabled": []}
+        disabled = [name for name, p in self._plugins.items() if p.metadata.disabled]
+        return {"disabled": disabled}
     
     def get_scanner(self, name: str) -> Optional[PwnPlugin]:
         """Get a scanner plugin (backward compatibility)."""

@@ -22,6 +22,7 @@ class PluginMetadata:
     author: str = ""
     category: str = ""
     description: str = ""
+    disabled: bool = False
     parameters: dict = field(default_factory=dict)
     capabilities: list[str] = field(default_factory=list)
     examples: list[dict] = field(default_factory=list)
