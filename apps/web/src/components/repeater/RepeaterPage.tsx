@@ -6,6 +6,8 @@ import { RequestEditor } from "./RequestEditor";
 import { ResponseViewer } from "./ResponseViewer";
 import type { HttpResponse } from "./ResponseViewer";
 import { RepeaterHistory } from "./RepeaterHistory";
+import { CommandPalette } from "./CommandPalette";
+import type { PaletteCommand } from "./CommandPalette";
 
 interface TabWithResp {
   meta: RepeaterTab;
@@ -63,7 +65,10 @@ export function RepeaterPage() {
   const [activeId, setActiveId] = useState<number | null>(null);
   const [sending, setSending] = useState<Record<number, boolean>>({});
   const [layout, setLayout] = useState<LayoutMode>("split");
+  const [splitPct, setSplitPct] = useState(50);
+  const [dragging, setDragging] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
 
@@ -208,6 +213,10 @@ export function RepeaterPage() {
   }
 
   function handleKeyDown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      setPaletteOpen((p) => !p);
+    }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
       e.preventDefault();
       addTab();
@@ -218,10 +227,54 @@ export function RepeaterPage() {
     }
   }
 
+  const paletteCommands: PaletteCommand[] = activeTab
+    ? [
+        { id: "send", label: "Send request", hint: "Ctrl+Enter", run: () => handleSend(activeTab.meta.id) },
+        { id: "new-tab", label: "New Repeater tab", hint: "Ctrl+N", run: () => addTab() },
+        { id: "toggle-history", label: "Toggle history", run: () => setShowHistory((p) => !p) },
+        { id: "clear-request", label: "Clear request", run: () => updateRequest(activeTab.meta.id, "") },
+        {
+          id: "copy-curl", label: "Copy as cURL",
+          run: () => {
+            const m = activeTab.meta.raw_request.trim().match(/^(\w+)\s+(\S+)/);
+            const url = m ? m[2] : "";
+            navigator.clipboard?.writeText(`curl '${url}'`);
+          },
+        },
+        { id: "layout-split", label: "Layout: Split view", run: () => setLayout("split") },
+        { id: "layout-request", label: "Layout: Maximize Request", run: () => setLayout("request") },
+        { id: "layout-response", label: "Layout: Maximize Response", run: () => setLayout("response") },
+      ]
+    : [];
+
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [activeTab, tabs]);
+
+  // Drag-resize handler for split layout
+  const onDragStart = useCallback((e: MouseEvent) => {
+    e.preventDefault();
+    setDragging(true);
+  }, []);
+
+  useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const container = document.getElementById("repeater-split");
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      const pct = ((e.clientX - rect.left) / rect.width) * 100;
+      setSplitPct(Math.min(80, Math.max(20, pct)));
+    };
+    const onUp = () => setDragging(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [dragging]);
 
   if (loading) {
     return (
@@ -328,24 +381,43 @@ export function RepeaterPage() {
       {/* Main layout */}
       {activeTab && (
         <div class="flex min-h-0 flex-1">
-          <div class={`grid min-h-0 flex-1 gap-0 ${layout === "split" ? "grid-cols-2" : "grid-cols-1"}`}>
+          <div
+            id="repeater-split"
+            class={`flex min-h-0 w-full ${dragging ? "cursor-col-resize select-none" : ""}`}
+            style={layout === "split" ? { flexDirection: "row" } : { flexDirection: "column" }}
+          >
             {layout !== "response" && (
-              <div class="flex min-h-0 flex-col border-r border-neutral-800">
-                <div class="border-b border-neutral-800 bg-neutral-950 px-3 py-1">
-                  <span class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Request</span>
+              <>
+                <div
+                  class="flex min-h-0 flex-col border-r border-neutral-800"
+                  style={layout === "split" ? { width: `${splitPct}%` } : { height: "50%" }}
+                >
+                  <div class="flex items-center justify-between border-b border-neutral-800 bg-neutral-950 px-3 py-1">
+                    <span class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Request</span>
+                  </div>
+                  <div class="min-h-0 flex-1">
+                    <RequestEditor
+                      value={activeTab.meta.raw_request}
+                      onChange={(val) => updateRequest(activeTab.meta.id, val)}
+                      onSend={() => handleSend(activeTab.meta.id)}
+                      sending={sending[activeTab.meta.id]}
+                    />
+                  </div>
                 </div>
-                <div class="min-h-0 flex-1">
-                  <RequestEditor
-                    value={activeTab.meta.raw_request}
-                    onChange={(val) => updateRequest(activeTab.meta.id, val)}
-                    onSend={() => handleSend(activeTab.meta.id)}
-                    sending={sending[activeTab.meta.id]}
+                {layout === "split" && (
+                  <div
+                    onMouseDown={onDragStart}
+                    class="w-1 shrink-0 cursor-col-resize bg-neutral-800 transition-colors hover:bg-primary-600"
+                    title="Drag to resize"
                   />
-                </div>
-              </div>
+                )}
+              </>
             )}
             {layout !== "request" && (
-              <div class="flex min-h-0 flex-col">
+              <div
+                class="flex min-h-0 flex-col"
+                style={layout === "split" ? { width: `${100 - splitPct}%` } : { flex: 1 }}
+              >
                 <div class="border-b border-neutral-800 bg-neutral-950 px-3 py-1">
                   <span class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Response</span>
                 </div>
@@ -358,7 +430,6 @@ export function RepeaterPage() {
           {showHistory && (
             <RepeaterHistory
               onRestore={(raw, name) => {
-                // Create a new tab with the historical request
                 createTab({ name, raw_request: raw }).then((created) => {
                   setTabs((prev) => [...prev, { meta: created, response: null }]);
                   setActiveId(created.id);
@@ -368,6 +439,9 @@ export function RepeaterPage() {
             />
           )}
         </div>
+      )}
+      {paletteOpen && (
+        <CommandPalette commands={paletteCommands} onClose={() => setPaletteOpen(false)} />
       )}
     </div>
   );
