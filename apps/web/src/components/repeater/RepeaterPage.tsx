@@ -1,51 +1,74 @@
 import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import { sendRequest, listTabs, createTab, updateTab, deleteTab } from "@/api/repeater/calls";
 import type { RepeaterTab } from "@/api/repeater/types";
-import { pollTask } from "@/api/task/calls";
-
-interface ResponseData {
-  status_code: number;
-  headers: Record<string, string>;
-  body_preview: string;
-  timing_ms: number;
-}
+import { pollTask, listTasks } from "@/api/task/calls";
+import { RequestEditor } from "./RequestEditor";
+import { ResponseViewer } from "./ResponseViewer";
+import type { HttpResponse } from "./ResponseViewer";
+import { RepeaterHistory } from "./RepeaterHistory";
 
 interface TabWithResp {
   meta: RepeaterTab;
-  response: ResponseData | null;
+  response: HttpResponse | null;
+  loading?: boolean;
+  modified?: boolean;
 }
 
 const CHANNEL = new BroadcastChannel("pwnproxy-repeater");
 
-function parseUrlParams(): string | null {
-  const params = new URLSearchParams(window.location.search);
-  const url = params.get("url");
-  const method = params.get("method");
-  if (url && method) {
-    // Build a raw request from url+method
-    const u = new URL(url);
-    const path = u.pathname + u.search;
-    const host = u.host;
-    const body = u.searchParams.get("body") || "";
-    if (method.toUpperCase() === "GET" || !body) {
-      return `${method.toUpperCase()} ${path} HTTP/1.1\nHost: ${host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*\n\n`;
-    }
-    return `${method.toUpperCase()} ${path} HTTP/1.1\nHost: ${host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*\nContent-Type: application/x-www-form-urlencoded\nContent-Length: ${body.length}\n\n${body}`;
+type LayoutMode = "split" | "request" | "response";
+
+function methodFromRaw(raw: string): string {
+  const m = raw.trim().match(/^(\w+)/);
+  return m ? m[1].toUpperCase() : "GET";
+}
+
+function hostFromRaw(raw: string): string {
+  const m = raw.match(/^Host:\s*(\S+)/im);
+  return m ? m[1] : "";
+}
+
+function endpointFromRaw(raw: string): string {
+  const m = raw.trim().match(/^\w+\s+(\S+)/);
+  if (!m) return "new";
+  try {
+    const u = new URL(m[1]);
+    return u.pathname.split("/").filter(Boolean).pop() || u.pathname;
+  } catch {
+    return m[1].split("?")[0].split("/").filter(Boolean).pop() || m[1];
   }
-  return null;
+}
+
+function statusColor(code: number | null): string {
+  if (code === null || code === 0) return "text-neutral-600";
+  if (code >= 500) return "text-red-400";
+  if (code >= 400) return "text-orange-400";
+  if (code >= 300) return "text-blue-400";
+  if (code >= 200) return "text-green-400";
+  return "text-neutral-400";
+}
+
+function methodColor(m: string): string {
+  switch (m) {
+    case "GET": return "text-sky-400";
+    case "POST": return "text-green-400";
+    case "PUT": case "PATCH": return "text-yellow-400";
+    case "DELETE": return "text-red-400";
+    default: return "text-neutral-400";
+  }
 }
 
 export function RepeaterPage() {
   const [tabs, setTabs] = useState<TabWithResp[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
   const [sending, setSending] = useState<Record<number, boolean>>({});
-  const [renderHtml, setRenderHtml] = useState(false);
+  const [layout, setLayout] = useState<LayoutMode>("split");
+  const [showHistory, setShowHistory] = useState(false);
   const [loading, setLoading] = useState(true);
   const loadedRef = useRef(false);
 
   const activeTab = tabs.find((t) => t.meta.id === activeId) ?? null;
 
-  // Load tabs on mount
   useEffect(() => {
     if (loadedRef.current) return;
     loadedRef.current = true;
@@ -53,89 +76,65 @@ export function RepeaterPage() {
       try {
         const tabsData = await listTabs();
         if (tabsData.length > 0) {
-          const mapped = await Promise.all(tabsData.map(async (t) => {
-            let resp: ResponseData | null = null;
+          const mapped: TabWithResp[] = [];
+          for (const t of tabsData) {
+            let resp: HttpResponse | null = null;
             if (t.last_task_id) {
               try {
                 const task = await pollTask(t.last_task_id);
                 const r = task.result;
                 if (r && r.status_code !== undefined) {
-                  const body = r.body ?? "";
                   resp = {
                     status_code: r.status_code,
                     headers: r.headers ?? {},
-                    body_preview: body.slice(0, 500) + (body.length > 500 ? "..." : ""),
+                    body: r.body ?? "",
                     timing_ms: r.duration_ms ?? 0,
                   };
                 }
-              } catch { /* task gone, ignore */ }
+              } catch { /* task gone */ }
             }
-            return { meta: t, response: resp };
-          }));
+            mapped.push({ meta: t, response: resp });
+          }
           setTabs(mapped);
           setActiveId(tabsData[0].id);
         }
-      } catch {
-        // fallback if API fails
-      } finally {
+      } catch { /* API down */ } finally {
         setLoading(false);
-      }
-
-      // Check URL params (legacy send-to-repeater from window.open)
-      const raw = parseUrlParams();
-      if (raw) {
-        try {
-          const created = await createTab({ raw_request: raw });
-          setTabs((prev) => [...prev, { meta: created, response: null }]);
-          setActiveId(created.id);
-          // Clean URL
-          window.history.replaceState({}, "", "/repeater");
-        } catch {
-          // ignore
-        }
       }
     })();
   }, []);
 
-  // Listen for BroadcastChannel "new-tab" messages
+  // BroadcastChannel listener for new tabs
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type === "new-tab") {
-        // Refresh the list
         listTabs().then((tabsData) => {
-          setTabs(tabsData.map((t) => {
-            const existing = tabs.find((x) => x.meta.id === t.id);
-            return { meta: t, response: existing?.response ?? null };
-          }));
-          // If no active tab set, or the new tab should be focused
-          if (e.data?.focusId) {
-            setActiveId(e.data.focusId);
-          }
+          setTabs((prev) =>
+            tabsData.map((t) => {
+              const existing = prev.find((x) => x.meta.id === t.id);
+              return { meta: t, response: existing?.response ?? null };
+            }),
+          );
+          if (e.data?.focusId) setActiveId(e.data.focusId);
         });
       }
     };
     CHANNEL.addEventListener("message", handler);
     return () => CHANNEL.removeEventListener("message", handler);
-  }, [tabs]);
+  }, []);
 
   async function addTab() {
     try {
       const created = await createTab({ raw_request: "" });
       setTabs((prev) => [...prev, { meta: created, response: null }]);
       setActiveId(created.id);
-    } catch {
-      // ignore
-    }
+    } catch { /* ignore */ }
   }
 
   async function closeTab(id: number, e: MouseEvent) {
     e.stopPropagation();
     if (tabs.length <= 1) return;
-    try {
-      await deleteTab(id);
-    } catch {
-      // ignore — still remove locally
-    }
+    try { await deleteTab(id); } catch { /* ignore */ }
     setTabs((prev) => {
       const idx = prev.findIndex((t) => t.meta.id === id);
       const next = prev.filter((t) => t.meta.id !== id);
@@ -147,50 +146,51 @@ export function RepeaterPage() {
     });
   }
 
-  function updateRequest(id: number, val: string) {
-    setTabs((prev) =>
-      prev.map((t) => (t.meta.id === id ? { ...t, meta: { ...t.meta, raw_request: val } } : t)),
-    );
-    // Debounced save
-    debouncedSave(id, val);
-  }
-
   const saveTimers = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
 
-  function debouncedSave(id: number, raw: string) {
+  function updateRequest(id: number, val: string) {
+    setTabs((prev) =>
+      prev.map((t) => (t.meta.id === id ? { ...t, meta: { ...t.meta, raw_request: val }, modified: true } : t)),
+    );
     if (saveTimers.current[id]) clearTimeout(saveTimers.current[id]);
     saveTimers.current[id] = setTimeout(async () => {
-      try {
-        await updateTab(id, { raw_request: raw });
-      } catch {
-        // silently fail
-      }
+      try { await updateTab(id, { raw_request: val }); } catch { /* silent */ }
     }, 800);
   }
 
   async function renameTab(id: number, name: string) {
     try {
       const updated = await updateTab(id, { name });
-      setTabs((prev) =>
-        prev.map((t) => (t.meta.id === id ? { ...t, meta: updated } : t)),
-      );
-    } catch {
-      // ignore
-    }
+      setTabs((prev) => prev.map((t) => (t.meta.id === id ? { ...t, meta: updated } : t)));
+    } catch { /* ignore */ }
   }
 
   async function handleSend(id: number) {
     const tab = tabs.find((t) => t.meta.id === id);
     if (!tab || !tab.meta.raw_request.trim()) return;
-
     setSending((prev) => ({ ...prev, [id]: true }));
+    setTabs((prev) => prev.map((t) => (t.meta.id === id ? { ...t, loading: true } : t)));
     try {
       const data = await sendRequest({ raw_request: tab.meta.raw_request, tab_id: id });
       await updateTab(id, { last_task_id: data.task_id });
+      // poll for full body
+      let full: HttpResponse = {
+        status_code: data.status_code,
+        headers: data.headers,
+        body: data.body_preview,
+        timing_ms: data.timing_ms,
+      };
+      try {
+        const task = await pollTask(data.task_id);
+        const r = task.result;
+        if (r && r.body !== undefined) {
+          full = { status_code: r.status_code, headers: r.headers ?? {}, body: r.body ?? "", timing_ms: r.duration_ms ?? 0 };
+        }
+      } catch { /* use preview */ }
       setTabs((prev) =>
         prev.map((t) =>
           t.meta.id === id
-            ? { ...t, meta: { ...t.meta, last_task_id: data.task_id }, response: { status_code: data.status_code, headers: data.headers, body_preview: data.body_preview, timing_ms: data.timing_ms } }
+            ? { ...t, meta: { ...t.meta, last_task_id: data.task_id }, response: full, loading: false, modified: false }
             : t,
         ),
       );
@@ -198,7 +198,7 @@ export function RepeaterPage() {
       setTabs((prev) =>
         prev.map((t) =>
           t.meta.id === id
-            ? { ...t, response: { status_code: 0, headers: {}, body_preview: `Error: ${err.message}`, timing_ms: 0 } }
+            ? { ...t, response: { status_code: 0, headers: {}, body: `Error: ${err.message}`, timing_ms: 0 }, loading: false }
             : t,
         ),
       );
@@ -206,6 +206,22 @@ export function RepeaterPage() {
       setSending((prev) => ({ ...prev, [id]: false }));
     }
   }
+
+  function handleKeyDown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      addTab();
+    }
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && activeTab) {
+      e.preventDefault();
+      handleSend(activeTab.meta.id);
+    }
+  }
+
+  useEffect(() => {
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [activeTab, tabs]);
 
   if (loading) {
     return (
@@ -216,150 +232,141 @@ export function RepeaterPage() {
     );
   }
 
-  const resp = activeTab?.response;
-  const statusClass = resp
-    ? resp.status_code >= 400
-      ? "text-red-400"
-      : resp.status_code >= 200 && resp.status_code < 300
-        ? "text-green-400"
-        : resp.status_code === 0
-          ? "text-red-400"
-          : "text-neutral-400"
-    : "";
+  const activeHost = activeTab ? hostFromRaw(activeTab.meta.raw_request) : "";
+  const activeMethod = activeTab ? methodFromRaw(activeTab.meta.raw_request) : "";
+  const activeStatus = activeTab?.response?.status_code ?? null;
 
   return (
     <div class="flex h-full flex-col">
-      {/* Tab bar */}
-      <div class="mb-4 flex items-center gap-0.5 overflow-x-auto border-b border-neutral-800">
-        {tabs.map((tab) => (
+      {/* Compact header */}
+      <div class="flex items-center gap-3 border-b border-neutral-800 px-3 py-1.5">
+        <span class="text-sm font-semibold text-neutral-200">⚡ Repeater</span>
+        {activeHost && (
+          <span class="flex items-center gap-1.5 text-xs text-neutral-500">
+            <span class="h-1.5 w-1.5 rounded-full bg-green-500" />
+            Target: <span class="font-mono text-neutral-300">{activeHost}</span>
+          </span>
+        )}
+        <div class="ml-auto flex items-center gap-1">
           <button
-            key={tab.meta.id}
-            onClick={() => setActiveId(tab.meta.id)}
-            class={`group flex items-center gap-1.5 rounded-t-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              tab.meta.id === activeId
-                ? "bg-neutral-800 text-neutral-200"
-                : "text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300"
+            onClick={addTab}
+            class="inline-flex items-center gap-1 rounded-md border border-neutral-800 px-2 py-1 text-[11px] text-neutral-400 transition-colors hover:bg-neutral-800 hover:text-neutral-200"
+          >
+            <span class="text-xs">+</span> New Tab
+          </button>
+          <button
+            onClick={() => setShowHistory((p) => !p)}
+            class={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] transition-colors ${
+              showHistory ? "border-primary-700 bg-primary-900/30 text-primary-300" : "border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
             }`}
           >
-            <span
-              contentEditable={tab.meta.id === activeId}
-              suppressContentEditableWarning
-              onBlur={(e) => renameTab(tab.meta.id, (e.target as HTMLSpanElement).textContent || tab.meta.name)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") { e.preventDefault(); (e.target as HTMLSpanElement).blur(); }
-              }}
-              class="max-w-[120px] truncate rounded px-0.5 outline-none focus:bg-neutral-700"
-              title="Double-click to rename"
-            >
-              {tab.meta.name}
-            </span>
-            {tabs.length > 1 && (
-              <span
-                onClick={(e) => closeTab(tab.meta.id, e)}
-                class="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded text-[10px] text-neutral-600 transition-colors hover:bg-neutral-700 hover:text-neutral-300"
-              >
-                ✕
-              </span>
-            )}
+            History
           </button>
-        ))}
+        </div>
+      </div>
+
+      {/* Tab bar */}
+      <div class="flex items-center gap-0.5 overflow-x-auto border-b border-neutral-800 bg-neutral-950">
+        {tabs.map((tab) => {
+          const isActive = tab.meta.id === activeId;
+          const method = methodFromRaw(tab.meta.raw_request);
+          const endpoint = endpointFromRaw(tab.meta.raw_request);
+          const status = tab.response?.status_code ?? null;
+          return (
+            <button
+              key={tab.meta.id}
+              onClick={() => setActiveId(tab.meta.id)}
+              class={`group flex shrink-0 items-center gap-1.5 border-r border-neutral-800 px-3 py-1.5 text-[11px] transition-colors ${
+                isActive ? "bg-neutral-800 text-neutral-200" : "text-neutral-500 hover:bg-neutral-800/50 hover:text-neutral-300"
+              }`}
+            >
+              {tab.loading ? (
+                <svg class="h-3 w-3 animate-spin text-primary-400" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
+              ) : (
+                <span class={`h-1.5 w-1.5 rounded-full ${tab.modified ? "bg-yellow-400" : status ? statusColor(status) : "bg-neutral-700"}`} />
+              )}
+              <span class={`font-semibold ${methodColor(method)}`}>{method}</span>
+              <span class="max-w-[100px] truncate font-mono">{endpoint}</span>
+              {status && status > 0 && <span class={statusColor(status)}>{status}</span>}
+              {tab.response && <span class="text-neutral-600">{tab.response.timing_ms}ms</span>}
+              {tabs.length > 1 && (
+                <span
+                  onClick={(e) => closeTab(tab.meta.id, e)}
+                  class="hidden h-3.5 w-3.5 items-center justify-center rounded text-[10px] text-neutral-600 group-hover:flex hover:bg-neutral-700 hover:text-neutral-300"
+                >
+                  ✕
+                </span>
+              )}
+            </button>
+          );
+        })}
         <button
           onClick={addTab}
-          class="flex shrink-0 items-center gap-1 rounded-t-md px-2.5 py-1.5 text-xs text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
+          class="flex shrink-0 items-center px-2.5 py-1.5 text-xs text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-neutral-300"
         >
           +
         </button>
       </div>
 
-      {/* Active tab content */}
+      {/* Layout controls */}
       {activeTab && (
-        <div class="grid flex-1 grid-cols-2 gap-4 min-h-0">
-          {/* Request panel */}
-          <div class="flex flex-col rounded-lg border border-neutral-800 bg-neutral-900">
-            <div class="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
-              <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Request</span>
-            </div>
-            <textarea
-              value={activeTab.meta.raw_request}
-              onInput={(e) => updateRequest(activeTab.meta.id, (e.target as HTMLTextAreaElement).value)}
-              class="w-full flex-1 resize-none border-0 bg-transparent px-3 py-2 font-mono text-xs text-neutral-100 placeholder-neutral-600 focus:outline-none"
-              placeholder="GET / HTTP/1.1&#10;Host: example.com&#10;"
-            />
-            <div class="flex items-center gap-3 border-t border-neutral-800 px-3 py-2.5">
-              <button
-                onClick={() => handleSend(activeTab.meta.id)}
-                disabled={sending[activeTab.meta.id]}
-                class="inline-flex items-center gap-2 rounded-md bg-primary-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-400"
-              >
-                {sending[activeTab.meta.id] ? (
-                  <>
-                    <svg class="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Sending…
-                  </>
-                ) : (
-                  <>
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                    Send
-                  </>
-                )}
-              </button>
-              {resp && (
-                <span class="text-xs text-neutral-500">{resp.timing_ms}ms</span>
-              )}
-            </div>
-          </div>
+        <div class="flex items-center gap-0.5 border-b border-neutral-800 px-2 py-1">
+          {(["split", "request", "response"] as LayoutMode[]).map((m) => (
+            <button
+              key={m}
+              onClick={() => setLayout(m)}
+              class={`rounded px-2 py-0.5 text-[10px] font-medium capitalize transition-colors ${
+                layout === m ? "bg-neutral-800 text-neutral-200" : "text-neutral-500 hover:text-neutral-300"
+              }`}
+            >
+              {m === "split" ? "Split" : m === "request" ? "Max Request" : "Max Response"}
+            </button>
+          ))}
+        </div>
+      )}
 
-          {/* Response panel */}
-          <div class="flex flex-col rounded-lg border border-neutral-800 bg-neutral-900">
-            <div class="flex items-center justify-between border-b border-neutral-800 px-3 py-2">
-              <div class="flex items-center gap-3">
-                <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Response</span>
-                {resp && (
-                  <>
-                    <span class={`text-sm font-bold ${statusClass}`}>{resp.status_code}</span>
-                    <span class="text-xs text-neutral-500">{resp.timing_ms}ms</span>
-                  </>
-                )}
+      {/* Main layout */}
+      {activeTab && (
+        <div class="flex min-h-0 flex-1">
+          <div class={`grid min-h-0 flex-1 gap-0 ${layout === "split" ? "grid-cols-2" : "grid-cols-1"}`}>
+            {layout !== "response" && (
+              <div class="flex min-h-0 flex-col border-r border-neutral-800">
+                <div class="border-b border-neutral-800 bg-neutral-950 px-3 py-1">
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Request</span>
+                </div>
+                <div class="min-h-0 flex-1">
+                  <RequestEditor
+                    value={activeTab.meta.raw_request}
+                    onChange={(val) => updateRequest(activeTab.meta.id, val)}
+                    onSend={() => handleSend(activeTab.meta.id)}
+                    sending={sending[activeTab.meta.id]}
+                  />
+                </div>
               </div>
-              {resp && resp.headers?.["content-type"]?.includes("text/html") && (
-                <label class="flex cursor-pointer items-center gap-1.5 text-xs text-neutral-500 select-none">
-                  <input type="checkbox" checked={renderHtml} onChange={() => setRenderHtml((p) => !p)} class="accent-primary-500" />
-                  Render HTML
-                </label>
-              )}
-            </div>
-            <div class="flex-1 overflow-y-auto px-3 py-2">
-              {!resp ? (
-                <div class="flex items-center justify-center py-16 text-sm text-neutral-600">
-                  Send a request to see the response
+            )}
+            {layout !== "request" && (
+              <div class="flex min-h-0 flex-col">
+                <div class="border-b border-neutral-800 bg-neutral-950 px-3 py-1">
+                  <span class="text-[10px] font-semibold uppercase tracking-wider text-neutral-500">Response</span>
                 </div>
-              ) : (
-                <div class="space-y-3">
-                  <details open class="rounded-md border border-neutral-800 bg-neutral-950">
-                    <summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Headers</summary>
-                    <div class="space-y-0.5 px-3 pb-2 pt-1">
-                      {Object.entries(resp.headers).map(([k, v]) => (
-                        <div class="flex gap-2 text-xs">
-                          <span class="shrink-0 font-semibold text-neutral-400">{k}:</span>
-                          <span class="break-all text-neutral-300">{v}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                  <details open class="rounded-md border border-neutral-800 bg-neutral-950">
-                    <summary class="cursor-pointer px-3 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">Body</summary>
-                    <div class="px-3 pb-2 pt-1">
-                      {renderHtml && resp.headers?.["content-type"]?.includes("text/html") ? (
-                        <iframe class="h-96 w-full rounded border border-neutral-700 bg-white" srcdoc={resp.body_preview} />
-                      ) : (
-                        <pre class="overflow-x-auto font-mono text-xs text-neutral-300 whitespace-pre-wrap">{resp.body_preview}</pre>
-                      )}
-                    </div>
-                  </details>
+                <div class="min-h-0 flex-1">
+                  <ResponseViewer response={activeTab.response} loading={activeTab.loading} />
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
+          {showHistory && (
+            <RepeaterHistory
+              onRestore={(raw, name) => {
+                // Create a new tab with the historical request
+                createTab({ name, raw_request: raw }).then((created) => {
+                  setTabs((prev) => [...prev, { meta: created, response: null }]);
+                  setActiveId(created.id);
+                });
+              }}
+              onClose={() => setShowHistory(false)}
+            />
+          )}
         </div>
       )}
     </div>
