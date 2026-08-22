@@ -99,6 +99,20 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     if raw_headers and isinstance(raw_headers, dict):
         extra_headers.update(raw_headers)
     findings = await _scan_target(loader, url, 60, detection_depth=detection_depth, evasion_level=evasion_level, extra_headers=extra_headers or None)
+
+    # Persist findings to the active session so they show up in /findings
+    # and the web UI (not just in the task result).
+    try:
+        from pwnproxy.shared.findings.storage import FindingStorage
+        sm = getattr(request.app.state, "session_manager", None)
+        if sm is not None:
+            storage = FindingStorage(sm.get_scanner_engine())
+            for f in findings:
+                await storage.save(f)
+            logger.info("Persisted %d finding(s) from scan %s", len(findings), task_id)
+    except Exception as e:
+        logger.warning("Could not persist findings to session: %s", e)
+
     result_data = ExportEngine(findings).to_dicts() if findings else []
     await store.update(
         task_id,
