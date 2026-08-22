@@ -115,15 +115,31 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                               e.stopPropagation();
                               setBusy((prev) => ({ ...prev, [key]: true }));
                               try {
-                                const u = new URL(f.url);
-                                const path = u.pathname + u.search;
-                                const method = f.method || "GET";
-                                let headers = `Host: ${u.host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*`;
-                                if (f.param_location === "header" && f.param_name && f.payload) {
-                                  headers = `Host: ${u.host}\n${f.param_name}: ${f.payload}\nAccept: */*`;
+                                let raw: string;
+                                let tabName: string;
+                                if (f.request_data?.url) {
+                                  // Payload-exact: stored request with the triggering payload
+                                  const rd = f.request_data;
+                                  const u = new URL(rd.url);
+                                  const path = u.pathname + u.search;
+                                  const headers = Object.entries(rd.headers || {})
+                                    .map(([k, v]) => `${k}: ${v}`)
+                                    .join("\n");
+                                  const body = rd.body ? `\n\n${rd.body}` : "\n\n";
+                                  raw = `${rd.method || "GET"} ${path} HTTP/1.1\n${headers}${body}`;
+                                  tabName = `${rd.method || "GET"} ${path.slice(0, 30)}`;
+                                } else {
+                                  const u = new URL(f.url);
+                                  const path = u.pathname + u.search;
+                                  const method = f.method || "GET";
+                                  let headers = `Host: ${u.host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*`;
+                                  if (f.param_location === "header" && f.param_name && f.payload) {
+                                    headers = `Host: ${u.host}\n${f.param_name}: ${f.payload}\nAccept: */*`;
+                                  }
+                                  raw = `${method} ${path} HTTP/1.1\n${headers}\n\n`;
+                                  tabName = `${method} ${path.slice(0, 30)}`;
                                 }
-                                const raw = `${method} ${path} HTTP/1.1\n${headers}\n\n`;
-                                const tab = await createTab({ name: `${method} ${path.slice(0, 30)}`, raw_request: raw });
+                                const tab = await createTab({ name: tabName, raw_request: raw });
                                 new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
                                 window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
                                   detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "success", navTo: "/repeater" },

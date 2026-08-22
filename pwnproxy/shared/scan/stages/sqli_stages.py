@@ -9,7 +9,7 @@ from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
@@ -38,6 +38,7 @@ class ErrorBasedStage(DetectionStage):
                 result = _check_error_signatures(resp.text, self._signatures)
                 if result is not None:
                     dbms, evidence = result
+                    req = self._replayer.build_payload_request(point, payload.value, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="sqli",
                         url=point.url,
@@ -50,6 +51,7 @@ class ErrorBasedStage(DetectionStage):
                         payload=payload.value,
                         evidence=evidence,
                         extra={"dbms": dbms},
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(_point_key(point))
                     break
@@ -98,6 +100,7 @@ class BooleanBlindStage(DetectionStage):
                 diff = abs(true_len - false_len)
 
                 if diff > 10:
+                    req = self._replayer.build_payload_request(point, true_p, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="sqli",
                         url=point.url,
@@ -109,6 +112,7 @@ class BooleanBlindStage(DetectionStage):
                         confidence="tentative",
                         payload=true_p,
                         evidence=f"Response length diff: TRUE={true_len}, FALSE={false_len} (diff={diff})",
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(_point_key(point))
                     break
@@ -184,6 +188,7 @@ class OOBStage(DetectionStage):
 
             hit = registry.get(canary.token)
             if hit and hit.callback_received:
+                req = self._replayer.build_payload_request(point, payloads[0], evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="sqli",
                     url=point.url,
@@ -196,6 +201,7 @@ class OOBStage(DetectionStage):
                     payload=payloads[0],
                     evidence=f"OOB callback received from {hit.callback_ip}",
                     extra={"dbms": "multi", "oob_token": canary.token},
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(_point_key(point))
 
@@ -243,6 +249,7 @@ async def _check_time_based(
                 cresp = await replayer.replay(point, confirm_pl.value, timeout=15.0, evasion_level=evasion_level)
                 celapsed = (time.monotonic() - cstart) * 1000
                 if cresp is None:
+                    req = replayer.build_payload_request(point, pl.value, evasion_level=evasion_level)
                     return (
                         Finding(
                             scanner="sqli", url=point.url, method=point.method,
@@ -250,10 +257,12 @@ async def _check_time_based(
                             technique="time-based-blind", severity="medium", confidence="tentative",
                             payload=pl.value,
                             evidence=f"Primary delay ({elapsed:.0f}ms vs baseline {baseline_ms:.0f}ms) but confirmation failed",
+                            request_data=_serialize_request(req),
                         ),
                         pl.dbms or "unknown",
                     )
                 if celapsed > baseline_ms + 2400:
+                    req = replayer.build_payload_request(point, pl.value, evasion_level=evasion_level)
                     return (
                         Finding(
                             scanner="sqli", url=point.url, method=point.method,
@@ -261,9 +270,11 @@ async def _check_time_based(
                             technique="time-based-blind", severity="high", confidence="confirmed",
                             payload=pl.value,
                             evidence=f"Delay: baseline={baseline_ms:.0f}ms, primary={elapsed:.0f}ms, confirm={celapsed:.0f}ms",
+                            request_data=_serialize_request(req),
                         ),
                         pl.dbms or "unknown",
                     )
+            req = replayer.build_payload_request(point, pl.value, evasion_level=evasion_level)
             return (
                 Finding(
                     scanner="sqli", url=point.url, method=point.method,
@@ -271,6 +282,7 @@ async def _check_time_based(
                     technique="time-based-blind", severity="medium", confidence="tentative",
                     payload=pl.value,
                     evidence=f"Primary delay ({elapsed:.0f}ms) but confirmation below threshold",
+                    request_data=_serialize_request(req),
                 ),
                 pl.dbms or "unknown",
             )

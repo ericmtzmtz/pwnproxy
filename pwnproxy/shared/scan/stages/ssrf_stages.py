@@ -15,7 +15,7 @@ from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.canary import get_registry
 from pwnproxy.shared.http_server import get_server
 
@@ -68,6 +68,7 @@ class SsrfSimpleStage(DetectionStage):
                 continue
             # Consider any response (even error) as potential SSRF? We'll treat status < 400 as interesting.
             if resp.status_code < 400:
+                req = self._replayer.build_payload_request(probe_point, probe_url, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="ssrf",
                     url=point.url,
@@ -79,6 +80,7 @@ class SsrfSimpleStage(DetectionStage):
                     confidence="tentative",
                     payload=probe_url,
                     evidence=f"Received HTTP {resp.status_code} from probe",
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(_point_key(point))
                 break  # only need one finding per point
@@ -124,6 +126,7 @@ class RedirectStage(DetectionStage):
             if 300 <= resp.status_code < 400:
                 location = resp.headers.get("location", "")
                 if "127.0.0.1:9999" in location:
+                    req = self._replayer.build_payload_request(probe_point, probe_url, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="ssrf",
                         url=point.url,
@@ -135,6 +138,7 @@ class RedirectStage(DetectionStage):
                         confidence="tentative",
                         payload=probe_url,
                         evidence=f"Redirect to {location}",
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(_point_key(point))
                     break
@@ -191,6 +195,7 @@ class SsrfOOBStage(DetectionStage):
 
             hit = registry.get(canary.token)
             if hit and hit.callback_received:
+                req = self._replayer.build_payload_request(oob_point, callback_url, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="ssrf",
                     url=point.url,
@@ -203,6 +208,7 @@ class SsrfOOBStage(DetectionStage):
                     payload=callback_url,
                     evidence=f"OOB callback received from {hit.callback_ip}",
                     extra={"oob_token": canary.token},
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(_point_key(point))
 

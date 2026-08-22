@@ -17,6 +17,7 @@ from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.canary import get_registry
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class SimpleStage(DetectionStage):
                     continue
                 os_type, evidence = self._matcher.match(resp.text or "", min_matches=2)
                 if os_type is not None:
+                    req = self._replayer.build_payload_request(point, payload.value, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="lfi",
                         url=point.url,
@@ -57,6 +59,7 @@ class SimpleStage(DetectionStage):
                         payload=payload.value,
                         evidence=evidence[:500],
                         extra={"os": os_type},
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(_point_key(point))
                     break
@@ -88,6 +91,7 @@ class PHPWrapperStage(DetectionStage):
                     continue
                 os_type, evidence = self._matcher.match(resp.text or "", min_matches=2)
                 if os_type is not None:
+                    req = self._replayer.build_payload_request(point, payload.value, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="lfi",
                         url=point.url,
@@ -100,6 +104,7 @@ class PHPWrapperStage(DetectionStage):
                         payload=payload.value,
                         evidence=evidence[:500],
                         extra={"os": os_type},
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(_point_key(point))
                     break
@@ -148,6 +153,7 @@ class LfiOOBStage(DetectionStage):
 
             hit = registry.get(canary.token)
             if hit and hit.callback_received:
+                req = self._replayer.build_payload_request(point, payloads[0], evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="lfi",
                     url=point.url,
@@ -160,6 +166,7 @@ class LfiOOBStage(DetectionStage):
                     payload=payloads[0],
                     evidence=f"OOB callback received from {hit.callback_ip}",
                     extra={"oob_token": canary.token},
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(_point_key(point))
 

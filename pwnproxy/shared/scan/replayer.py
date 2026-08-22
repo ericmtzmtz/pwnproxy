@@ -85,6 +85,19 @@ class RequestReplayer:
             evasion_level=evasion_level,
         )
 
+    def build_payload_request(
+        self,
+        point: InjectionPoint,
+        payload: str,
+        evasion_level: str | EvasionLevel = EvasionLevel.NONE,
+    ) -> httpx.Request:
+        """Build (but do not send) the payload request — same as replay sends.
+
+        Lets callers serialize the exact request that triggered a finding
+        (method, injected URL, headers, body) for persistence/validation.
+        """
+        return self._build_request(point, payload, evasion_level)
+
     async def send_clean(self, point: InjectionPoint, timeout: float = 10.0) -> Optional[httpx.Response]:
         headers = dict(point.original_headers)
         body = point.original_body.encode() if point.original_body else None
@@ -181,3 +194,16 @@ def _inject_cookie(cookie_header: str, param: str, payload: str) -> str:
         else:
             parts.append(pair)
     return "; ".join(parts)
+def _serialize_request(req: httpx.Request) -> dict:
+    """Serialize an httpx.Request into the finding request_data shape.
+
+    Absolute URL with payload injected, headers as sent, body as str or None.
+    """
+    headers = dict(req.headers)
+    body = req.content.decode("utf-8", "replace") if req.content else None
+    return {
+        "method": req.method.upper(),
+        "url": str(req.url),
+        "headers": headers,
+        "body": body,
+    }

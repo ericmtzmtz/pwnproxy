@@ -27,6 +27,7 @@ class FindingORM(Base):
     evidence = Column(Text, default="")
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     extra = Column(JSON, default=dict)
+    request_data = Column(JSON, default=None)
 
 
 class FindingStorage:
@@ -53,6 +54,7 @@ class FindingStorage:
             evidence=finding.evidence,
             timestamp=finding.timestamp,
             extra=finding.extra if hasattr(finding, "extra") else {},
+            request_data=finding.request_data if hasattr(finding, "request_data") else None,
         )
         async with self._factory() as session:
             await session.merge(record)

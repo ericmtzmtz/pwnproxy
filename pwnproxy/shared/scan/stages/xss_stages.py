@@ -17,7 +17,7 @@ from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,7 @@ class ReflectedStage(DetectionStage):
                     continue
 
                 if self._is_reflected(resp.text, payload):
+                    req = self._replayer.build_payload_request(point, payload, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="xss",
                         url=point.url,
@@ -83,6 +84,7 @@ class ReflectedStage(DetectionStage):
                         confidence="tentative",
                         payload=payload,
                         evidence=f"Payload reflected in response body (length={len(resp.text)})",
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(self._point_key(point))
                     break
@@ -139,6 +141,7 @@ class StoredStage(DetectionStage):
                     continue
 
                 if self._is_reflected(clean_resp.text, payload):
+                    req = self._replayer.build_payload_request(point, payload, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="xss",
                         url=point.url,
@@ -150,6 +153,7 @@ class StoredStage(DetectionStage):
                         confidence="confirmed",
                         payload=payload,
                         evidence="Payload persisted across requests (stored XSS)",
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(self._point_key(point))
                     break
@@ -209,6 +213,7 @@ class ContextAwareStage(DetectionStage):
                     continue
 
                 if self._detect_success(injected.text, payload, context):
+                    req = self._replayer.build_payload_request(point, payload, evasion_level=self._evasion)
                     findings.append(Finding(
                         scanner="xss",
                         url=point.url,
@@ -220,6 +225,7 @@ class ContextAwareStage(DetectionStage):
                         confidence="confirmed",
                         payload=payload,
                         evidence=f"Context-aware reflection in {context} context",
+                        request_data=_serialize_request(req),
                     ))
                     confirmed.add(self._point_key(point))
                     break

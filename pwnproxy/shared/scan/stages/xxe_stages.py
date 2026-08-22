@@ -16,7 +16,7 @@ from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageRes
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint, _header
 from pwnproxy.shared.scan.protocols import XMLMutableReplayer
-from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
@@ -85,6 +85,7 @@ class XxeErrorBasedStage(DetectionStage):
 
             error_sigs = self._check_error_signatures(resp.text)
             if error_sigs:
+                req = self._replayer.build_payload_request(point, self.ENTITY_XML, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="xxe",
                     url=point.url,
@@ -96,6 +97,7 @@ class XxeErrorBasedStage(DetectionStage):
                     confidence="tentative",
                     payload=self.ENTITY_XML,
                     evidence=f"XML error signature: {error_sigs[0][:200]}",
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(self._point_key(point))
 
@@ -156,6 +158,7 @@ class JSONMutateStage(DetectionStage):
                 continue
 
             if self._is_xxe_like(resp):
+                req = self._replayer.build_payload_request(point, self.XML_TEMPLATE, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="xxe",
                     url=point.url,
@@ -167,6 +170,7 @@ class JSONMutateStage(DetectionStage):
                     confidence="tentative",
                     payload=self.XML_TEMPLATE,
                     evidence=f"JSON endpoint accepted XML with XXE (status={resp.status_code})",
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(self._point_key(point))
 
@@ -234,6 +238,7 @@ class XxeOOBStage(DetectionStage):
 
             hit = registry.get(canary.token)
             if hit and hit.callback_received:
+                req = self._replayer.build_payload_request(point, payload, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="xxe",
                     url=point.url,
@@ -246,6 +251,7 @@ class XxeOOBStage(DetectionStage):
                     payload=payload,
                     evidence=f"OOB callback received from {hit.callback_ip}",
                     extra={"oob_token": canary.token, "callback_ip": hit.callback_ip},
+                    request_data=_serialize_request(req),
                 ))
                 confirmed.add(self._point_key(point))
 

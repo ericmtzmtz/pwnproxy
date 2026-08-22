@@ -70,6 +70,7 @@ class Finding:
     evidence: str
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     extra: dict = field(default_factory=dict)
+    request_data: Optional[dict] = None
 
 
 class PwnPlugin:
