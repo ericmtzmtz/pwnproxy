@@ -343,10 +343,24 @@ def _stdio_repl():
             method = msg.get("method", "")
             params = msg.get("params", {})
 
-            if method == "list_tools":
-                response = {"jsonrpc": "2.0", "result": TOOL_DEFINITIONS, "id": msg.get("id")}
+            if method == "initialize":
+                response = {
+                    "jsonrpc": "2.0",
+                    "result": {
+                        "protocolVersion": "2024-11-05",
+                        "capabilities": {"tools": {}, "resources": {}},
+                        "serverInfo": {"name": "pwnproxy", "version": "1.0.0"},
+                    },
+                    "id": msg.get("id"),
+                }
+            elif method == "notifications/initialized":
+                continue
+            elif method == "ping":
+                response = {"jsonrpc": "2.0", "result": "pong", "id": msg.get("id")}
+            elif method == "list_tools":
+                response = {"jsonrpc": "2.0", "result": {"tools": TOOL_DEFINITIONS}, "id": msg.get("id")}
             elif method == "list_resources":
-                response = {"jsonrpc": "2.0", "result": RESOURCE_DEFINITIONS, "id": msg.get("id")}
+                response = {"jsonrpc": "2.0", "result": {"resources": RESOURCE_DEFINITIONS}, "id": msg.get("id")}
             elif method == "call_tool":
                 result = loop.run_until_complete(handle_call(params.get("name", ""), params.get("arguments", {})))
                 response = {"jsonrpc": "2.0", "result": result, "id": msg.get("id")}
