@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { sendRequest } from "@/api/repeater/calls";
+import { createTab } from "@/api/repeater/calls";
 import { launchScan } from "@/api/scan/calls";
 import { listPlugins } from "@/api/plugins/calls";
 import { PluginToggle } from "@/components/plugins/PluginToggle";
@@ -369,23 +369,48 @@ export function ScannersPage() {
                                       </span>
                                     </td>
                                     <td class="max-w-[200px] truncate px-3 py-2 font-mono text-neutral-400" title={f.payload}>{f.payload || "-"}</td>
-                                       <td class="px-3 py-2">
-                                         <button
-                                           onClick={async () => {
-                                             try {
-                                               const rawRequest = `${f.method} ${new URL(f.url).pathname} HTTP/1.1\nHost: ${new URL(f.url).host}\n\n`;
-                                               await sendRequest({ raw_request: rawRequest });
-                                               window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Sent to Repeater", severity: "success", navTo: "/repeater" } }));
-                                             } catch {
-                                               window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Repeater error", message: "Failed to send", severity: "error" } }));
-                                             }
-                                           }}
-                                           class="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:text-primary-400 hover:bg-neutral-800"
-                                           title="Send to Repeater"
-                                         >
-                                           Repeater
-                                         </button>
-                                       </td>
+                                        <td class="px-3 py-2">
+                                          <button
+                                            onClick={async () => {
+                                              try {
+                                                let rawRequest: string;
+                                                let tabName: string;
+                                                if (f.request_data?.url) {
+                                                  // Payload-exact: stored request with the triggering payload
+                                                  const rd = f.request_data;
+                                                  const u = new URL(rd.url);
+                                                  const path = u.pathname + u.search;
+                                                  const headers = Object.entries(rd.headers || {})
+                                                    .map(([k, v]) => `${k}: ${v}`)
+                                                    .join("\n");
+                                                  const body = rd.body ? `\n\n${rd.body}` : "\n\n";
+                                                  rawRequest = `${rd.method || "GET"} ${path} HTTP/1.1\n${headers}${body}`;
+                                                  tabName = `${rd.method || "GET"} ${path.slice(0, 30)}`;
+                                                } else {
+                                                  const u = new URL(f.url);
+                                                  const path = u.pathname + u.search;
+                                                  const method = f.method || "GET";
+                                                  // Rebuild with the finding payload when it was a param/header injection
+                                                  let headers = `Host: ${u.host}\nUser-Agent: pwnproxy-repeater/0.1\nAccept: */*`;
+                                                  if (f.param_location === "header" && f.param_name && f.payload) {
+                                                    headers = `Host: ${u.host}\n${f.param_name}: ${f.payload}\nAccept: */*`;
+                                                  }
+                                                  rawRequest = `${method} ${path} HTTP/1.1\n${headers}\n\n`;
+                                                  tabName = `${method} ${path.slice(0, 30)}`;
+                                                }
+                                                const tab = await createTab({ name: tabName, raw_request: rawRequest });
+                                                new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
+                                                window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "success", navTo: "/repeater" } }));
+                                              } catch {
+                                                window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Repeater error", message: "Failed to send", severity: "error" } }));
+                                              }
+                                            }}
+                                            class="rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:text-primary-400 hover:bg-neutral-800"
+                                            title="Send to Repeater"
+                                          >
+                                            Repeater
+                                          </button>
+                                        </td>
                                   </tr>
                                 ))}
                               </tbody>

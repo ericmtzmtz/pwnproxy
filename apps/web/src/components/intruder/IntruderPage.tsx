@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { runIntruder, listWordlists } from "@/api/intruder/calls";
-import { sendRequest } from "@/api/repeater/calls";
+import { createTab } from "@/api/repeater/calls";
 import type { IntruderResult, WordlistEntry } from "@/api/intruder/types";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
@@ -238,9 +238,10 @@ function handlePreview(payload: string) {
 
 async function handleSendToRepeater(rawReq: string) {
   try {
-    await sendRequest({ raw_request: rawReq });
+    const tab = await createTab({ name: `Intruder ${rawReq.split("\n")[0]?.slice(0, 30) ?? ""}`, raw_request: rawReq });
+    new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
     window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
-      detail: { title: "Sent to Repeater", message: "", severity: "info", navTo: "/repeater" },
+      detail: { title: "Sent to Repeater", message: `Tab #${tab.id} created`, severity: "info", navTo: "/repeater" },
     }));
   } catch (err: any) {
     window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
