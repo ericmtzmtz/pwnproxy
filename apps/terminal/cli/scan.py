@@ -29,18 +29,33 @@ def url(
     timeout: int = typer.Option(60, "--timeout", "-t", help="Scan timeout in seconds"),
     output: str = typer.Option("json", "--output", "-o", help="Output format: json, sarif, html, pdf"),
     output_file: Optional[str] = typer.Option(None, "--output-file", "-f", help="Output file path (default: stdout)"),
+    cookies: Optional[list[str]] = typer.Option(None, "--cookie", "-c", help='Cookie header, e.g. "PHPSESSID=abc; security_level=0". Repeatable.'),
+    headers: Optional[list[str]] = typer.Option(None, "--header", "-H", help='Extra header, format "Name: Value". Repeatable.'),
 ):
     async def _run():
         loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None)
-        findings = await _scan_target(loader, target, timeout)
+        extra_headers: dict[str, str] = {}
+        if cookies:
+            joined = "; ".join(c.strip().rstrip(";") for c in cookies if c and c.strip())
+            if joined:
+                extra_headers["Cookie"] = joined
+        if headers:
+            for item in headers:
+                if not item or ":" not in item:
+                    console.print(f"[yellow]Ignoring malformed header (expected \"Name: Value\"):[/yellow] {item}")
+                    continue
+                name, _, value = item.partition(":")
+                extra_headers[name.strip()] = value.strip()
+        findings = await _scan_target(loader, target, timeout, extra_headers=extra_headers)
         _output_findings(findings, output, output_file)
         if findings:
             raise typer.Exit(1)
 
     try:
         asyncio.run(_run())
-    except typer.Exit:
-        pass
+    except typer.Exit as e:
+        if e.exit_code:
+            raise
     except Exception as e:
         console.print(f"[red]Scan failed:[/red] {e}")
         if logger.isEnabledFor(logging.DEBUG):
@@ -48,7 +63,7 @@ def url(
         raise typer.Exit(2)
 
 
-async def _build_scan_loader(scanners: Optional[set[str]] = None) -> PluginLoader:
+async def _build_scan_loader(scanners: Optional[set[str]] = None, disabled_plugins: Optional[list[str]] = None) -> PluginLoader:
     from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
     from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
@@ -64,14 +79,17 @@ async def _build_scan_loader(scanners: Optional[set[str]] = None) -> PluginLoade
         "xxe": XXEScannerPlugin,
         "ssrf": SSRFScannerPlugin,
     }
+    disabled_set = set(disabled_plugins or [])
     if scanners:
         for name in scanners:
             if name not in builtin_plugins:
                 raise ValueError(f"Unknown scanner: {name}")
-            await loader.load_builtin(builtin_plugins[name]())
+            if name not in disabled_set:
+                await loader.load_builtin(builtin_plugins[name]())
     else:
-        for plugin_cls in builtin_plugins.values():
-            await loader.load_builtin(plugin_cls())
+        for name, plugin_cls in builtin_plugins.items():
+            if name not in disabled_set:
+                await loader.load_builtin(plugin_cls())
     return loader
 
 
