@@ -119,7 +119,7 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
             except (ValueError, TypeError):
                 logger.warning(f"Could not calculate duration for task {task_id}")
 
-        await hook_bus.publish("scan.completed", {
+        hook_bus.publish("scan.completed", {
             "task_id": task_id,
             "findings_count": len(result_data) if result_data else 0,
             "duration_ms": duration_ms,
