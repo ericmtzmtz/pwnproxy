@@ -38,6 +38,14 @@ class FindingStorage:
     async def create_table(self) -> None:
         async with self._engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        # Additive migration: ensure request_data column exists on pre-existing tables.
+        from sqlalchemy import text
+        async with self._engine.begin() as conn:
+            cols = await conn.execute(text("SELECT name FROM pragma_table_info('findings')"))
+            names = {row[0] for row in cols}
+            if "request_data" not in names:
+                await conn.execute(text("ALTER TABLE findings ADD COLUMN request_data JSON"))
+                logger.info("Migrated findings table: added request_data column")
 
     async def save(self, finding) -> None:
         from pwnproxy.plugins.core.base import Finding as BaseFinding
