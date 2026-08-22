@@ -31,6 +31,9 @@ def url(
     output_file: Optional[str] = typer.Option(None, "--output-file", "-f", help="Output file path (default: stdout)"),
     cookies: Optional[list[str]] = typer.Option(None, "--cookie", "-c", help='Cookie header, e.g. "PHPSESSID=abc; security_level=0". Repeatable.'),
     headers: Optional[list[str]] = typer.Option(None, "--header", "-H", help='Extra header, format "Name: Value". Repeatable.'),
+    method: str = typer.Option("GET", "--method", "-m", help="HTTP method for the target request (GET, POST, PUT, PATCH)"),
+    data: Optional[str] = typer.Option(None, "--data", "-d", help="Raw request body (e.g. XML or JSON payload)"),
+    content_type: Optional[str] = typer.Option(None, "--content-type", help="Content-Type header for the body (e.g. text/xml, application/json)"),
 ):
     async def _run():
         loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None)
@@ -46,7 +49,17 @@ def url(
                     continue
                 name, _, value = item.partition(":")
                 extra_headers[name.strip()] = value.strip()
-        findings = await _scan_target(loader, target, timeout, extra_headers=extra_headers)
+        body = data
+        req_method = method.upper()
+        if body and req_method == "GET":
+            console.print("[yellow]Warning: --data ignored with --method GET. Use --method POST (or PUT/PATCH) to send a body.[/yellow]")
+            body = None
+        if body and content_type:
+            extra_headers["Content-Type"] = content_type
+        findings = await _scan_target(
+            loader, target, timeout,
+            method=req_method, body=body, extra_headers=extra_headers,
+        )
         _output_findings(findings, output, output_file)
         if findings:
             raise typer.Exit(1)
@@ -100,6 +113,8 @@ async def _scan_target(
     detection_depth: str = "fast",
     evasion_level: str = "none",
     extra_headers: Optional[dict[str, str]] = None,
+    method: str = "GET",
+    body: Optional[str] = None,
 ) -> list[Finding]:
     console.print(f"[cyan]Scanning:[/cyan] {target}")
     start = time.monotonic()
@@ -108,9 +123,10 @@ async def _scan_target(
     if extra_headers:
         headers.update(extra_headers)
 
+    body_bytes = body.encode() if body else None
     async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
         try:
-            resp = await client.get(target, headers=headers)
+            resp = await client.request(method, target, headers=headers, content=body_bytes)
         except Exception as e:
             console.print(f"[red]Request failed:[/red] {e}")
             raise
@@ -118,10 +134,10 @@ async def _scan_target(
     parsed = httpx.URL(target)
     flow = Flow(
         id=str(uuid.uuid4()),
-        method="GET",
+        method=method,
         url=target,
         request_headers=headers,
-        request_body=None,
+        request_body=body_bytes,
         status_code=resp.status_code,
         response_headers=dict(resp.headers),
         response_body=resp.content,

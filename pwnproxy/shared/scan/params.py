@@ -52,11 +52,19 @@ def extract(flow: Flow) -> list[InjectionPoint]:
 def _get_body_text(flow: Flow) -> Optional[str]:
     if flow.request_body is None:
         return None
-    ct = flow.request_headers.get("content-type", "").lower()
+    ct = _header(flow.request_headers, "content-type")
     for skip in SKIP_CONTENT_TYPES:
         if ct.startswith(skip.rstrip("*")):
             return None
     return flow.request_body.decode("utf-8", "replace")
+
+
+def _header(headers: dict[str, str], name: str) -> str:
+    """Case-insensitive header lookup (HTTP header names are case-insensitive)."""
+    for key, val in headers.items():
+        if key.lower() == name.lower():
+            return val or ""
+    return ""
 
 
 def _extract_query(
@@ -83,7 +91,7 @@ def _extract_body(
     points = []
     if body_text is None:
         return points
-    ct = flow.request_headers.get("content-type", "").lower()
+    ct = _header(flow.request_headers, "content-type")
 
     if "application/x-www-form-urlencoded" in ct:
         params = parse_qs(body_text, keep_blank_values=True)
@@ -102,7 +110,22 @@ def _extract_body(
             _extract_json_keys("", data, points, flow, host, path, body_text)
         except json.JSONDecodeError:
             pass
+    elif "xml" in ct or _looks_like_xml(body_text):
+        # XML body: single placeholder point; XXE replayer mutates the
+        # whole document body rather than individual parameters.
+        points.append(InjectionPoint(
+            name="xml_body", value=body_text, location="body",
+            flow_id=flow.id, method=flow.method, url=flow.url,
+            host=host, path=path,
+            original_headers=flow.request_headers,
+            original_body=body_text,
+        ))
     return points
+
+
+def _looks_like_xml(body_text: str) -> bool:
+    stripped = body_text.strip()
+    return stripped.startswith("<") and stripped.endswith(">")
 
 
 def _extract_json_keys(

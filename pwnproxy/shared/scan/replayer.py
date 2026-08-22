@@ -7,7 +7,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 import httpx
 
 from pwnproxy.shared.scan.evasion import EvasionLevel, apply_evasion
-from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.params import InjectionPoint, _header
 
 logger = logging.getLogger(__name__)
 
@@ -39,13 +39,13 @@ class RequestReplayer:
         if point.location == "query":
             url = _inject_query(point.url, point.name, evaded)
             body = point.original_body.encode() if point.original_body else None
-            if body and "content-type" in headers:
+            if body and _header(headers, "content-type"):
                 pass
             elif body:
                 headers.pop("content-length", None)
             return httpx.Request(method, url, headers=headers, content=body)
         elif point.location == "body":
-            ct = headers.get("content-type", "").lower()
+            ct = _header(headers, "content-type")
             if "application/x-www-form-urlencoded" in ct:
                 body = _inject_form_body(point.original_body or "", point.name, evaded)
             elif "application/json" in ct:

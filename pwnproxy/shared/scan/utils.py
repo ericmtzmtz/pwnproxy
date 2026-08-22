@@ -9,7 +9,7 @@ from typing import Optional
 import httpx
 
 from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.params import InjectionPoint, _header
 
 
 def build_request(
@@ -66,7 +66,7 @@ def build_request(
         )
 
     elif location == "body":
-        content_type = headers.get("content-type", "").lower()
+        content_type = _header(headers, "content-type").lower()
         if "application/x-www-form-urlencoded" in content_type:
             body = mutated_body or point.original_body or ""
             if isinstance(body, str):

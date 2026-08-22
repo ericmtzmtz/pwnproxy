@@ -14,7 +14,7 @@ from typing import Optional
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.params import InjectionPoint, _header
 from pwnproxy.shared.scan.protocols import XMLMutableReplayer
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.canary import get_registry
@@ -142,7 +142,7 @@ class JSONMutateStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
-            ct = point.original_headers.get("content-type", "").lower()
+            ct = _header(point.original_headers, "content-type").lower()
             if "json" not in ct:
                 continue
 
