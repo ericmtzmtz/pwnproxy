@@ -23,8 +23,8 @@ class RepeaterEngine:
         """
         client = await self._get_client()
         headers = parsed.get("headers", {})
-        host = headers.get("Host", "localhost")
-        scheme = headers.get("X-Forwarded-Proto", "http")
+        host = _header(headers, "host") or "localhost"
+        scheme = _header(headers, "x-forwarded-proto") or "http"
         path = parsed.get("path", "/")
         url = f"{scheme}://{host}{path}"
         method = parsed.get("method", "GET")
@@ -42,3 +42,11 @@ class RepeaterEngine:
         if self._client:
             await self._client.aclose()
             self._client = None
+
+
+def _header(headers: dict, name: str) -> str:
+    """Case-insensitive header lookup (HTTP header names are case-insensitive)."""
+    for key, val in headers.items():
+        if key.lower() == name.lower():
+            return val or ""
+    return ""
