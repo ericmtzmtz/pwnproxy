@@ -212,8 +212,10 @@ class SessionManager:
     def _gather_module_state(self) -> dict:
         plugins = {}
         if self._plugin_loader:
-            for p in self._plugin_loader.list_active():
-                plugins[p["name"]] = {"disabled": p.get("disabled", False)}
+            for name in self._plugin_loader.list_plugins():
+                info = self._plugin_loader.get_plugin_info(name)
+                if info:
+                    plugins[info["name"]] = {"disabled": info.get("disabled", False)}
         return {
             "interceptor_enabled": self._interceptor_controller.enabled if self._interceptor_controller else True,
             "plugins": plugins,

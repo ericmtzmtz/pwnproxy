@@ -82,11 +82,10 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
             scanners = set(scanners)
         else:
             scanners = None
-    loader = await _build_scan_loader(scanners)
+    disabled = []
     if main_loader is not None:
         disabled = main_loader.watchdog_stats().get("disabled", [])
-        for name in disabled:
-            loader.deactivate(name)
+    loader = await _build_scan_loader(scanners, disabled_plugins=disabled)
 
     await store.update(task_id, status="running", total=1)
     url = config.get("url", "")
