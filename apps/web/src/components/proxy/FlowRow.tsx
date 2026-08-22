@@ -1,7 +1,6 @@
 import { useState } from "preact/hooks";
 import { FlowDetail } from "./FlowDetail";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
-import { sendRequest } from "@/api/repeater/calls";
 import type { FlowRecord } from "@/api/traffic/types";
 
 interface FlowRequestData {
@@ -75,22 +74,6 @@ function truncateUrl(url: string, max = 60): string {
 export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const handleSendToRepeater = async () => {
-    const rawRequest = buildRawRequest({
-      method: flow.method,
-      url: flow.url,
-      headers: flow.request_headers || {},
-      body: flow.request_body,
-    });
-    
-    try {
-      await sendRequest({ raw_request: rawRequest });
-      window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Done", message: "Sent request to Repeater", severity: "success", navTo: "/repeater" } }));
-    } catch (err: any) {
-      toast("error", err.message || "Failed to send request");
-    }
-  };
-
   return (
     <>
       <tr
@@ -123,7 +106,7 @@ export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
       {expanded && (
         <tr class="border-b border-neutral-800">
           <td colspan={6} class="bg-neutral-900 px-6 py-4">
-            <FlowDetail flowId={flow.id} onDeleted={onDeleted} onSendToRepeater={handleSendToRepeater} />
+            <FlowDetail flowId={flow.id} onDeleted={onDeleted} />
           </td>
         </tr>
       )}

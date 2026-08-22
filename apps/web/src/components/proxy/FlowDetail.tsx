@@ -1,6 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { getFlow, deleteFlow, outscopeFlow } from "@/api/traffic/calls";
-import { sendRequest } from "@/api/repeater/calls";
+import { createTab } from "@/api/repeater/calls";
 import type { FlowRecord } from "@/api/traffic/types";
 
 interface FlowRequestData {
@@ -117,8 +117,12 @@ export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailPr
         headers: flow.request_headers || {},
         body: flow.request_body,
       });
-      await sendRequest({ raw_request: rawRequest });
-      window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Done", message: "Sent request to Repeater", severity: "success", navTo: "/repeater" } }));
+      const tab = await createTab({
+        name: `${flow.method} ${new URL(flow.url).pathname.slice(0, 30)}`,
+        raw_request: rawRequest,
+      });
+      new BroadcastChannel("pwnproxy-repeater").postMessage({ type: "new-tab", focusId: tab.id });
+      window.dispatchEvent(new CustomEvent("pwnproxy-toast", { detail: { title: "Done", message: `Tab #${tab.id} created — sent to Repeater`, severity: "success", navTo: "/repeater" } }));
       onSendToRepeater?.();
     } catch (err: any) {
       toast("error", err.message || "Failed to send request");
