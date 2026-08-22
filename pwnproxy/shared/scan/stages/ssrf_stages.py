@@ -43,9 +43,23 @@ class SsrfSimpleStage(DetectionStage):
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
+        # Use the real callback server's port when it is running, so probes
+        # hit the OOB listener instead of a hardcoded port (which may collide
+        # with the proxy port).
+        probe_host = self._callback_host
+        probe_port = self._callback_port
+        try:
+            from pwnproxy.shared.http_server import get_server
+            server = await get_server()
+            if server.is_running:
+                probe_host = server.host
+                probe_port = server.port
+        except Exception:
+            pass
+
         for point in injection_points:
             # Use a harmless probe URL to see if the server makes a request
-            probe_url = f"http://{self._callback_host}:{self._callback_port}/probe/{int(time.time())}"
+            probe_url = f"http://{probe_host}:{probe_port}/probe/{int(time.time())}"
             # We'll inject the probe URL as the parameter value
             # For simplicity, we replace the parameter value with probe_url
             # but we need to keep original parameter name and location.

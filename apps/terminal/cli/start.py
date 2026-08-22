@@ -235,6 +235,18 @@ def start(
         session_manager.set_module_providers(plugin_loader=plugin_loader)
         # Wire PluginLoader with SessionManager and start it
         plugin_loader._session_manager = session_manager
+
+        # Start the OOB callback server on the configured port so SSRF/OOB
+        # scanners probe the real callback listener instead of a hardcoded port.
+        try:
+            import pwnproxy.shared.http_server as _http_mod
+            _http_mod._server = _http_mod.HTTPCallbackServer(host="127.0.0.1", port=callback_port)
+            cb = await _http_mod.get_server()
+            await cb.start()
+            logger.info("OOB callback server started on 127.0.0.1:%s", callback_port)
+        except Exception as _e:
+            logger.warning("Could not start OOB callback server on port %s: %s", callback_port, _e)
+
         await plugin_loader.start()
 
         api_task = await start_api_server(
