@@ -126,5 +126,6 @@ def _finding_to_dict(f: Finding) -> dict:
         "confidence": f.confidence,
         "payload": f.payload,
         "evidence": f.evidence,
-        "timestamp": f.timestamp,
+        "timestamp": f.timestamp.isoformat() if hasattr(f.timestamp, "isoformat") else f.timestamp,
+        "request_data": getattr(f, "request_data", None),
     }
