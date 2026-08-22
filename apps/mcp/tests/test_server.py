@@ -184,7 +184,7 @@ class TestJsonRpcFallback:
         assert proc.returncode == 0, f"Server error: {stderr}"
         response = json.loads(stdout.strip())
         assert "result" in response
-        tools = response["result"]
+        tools = response["result"]["tools"]
         tool_names = [t["name"] for t in tools]
         assert "configure" in tool_names
         assert "proxy_status" in tool_names
@@ -208,7 +208,7 @@ class TestJsonRpcFallback:
         stdout, stderr = proc.communicate(input=msg + "\n", timeout=10)
         assert proc.returncode == 0
         response = json.loads(stdout.strip())
-        uris = [r["uriTemplate"] for r in response["result"]]
+        uris = [r["uriTemplate"] for r in response["result"]["resources"]]
         assert "flows://{flow_id}" in uris
         assert "findings://{scanner}/{finding_id}" in uris
         assert "sessions://{name}" in uris
@@ -234,3 +234,39 @@ class TestJsonRpcFallback:
         result = response["result"]
         assert "error" in result
         assert result["status_code"] == 0
+
+    def test_full_session_sequence(self):
+        """Full JSON-RPC session over stdio: initialize → ping → list_tools → list_resources.
+
+        One subprocess, one response per request, ids echoed in order.
+        """
+        proc = subprocess.Popen(
+            [PYTHON, "-c", _server_script()],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        lines = [
+            json.dumps({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}),
+            json.dumps({"jsonrpc": "2.0", "method": "ping", "params": {}, "id": 2}),
+            json.dumps({"jsonrpc": "2.0", "method": "list_tools", "params": {}, "id": 3}),
+            json.dumps({"jsonrpc": "2.0", "method": "list_resources", "params": {}, "id": 4}),
+        ]
+        stdout, stderr = proc.communicate(input="\n".join(lines) + "\n", timeout=10)
+        assert proc.returncode == 0, f"Server error: {stderr}"
+        responses = [json.loads(r) for r in stdout.strip().splitlines()]
+        assert len(responses) == 4
+        assert [r["id"] for r in responses] == [1, 2, 3, 4]
+
+        init = responses[0]["result"]
+        assert init["protocolVersion"] == "2024-11-05"
+        assert responses[1]["result"] == "pong"
+
+        tools = [t["name"] for t in responses[2]["result"]["tools"]]
+        assert "get_flow" in tools
+        assert "list_findings" in tools
+
+        uris = [r["uriTemplate"] for r in responses[3]["result"]["resources"]]
+        assert "flows://{flow_id}" in uris
+        assert "sessions://{name}" in uris
