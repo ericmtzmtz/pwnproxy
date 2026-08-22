@@ -4,11 +4,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
-from pwnproxy.services.intruder.engine import _parse_raw_from_template
+from pwnproxy.services.repeater.engine import RepeaterEngine
+from pwnproxy.services.repeater.parser import parse_raw_request
 
 router = APIRouter(prefix="/api/v1", tags=["repeater"])
 
@@ -171,15 +171,10 @@ async def repeater_send(request: Request, body: RepeaterSendRequest):
 
     await store.update(task_id, status="running", total=1)
     start = time.monotonic()
+    engine = RepeaterEngine()
     try:
-        parsed = _parse_raw_from_template(body.raw_request)
-        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
-            resp = await client.request(
-                method=parsed["method"],
-                url=parsed["url"],
-                headers=parsed["headers"],
-                content=parsed["body"],
-            )
+        parsed = parse_raw_request(body.raw_request)
+        resp = await engine.send(parsed)
         elapsed = (time.monotonic() - start) * 1000
         result = {
             "status_code": resp.status_code,
@@ -203,3 +198,5 @@ async def repeater_send(request: Request, body: RepeaterSendRequest):
         error_result = {"status_code": 0, "headers": {}, "body": "", "duration_ms": round(elapsed, 1), "error": str(e)}
         await store.update(task_id, status="completed", progress=1, result=error_result)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        await engine.close()

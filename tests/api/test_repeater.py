@@ -59,16 +59,16 @@ class TestRepeater:
     def test_send_request(self, test_app):
         client, task_store = test_app
 
-        with patch("pwnproxy.transport.rest.repeater.httpx.AsyncClient") as mock_client:
-            mock_resp = AsyncMock()
-            mock_resp.status_code = 200
-            mock_resp.headers = {"content-type": "text/plain"}
-            mock_resp.text = "Hello World"
-            mock_ctx = AsyncMock()
-            mock_ctx.__aenter__.return_value = mock_ctx
-            mock_client.return_value = mock_ctx
-            mock_ctx.request.return_value = mock_resp
+        mock_resp = AsyncMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "text/plain"}
+        mock_resp.text = "Hello World"
 
+        mock_engine = MagicMock()
+        mock_engine.send = AsyncMock(return_value=mock_resp)
+        mock_engine.close = AsyncMock()
+
+        with patch("pwnproxy.transport.rest.repeater.RepeaterEngine", return_value=mock_engine):
             r = client.post("/api/v1/repeater/send", json={
                 "raw_request": "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"
             })
