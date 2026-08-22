@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { sendRequest } from "@/api/repeater/calls";
 import { launchScan } from "@/api/scan/calls";
 import { listPlugins } from "@/api/plugins/calls";
+import { PluginToggle } from "@/components/plugins/PluginToggle";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 import { useWebSocket } from "@/hooks/useWebSocket";
@@ -235,18 +236,21 @@ export function ScannersPage() {
       </div>
 
       <div class="mt-4 grid grid-cols-5 gap-3">
-        {SCANNER_NAMES.map((name) => {
-          const off = disabledPlugins.has(name);
-          return (
-            <div class={`rounded-lg border p-3 ${off ? "border-neutral-800 bg-neutral-950" : "border-neutral-800 bg-neutral-900"}`}>
-              <div class="flex items-center justify-between">
-                <span class={`text-xs font-semibold uppercase tracking-wider ${off ? "text-neutral-600" : "text-neutral-400"}`}>{name}</span>
-                <span class={`inline-flex h-2 w-2 rounded-full ${off ? "bg-neutral-700" : "bg-success-500"}`} title={off ? "Disabled" : "Active"} />
-              </div>
-              <p class={`mt-1 text-[11px] ${off ? "text-neutral-600" : "text-neutral-500"}`}>{off ? "Disabled" : "Ready"}</p>
-            </div>
-          );
-        })}
+        {SCANNER_NAMES.map((name) => (
+          <PluginToggle
+            key={name}
+            name={name}
+            disabled={disabledPlugins.has(name)}
+            onToggle={(n, d) => {
+              setDisabledPlugins((prev) => {
+                const next = new Set(prev);
+                if (d) next.add(n);
+                else next.delete(n);
+                return next;
+              });
+            }}
+          />
+        ))}
       </div>
 
       {/* Scan history */}
