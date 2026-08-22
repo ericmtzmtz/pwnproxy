@@ -1,12 +1,13 @@
 import dataclasses
 import pytest
+import pytest_asyncio
 import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.core.base import PluginMetadata, PluginContext, PwnPlugin, Finding
-from pwnproxy.plugins.core.loader import UniversalPluginLoader, PluginLoadError
+from pwnproxy.plugins.core.loader import UniversalPluginLoader, PluginLoader, PluginLoadError
 from pwnproxy.shared.hooks import HookBus
 
 
@@ -353,3 +354,79 @@ class TestPerScannerTopics:
         await asyncio.sleep(0.3)
         assert p1.flow_count >= 1
         assert p2.flow_count >= 1
+
+class TestPluginToggle:
+    """Tests for plugin activate/deactivate (fix-plugin-toggle 5.1-5.4)."""
+
+    @pytest.fixture
+    def hook_bus(self):
+        return HookBus()
+
+    @pytest_asyncio.fixture
+    async def toggled_loader(self, hook_bus):
+        loader = PluginLoader(hook_bus)
+        plugin = MockFlowPlugin(
+            PluginMetadata(name="toggle_me", version="1.0.0", consumes=["flow"], produces=["finding"]),
+            PluginContext(),
+        )
+        await loader.load(plugin)
+        await loader.start()
+        await asyncio.sleep(0.05)
+        return loader, plugin
+
+    @pytest.mark.asyncio
+    async def test_activate_restarts_consumer_and_clears_disabled(self, toggled_loader):
+        """5.1 activate() sets disabled=False and restarts consumer tasks."""
+        loader, plugin = toggled_loader
+        # Deactivate first so activate has something to do
+        assert loader.deactivate("toggle_me") is True
+        assert plugin.metadata.disabled is True
+        # Consumer task should be gone
+        assert not any(k.startswith("toggle_me_") for k in loader._plugin_tasks)
+
+        assert await loader.activate("toggle_me") is True
+        assert plugin.metadata.disabled is False
+        # Consumer task restarted
+        assert any(k.startswith("toggle_me_") for k in loader._plugin_tasks)
+
+        # Flow still reaches the plugin after reactivation
+        flow = Flow(id="t1", method="GET", url="http://test.com/t1", request_headers={})
+        hook_bus = loader._hook_bus if hasattr(loader, "_hook_bus") else None
+        import pwnproxy.shared.hooks as hooks_mod
+        # publish on the hook bus used by the loader
+        await asyncio.sleep(0.05)
+        loader_hook = getattr(loader, "_hook_bus", None)
+        if loader_hook:
+            loader_hook.publish("flow", flow)
+            await asyncio.sleep(0.3)
+            assert plugin.flow_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_deactivate_cancels_tasks_and_sets_disabled(self, toggled_loader):
+        """5.2 deactivate() cancels consumer tasks and sets disabled=True."""
+        loader, plugin = toggled_loader
+        assert plugin.metadata.disabled is False
+        assert loader.deactivate("toggle_me") is True
+        assert plugin.metadata.disabled is True
+        assert not any(k.startswith("toggle_me_") for k in loader._plugin_tasks)
+
+    @pytest.mark.asyncio
+    async def test_list_active_excludes_disabled(self, toggled_loader):
+        """5.3 list_active() excludes disabled plugins."""
+        loader, plugin = toggled_loader
+        names = {p["name"] for p in loader.list_active()}
+        assert "toggle_me" in names
+        loader.deactivate("toggle_me")
+        names = {p["name"] for p in loader.list_active()}
+        assert "toggle_me" not in names
+
+    @pytest.mark.asyncio
+    async def test_watchdog_stats_reports_real_disabled(self, toggled_loader):
+        """5.4 watchdog_stats() returns the real disabled set."""
+        loader, plugin = toggled_loader
+        assert loader.watchdog_stats() == {"disabled": []}
+        loader.deactivate("toggle_me")
+        stats = loader.watchdog_stats()
+        assert "toggle_me" in stats["disabled"]
+
+
