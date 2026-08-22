@@ -249,6 +249,7 @@ class TestJsonRpcFallback:
         )
         lines = [
             json.dumps({"jsonrpc": "2.0", "method": "initialize", "params": {}, "id": 1}),
+            json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized", "params": {}}),
             json.dumps({"jsonrpc": "2.0", "method": "ping", "params": {}, "id": 2}),
             json.dumps({"jsonrpc": "2.0", "method": "list_tools", "params": {}, "id": 3}),
             json.dumps({"jsonrpc": "2.0", "method": "list_resources", "params": {}, "id": 4}),
@@ -256,6 +257,7 @@ class TestJsonRpcFallback:
         stdout, stderr = proc.communicate(input="\n".join(lines) + "\n", timeout=10)
         assert proc.returncode == 0, f"Server error: {stderr}"
         responses = [json.loads(r) for r in stdout.strip().splitlines()]
+        # notifications/initialized is acked silently: 5 requests in, 4 responses out
         assert len(responses) == 4
         assert [r["id"] for r in responses] == [1, 2, 3, 4]
 
