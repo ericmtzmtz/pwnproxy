@@ -1,7 +1,7 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/python-3.14+-blue.svg" alt="Python 3.14+">
+  <img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+">
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="AGPL v3">
-  <img src="https://img.shields.io/badge/tests-235%20passing-brightgreen.svg" alt="235 tests passing">
+  <img src="https://img.shields.io/badge/tests-318%20passing-brightgreen.svg" alt="318 tests passing">
   <img src="https://img.shields.io/badge/MCP-native-purple.svg" alt="MCP Native">
 </p>
 
@@ -92,27 +92,31 @@ See `docs/mcp.md` for tool reference, workflow examples, and per-agent setup det
 ## Quickstart
 
 ```bash
-# 1. Install
-pip install pwnproxy
+# 1. Clone + install
+git clone https://github.com/ericmtzmtz/pwnproxy.git
+cd pwnproxy
+poetry install
 
 # 2. Start proxy + API
-pwnproxy start --proxy-port 8080 --api-port 8000
+poetry run pwnproxy start --proxy-port 8080 --api-port 8000
 
 # 3. Configure curl to use the proxy
 curl -x http://127.0.0.1:8080 http://httpbin.org/get
 
 # 4. View captured traffic
-pwnproxy history
+poetry run pwnproxy history
 
 # 5. View via API
 curl http://127.0.0.1:8000/api/v1/flows
 
 # 6. Headless scan (no proxy needed)
-pwnproxy scan url https://example.com --output json
+poetry run pwnproxy scan url https://example.com --output json
 
 # 7. List installed plugins
-pwnproxy plugin list
+poetry run pwnproxy plugin list
 ```
+
+> **Nota:** pwnproxy aún no está publicado en PyPI. Instala desde el repositorio con Poetry. La publicación en PyPI está planeada para una release próxima.
 
 ---
 
@@ -165,27 +169,18 @@ pwnproxy plugin list
 
 ## Installation
 
-### pip
+### poetry (recomendada)
 
 ```bash
-pip install pwnproxy
-```
-
-Python 3.14 or later required.
-
-### pipx (recommended for CLI tools)
-
-```bash
-pipx install pwnproxy
-```
-
-### poetry (for development)
-
-```bash
-git clone https://github.com/your-org/pwnproxy.git
+git clone https://github.com/ericmtzmtz/pwnproxy.git
 cd pwnproxy
 poetry install
+poetry shell
 ```
+
+Python 3.12 o posterior requerido.
+
+> pwnproxy aún no está en PyPI. Usa `poetry run pwnproxy` o `poetry shell` para invocar el CLI.
 
 ---
 
@@ -315,6 +310,12 @@ pwnproxy scan url https://example.com
 # Specify scanners
 pwnproxy scan url https://example.com --scanners sqli,xss
 
+# Authenticated scan (session cookies)
+pwnproxy scan url "https://example.com/page?id=1" --cookie "PHPSESSID=abc123; security_level=0"
+
+# POST / body-based scan (e.g. XXE)
+pwnproxy scan url "https://example.com/xxe" --method POST --data "<reset><login>bee</login></reset>" --content-type "text/xml"
+
 # JSON output to file
 pwnproxy scan url https://example.com --output json --output-file results.json
 
@@ -324,14 +325,19 @@ pwnproxy scan url https://example.com --output sarif --output-file report.sarif
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--scanners` | all | Comma-separated scanner filter |
-| `--timeout` | `60` | Scan timeout per URL in seconds |
-| `--output` | `json` | Output format: `json` or `sarif` |
-| `--output-file` | stdout | Write output to file |
+| `--scanners`, `-s` | all | Comma-separated scanner filter (`sqli`, `xss`, `lfi`, `xxe`, `ssrf`) |
+| `--timeout`, `-t` | `60` | Scan timeout per URL in seconds |
+| `--output`, `-o` | `json` | Output format: `json`, `sarif`, `html`, `pdf` |
+| `--output-file`, `-f` | stdout | Write output to file |
+| `--cookie`, `-c` | — | Cookie header for authenticated targets (repeatable) |
+| `--header`, `-H` | — | Extra header `Name: Value` (repeatable) |
+| `--method`, `-m` | `GET` | HTTP method for the target request (GET, POST, PUT, PATCH) |
+| `--data`, `-d` | — | Raw request body (XML, JSON, form) |
+| `--content-type` | — | Content-Type header for the body (e.g. `text/xml`) |
 
 **Exit codes**: `0` = no findings, `1` = findings found, `2` = error.
 
-The scan command uses httpx directly (no proxy needed) and returns results in-memory.
+The scan command uses httpx directly (no proxy needed) and returns results in-memory. Findings include `request_data` — the exact payload request — so you can send them to the Repeater for manual validation.
 </details>
 
 <details>
@@ -406,7 +412,7 @@ All 5 built-in scanners are registered as `ScannerPlugin` adapters by default. T
 ### Writing a Scanner Plugin
 
 ```python
-from pwnproxy.plugin.base import ScannerPlugin, Finding
+from pwnproxy.plugins.core.base import ScannerPlugin, Finding
 
 class MyScanner(ScannerPlugin):
     name = "my-scanner"
@@ -469,10 +475,16 @@ pwnproxy scan url https://example.com --output sarif --output-file report.sarif
 ### GitHub Actions
 
 ```yaml
+- name: Checkout + install
+  run: |
+    git clone https://github.com/ericmtzmtz/pwnproxy.git
+    cd pwnproxy
+    pip install poetry
+    poetry install
+
 - name: Security scan
   run: |
-    pip install pwnproxy
-    pwnproxy scan url ${{ matrix.url }} --output sarif --output-file report.sarif
+    poetry run pwnproxy scan url ${{ matrix.url }} --output sarif --output-file report.sarif
   continue-on-error: true
 
 - name: Upload SARIF
@@ -616,9 +628,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/plugins/sqli/toggle
 #### Launch a scan
 
 ```bash
-curl -X POST http://127.0.0.1:8000/api/v1/scan \
-  -H "Content-Type: application/json" \
-  -d '{"url": "https://example.com", "scanners": ["sqli", "xss"]}'
+curl -X POST "http://127.0.0.1:8000/api/v1/scan?url=https%3A%2F%2Fexample.com%2Fpage%3Fid%3D1&scanners=sqli,xss"
 ```
 
 #### Poll scan results
@@ -706,8 +716,7 @@ curl -X POST http://127.0.0.1:8000/api/v1/intruder/run \
     "raw_request": "GET /search?q=§fuzz§ HTTP/1.1\r\nHost: example.com\r\n\r\n",
     "mode": "sniper",
     "wordlist_path": "/path/to/wordlist.txt",
-    "concurrency": 10,
-    "max_results": 100
+    "concurrency": 10
   }'
 ```
 
@@ -810,13 +819,16 @@ All scanners are HookBus consumers: they listen for `"done"` events published by
 
 ## Database Locations
 
-pwnproxy persists data to three SQLite databases in `~/.pwnproxy/`:
+pwnproxy persiste **SQLite por sesión** en `~/.pwnproxy/sessions/<nombre>/`:
 
-| Database | Location | Contents |
-|----------|----------|----------|
-| Traffic | `~/.pwnproxy/traffic.db` | HTTP request/response flows |
-| Scanner Results | `~/.pwnproxy/scanner_results.db` | Findings from all 5 scanners |
-| Sessions | `~/.pwnproxy/sessions.db` | Extracted JWT, cookie, and CSRF tokens |
+| Database | Ubicación | Contenido |
+|----------|-----------|-----------|
+| Traffic | `~/.pwnproxy/sessions/<nombre>/traffic.db` | HTTP request/response flows |
+| Scanner Results | `~/.pwnproxy/sessions/<nombre>/scanner_results.db` | Findings from all 5 scanners |
+| Sessions | `~/.pwnproxy/sessions/<nombre>/sessions.db` | Extracted JWT, cookie, and CSRF tokens |
+| Tasks | `~/.pwnproxy/sessions/<nombre>/tasks.db` | Scan/intruder/repeater task records |
+
+Cada sesión es autocontenida: se copia entera con `cp -r` y el aislamiento entre sesiones es por archivo, no por consulta SQL.
 
 ---
 
@@ -825,7 +837,7 @@ pwnproxy persists data to three SQLite databases in `~/.pwnproxy/`:
 ### Setup
 
 ```bash
-git clone https://github.com/your-org/pwnproxy.git
+git clone https://github.com/ericmtzmtz/pwnproxy.git
 cd pwnproxy
 poetry install
 ```
@@ -857,7 +869,7 @@ To run services individually:
 pwnproxy start --proxy-port 8080 --api-port 8000
 
 # Terminal 2: Web UI
-cd web-ui && npm run dev
+cd apps/web && npm run dev
 ```
 
 ### Running Tests
@@ -866,11 +878,11 @@ cd web-ui && npm run dev
 poetry run pytest
 ```
 
-All 235 tests pass.
+All 318 tests pass (+ 21 MCP server tests in `apps/mcp/tests/`).
 
 ### Code Style
 
-- Python 3.14+ with async/await throughout — never block the proxy event loop
+- Python 3.12+ with async/await throughout — never block the proxy event loop
 - Type hints on all function signatures
 - No comments in implementation code (self-documenting via descriptive names)
 - SQLAlchemy 2.0 async style for all database access
@@ -902,33 +914,36 @@ traffic_url = f"sqlite+aiosqlite:///{path}/traffic.db"
 traffic_url = "postgresql+asyncpg://user:pass@host/db?options=-csession.id=X"
 ```
 
-Session isolation switches from file-per-session to `WHERE session_id = X`. The data model (Flow, Finding, Task) is identical. See the [enterprise deployment guide](docs/deployment.md) for connection pooling, migration, and multi-tenant configuration.
+Session isolation switches from file-per-session to `WHERE session_id = X`. The data model (Flow, Finding, Task) is identical.
 
 ---
 
 ## Roadmap
 
+### ✅ Recientemente completado
+
+- **Scanner plugins premium** — detection chains escalonadas (error-based → blind → time-based → OOB), WAF evasion, out-of-band callbacks, contexto-aware payloads en los 5 scanners.
+- **Repeater rediseñado** — componentes modulares, editor con resaltado HTTP, diff LCS, historial, command palette (Ctrl+K), paneles redimensionables y Render HTML restaurado.
+- **Finding request_data** — cada finding guarda el request exacto (URL con payload, headers, body) para validación reproducible en el Repeater.
+- **Validación real** — scanners confirmados contra bWAPP (SQLi, LFI, XSS, XXE) y objetivos reales autenticados.
+
 ### 🔴 High Priority
 
-1. **Proxy session-scoped capture** — proxy currently captures all traffic at startup (no session or default session without out-of-scope). On session switch, previously captured traffic persists in the new session. Scope filtering must be enforced at capture time, and traffic must be stored per-session.
+1. **Proxy session-scoped capture** — la captura debe respetar el scope de la sesión en tiempo real (no solo al visualizar). Tráfico fuera de scope se descarta al capturarse.
 
-2. **Scanner plugins v2 (Premium)** — upgrade all 5 scanner adapters (SQLi, XSS, LFI, XXE, SSRF) to premium tier: advanced payload chains, WAF evasion, blind detection, out-of-band callbacks, second-order injection, and context-aware encoding. Define and document the plugin/module architecture if not already formalized.
-
-3. **Premium Crawler** — Burp-suite-grade crawler with passive mode (extract URLs from proxy traffic matching scope, auto-map directories and files) and active mode (discover hidden endpoints, parameters, and forms). Dedicated page in Web UI.
+2. **Premium Crawler** — crawler con modo pasivo (extraer URLs del tráfico del proxy filtrando por scope) y activo (descubrir endpoints, parámetros y forms ocultos). Página dedicada en la Web UI.
 
 ### 🟡 Medium Priority
 
-4. **Repeater — Render HTML toggle** — raw response view works but the Render HTML button disappeared. Restore it so users can preview rendered responses inline.
+3. **Export report — templates + AI** — extender la exportación de reportes con templates personalizables (PDF, HTML, Markdown, SARIF) y descripciones de findings asistidas por IA.
 
-5. **Export report — templates + AI** — extend report export with customizable templates (PDF, HTML, Markdown, SARIF) and optional AI-assisted finding descriptions and remediation suggestions.
-
-6. **Self-describing plugin architecture** — ALL plugins (built-in and third-party) MUST expose full metadata via `GET /plugins`: parameters (name, type, required/optional, default, description), capabilities, usage examples, and version. This enables AI agents to auto-discover new plugins and update their SKILL.md/REFERENCE.md without manual intervention. Plugin design doc: `docs/plugin-architecture.md`.
+4. **Self-describing plugin architecture** — ALL plugins (built-in y third-party) DEBEN exponer metadata completa vía `GET /plugins`: parámetros, capacidades, ejemplos y versión. Habilita que agentes de IA auto-descubran plugins. Plugin design doc: `docs/plugin-architecture.md`.
 
 ---
 
 ## Commercial Support
 
-pwnproxy is maintained by **[NEXTECH SOLUTIONS](https://nextech.mx)** — a cybersecurity services company based in Mexico.
+pwnproxy is maintained by **[NEXTECH SOLUTIONS](https://nextechsolutions.mx)** — a cybersecurity services company based in Mexico.
 
 The tool is free and open source under AGPL. NEXTECH offers professional services for organizations that need more than a self-hosted tool:
 
@@ -939,7 +954,7 @@ The tool is free and open source under AGPL. NEXTECH offers professional service
 | **Team training and onboarding** | Hands-on workshops for security and DevSecOps teams |
 | **Managed scanning** | Continuous monitoring integrated into your CI/CD pipeline |
 
-Enterprise and government inquiries: **contact@nextech.mx**
+Enterprise and government inquiries: **info@nextechsolutions.mx** · [nextechsolutions.mx](https://nextechsolutions.mx)
 
 ---
 
