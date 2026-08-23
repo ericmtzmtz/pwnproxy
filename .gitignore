@@ -20,16 +20,16 @@ __pycache__/
 # Poetry
 .venv/
 .venv*/
-po
 
 # web-ui
 apps/web/node_modules/
 apps/web/dist/
+
 # Temp files
 cookies.txt
 
 # Astro auto-generated
-apps/web/.astro/types.d.ts
+apps/web/.astro/
 
 diag_*.py
 *.tmp
