@@ -35,5 +35,5 @@ COPY pwnproxy/ pwnproxy/
 RUN mkdir -p /data && chmod 777 /data
 
 # pwnproxy CLI entry point
-COPY --chmod=+x deploy/docker/docker-entrypoint.sh /usr/local/bin/entrypoint
-ENTRYPOINT ["/usr/local/bin/entrypoint"]
+COPY deploy/docker/docker-entrypoint.sh /usr/local/bin/entrypoint
+ENTRYPOINT ["sh", "/usr/local/bin/entrypoint"]
