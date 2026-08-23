@@ -3,6 +3,8 @@
 # Usage:
 #   docker compose up -d --build
 #
+# Builds images locally; nothing is pushed to any registry.
+#
 # Services:
 #   backend  : proxy ${PROXY_PORT}, API ${API_PORT}, SSRF callback ${CALLBACK_PORT}
 #   web      : Astro static UI on ${WEB_PORT} (nginx)
@@ -19,8 +21,6 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.backend
-    image: pwnproxy-backend
-    container_name: pwnproxy-backend
     ports:
       - "${PROXY_PORT:-8080}:8080"      # proxy
       - "${API_PORT:-8000}:8000"        # API control plane
@@ -38,8 +38,6 @@ services:
       dockerfile: ../../deploy/docker/Dockerfile.web
       args:
         PUBLIC_API_BASE: http://backend:8000/api/v1
-    image: pwnproxy-web
-    container_name: pwnproxy-web
     ports:
       - "${WEB_PORT:-8081}:80"
     depends_on:
