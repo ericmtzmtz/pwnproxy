@@ -1,0 +1,19 @@
+# pwnproxy web UI — Astro static build served by nginx
+# Build:  docker build -f Dockerfile.web -t pwnproxy-web .
+# ARG PUBLIC_API_BASE sets the backend API URL embedded at build time.
+
+FROM node:22-alpine AS build
+ARG PUBLIC_API_BASE=http://backend:8000/api/v1
+ENV PUBLIC_API_BASE=$PUBLIC_API_BASE
+
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm install --no-audit --no-fund
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80

@@ -1,0 +1,2 @@
+# Shell scripts must keep LF line endings (docker linux shebang)
+deploy/docker/*.sh text eol=lf

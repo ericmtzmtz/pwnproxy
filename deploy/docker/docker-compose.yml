@@ -1,0 +1,50 @@
+# pwnproxy — backend (proxy + API) + web UI
+#
+# Usage:
+#   docker compose up -d --build
+#
+# Services:
+#   backend  : proxy ${PROXY_PORT}, API ${API_PORT}, SSRF callback ${CALLBACK_PORT}
+#   web      : Astro static UI on ${WEB_PORT} (nginx)
+#
+# Web UI talks to the API via PUBLIC_API_BASE=http://backend:8000/api/v1
+# (set at web build time).
+#
+# Ports are overridable:
+#   PROXY_PORT=19080 API_PORT=19000 CALLBACK_PORT=19081 WEB_PORT=19082 \
+#     docker compose up -d --build
+
+services:
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile.backend
+    image: pwnproxy-backend
+    container_name: pwnproxy-backend
+    ports:
+      - "${PROXY_PORT:-8080}:8080"      # proxy
+      - "${API_PORT:-8000}:8000"        # API control plane
+      - "${CALLBACK_PORT:-18081}:18081" # SSRF OOB callback
+    environment:
+      # Path.home() -> /data/.pwnproxy (project uses ~/.pwnproxy hardcoded)
+      - HOME=/data
+    volumes:
+      - pwnproxy-data:/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../../apps/web
+      dockerfile: ../../deploy/docker/Dockerfile.web
+      args:
+        PUBLIC_API_BASE: http://backend:8000/api/v1
+    image: pwnproxy-web
+    container_name: pwnproxy-web
+    ports:
+      - "${WEB_PORT:-8081}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pwnproxy-data:
