@@ -213,7 +213,7 @@ async def main():
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGTERM, _shutdown)
         loop.add_signal_handler(signal.SIGINT, _shutdown)
-        loop.add_signal_handler(signal.SIGUSR1, lambda: asyncio.create_task(worker.reload_scope()))
+        loop.add_signal_handler(signal.SIGUSR1, worker.reload_scope)
     else:
         signal.signal(signal.SIGTERM, lambda s, f: asyncio.create_task(worker.stop()))
         signal.signal(signal.SIGINT, lambda s, f: asyncio.create_task(worker.stop()))
