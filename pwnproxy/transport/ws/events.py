@@ -131,6 +131,7 @@ async def ws_events(ws: WebSocket):
     finding_queue = hook_bus.register("finding")
     scan_started_queue = hook_bus.register("scan.started")
     scan_completed_queue = hook_bus.register("scan.completed")
+    triage_queue = hook_bus.register("triage.updated")
 
     try:
         while True:
@@ -139,11 +140,14 @@ async def ws_events(ws: WebSocket):
             finding_task = asyncio.create_task(finding_queue.get())
             started_task = asyncio.create_task(scan_started_queue.get())
             completed_task = asyncio.create_task(scan_completed_queue.get())
+            triage_task = asyncio.create_task(triage_queue.get())
 
-            done, _ = await asyncio.wait(
-                [flow_task, finding_task, started_task, completed_task],
+            done, pending = await asyncio.wait(
+                [flow_task, finding_task, started_task, completed_task, triage_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
+            for task in pending:
+                task.cancel()
             for task in done:
                 result = task.result()
                 payload = None
@@ -168,6 +172,9 @@ async def ws_events(ws: WebSocket):
                 elif task is completed_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "scan.completed", **result}, default=str)
+                elif task is triage_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "triage.updated", **result}, default=str)
 
                 if payload:
                     await ws.send_text(payload)

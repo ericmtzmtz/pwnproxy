@@ -88,6 +88,26 @@ async def start_api_server(
     llm_ledger = UsageLedger(default_ledger_engine())
     app.state.llm_client = create_client_from_config(ledger=llm_ledger)
 
+    # FP-triage pipeline: every persisted finding goes through it exactly once
+    # (class-level hook covers all FindingStorage instances: API scan + plugin paths).
+    from pwnproxy.ai.triage import TriagePipeline, load_triage_config
+    from pwnproxy.ai.triage.judge import LLMJudge
+    from pwnproxy.shared.findings.storage import FindingStorage
+
+    def _triage_storage():
+        engine = session_manager.get_scanner_engine() if session_manager else scanner_engine
+        return FindingStorage(engine)
+
+    triage_pipeline = TriagePipeline(
+        _triage_storage,
+        hook_bus=hook_bus,
+        judge=LLMJudge(app.state.llm_client),
+        config=load_triage_config(),
+    )
+    app.state.triage_pipeline = triage_pipeline
+    FindingStorage.on_saved = triage_pipeline.handle
+    triage_pipeline.start()
+
     config = uvicorn.Config(
         app,
         host=host,

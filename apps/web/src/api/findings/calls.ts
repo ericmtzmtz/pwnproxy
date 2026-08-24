@@ -1,16 +1,31 @@
 import { API_BASE } from "@/core";
-import type { PaginatedFindings } from "./types";
+import type { PaginatedFindings, TriageVerdict } from "./types";
 
 export async function listFindings(
   page = 1,
   perPage = 20,
   severity?: string,
+  verdict?: string,
 ): Promise<PaginatedFindings> {
   const params = new URLSearchParams({ page: String(page), per_page: String(perPage) });
   if (severity) params.set("severity", severity);
+  if (verdict) params.set("verdict", verdict);
   const res = await fetch(`${API_BASE}/findings?${params}`);
   if (!res.ok) throw new Error(`Failed to list findings: ${res.statusText}`);
   return res.json();
+}
+
+export async function triageFeedback(
+  id: number,
+  verdict: Extract<TriageVerdict, "true_positive" | "false_positive">,
+  reason?: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/findings/${id}/feedback`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, reason }),
+  });
+  if (!res.ok) throw new Error(`Failed to submit feedback: ${res.statusText}`);
 }
 
 export async function listFindingsSince(sinceId: number): Promise<PaginatedFindings> {

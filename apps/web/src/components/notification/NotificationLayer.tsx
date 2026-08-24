@@ -42,6 +42,10 @@ export function NotificationLayer() {
 
   const onWsMessage = useCallback(
     (msg: { type: string; [key: string]: unknown }) => {
+      if (msg.type === "triage.updated") {
+        window.dispatchEvent(new CustomEvent("pwnproxy-triage-updated", { detail: msg }));
+        return;
+      }
       const preset = getPreset(msg.type as string);
       if (!preset) return;
 

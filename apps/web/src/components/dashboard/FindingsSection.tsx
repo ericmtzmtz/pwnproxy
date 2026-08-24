@@ -9,51 +9,61 @@ interface FindingsSectionProps {
 }
 
 function readParams() {
-  if (typeof window === "undefined") return { severity: null, page: 1 };
+  if (typeof window === "undefined") return { severity: null, verdict: null, page: 1 };
   const p = new URLSearchParams(location.search);
   return {
     severity: p.get("severity") ?? null,
+    verdict: p.get("verdict") ?? null,
     page: parseInt(p.get("page") ?? "1", 10) || 1,
   };
 }
 
-function writeParams(severity: string | null, page: number) {
+function writeParams(severity: string | null, verdict: string | null, page: number) {
   if (typeof window === "undefined") return;
   const p = new URLSearchParams();
   if (severity) p.set("severity", severity);
+  if (verdict) p.set("verdict", verdict);
   if (page > 1) p.set("page", String(page));
   const qs = p.toString();
   const url = qs ? `${location.pathname}?${qs}` : location.pathname;
   history.replaceState(null, "", url);
 }
 
+const VERDICT_OPTIONS = [
+  { value: "", label: "All verdicts" },
+  { value: "true_positive", label: "True positives" },
+  { value: "false_positive", label: "False positives" },
+  { value: "uncertain", label: "Uncertain" },
+];
+
 export function FindingsSection({ liveFindings }: FindingsSectionProps) {
   const init = useRef(readParams());
   const [severity, setSeverity] = useState<string | null>(init.current.severity);
+  const [verdict, setVerdict] = useState<string | null>(init.current.verdict);
   const [page, setPage] = useState(init.current.page);
   const [total, setTotal] = useState(0);
   const [deletedIds, setDeletedIds] = useState<Set<string>>(new Set());
   const perPage = 15;
 
   const visibleFindings = liveFindings.filter((f) => !deletedIds.has(String(f.id)));
-  const filteredFindings = severity
-    ? visibleFindings.filter((f) => f.severity === severity)
-    : visibleFindings;
+  const filteredFindings = visibleFindings
+    .filter((f) => (severity ? f.severity === severity : true))
+    .filter((f) => (verdict ? f.triage_verdict === verdict : true));
 
   const totalPages = Math.max(1, Math.ceil(total / perPage));
 
   useEffect(() => {
     setPage(1);
-  }, [severity]);
+  }, [severity, verdict]);
 
   useEffect(() => {
-    writeParams(severity, page);
-    listFindings(page, perPage, severity ?? undefined)
+    writeParams(severity, verdict, page);
+    listFindings(page, perPage, severity ?? undefined, verdict ?? undefined)
       .then((res) => {
         setTotal(res.total);
       })
       .catch(() => {});
-  }, [page, severity]);
+  }, [page, severity, verdict]);
 
   const handleDeleted = (id: number) => {
     setDeletedIds((prev) => new Set(prev).add(String(id)));
@@ -66,8 +76,17 @@ export function FindingsSection({ liveFindings }: FindingsSectionProps) {
         <h2 class="text-sm font-semibold text-neutral-200">Findings</h2>
         <span class="text-xs text-neutral-500">{total} total</span>
       </div>
-      <div class="mb-3">
+      <div class="mb-3 flex items-center gap-3">
         <SeverityFilter selected={severity} onChange={(s) => setSeverity(s)} />
+        <select
+          value={verdict ?? ""}
+          onChange={(e) => setVerdict((e.target as HTMLSelectElement).value || null)}
+          class="rounded-md border border-neutral-700 bg-neutral-800 px-2 py-1 text-xs text-neutral-300 focus:border-primary-500 focus:outline-none"
+        >
+          {VERDICT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{o.label}</option>
+          ))}
+        </select>
       </div>
       <FindingsTable findings={filteredFindings} onDeleted={handleDeleted} />
       {total > perPage && (
