@@ -6,6 +6,7 @@ from pwnproxy.transport.rest.intruder import router as intruder
 from pwnproxy.transport.rest.plugins import router as plugins
 from pwnproxy.transport.rest.proxy import router as proxy
 from pwnproxy.transport.rest.repeater import router as repeater
+from pwnproxy.transport.rest.reports import router as reports
 from pwnproxy.transport.rest.scanners import router as scanners
 from pwnproxy.transport.rest.session import router as session
 from pwnproxy.transport.rest.tasks import router as tasks

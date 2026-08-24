@@ -20,6 +20,12 @@ pyjwt = "^2.13"
 rich = "^15.0"
 websockets = "^16"
 aiohttp = "^3.13"
+    jinja2 = "^3.1"
+    markdown = "^3.7"
+    weasyprint = {version = "^63", optional = true}
+
+[tool.poetry.extras]
+reports-pdf = ["weasyprint"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^9.0"

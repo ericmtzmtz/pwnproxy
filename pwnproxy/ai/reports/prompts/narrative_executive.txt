@@ -1,0 +1,8 @@
+You are writing the narrative for one finding group of a pentest report for non-technical executives.
+
+STRICT GROUNDING RULES:
+- Use ONLY the extracted facts provided. No CVEs, no payloads, no endpoints beyond what facts mention.
+- title: plain-language issue name (e.g. "Database manipulation risk on the search feature").
+- description: 1 sentence in business terms describing the weakness.
+- impact_paragraph: business consequence only as far as facts.impact supports; avoid technical jargon.
+- remediation_steps: 2-3 high-level actions a client can assign to their team.

@@ -1,0 +1,8 @@
+You are writing the executive summary of a security assessment report for a client stakeholder.
+
+STRICT GROUNDING RULES:
+- Base every statement ONLY on the aggregate metrics and chunk highlights provided. Do not invent targets, counts, severities or attack scenarios beyond them.
+- Do not mention CVE identifiers unless they appear in the input.
+- Tone: factual, non-alarmist, business-oriented. 2 short paragraphs maximum.
+- First paragraph: overall posture (counts by severity, affected surface).
+- Second paragraph: the two or three most important risks from the highlights and the recommended next step.

@@ -1,0 +1,77 @@
+# {{ title }}
+
+{% if subtitle %}{{ subtitle }} · {% endif %}**Audience:** {{ audience }} · **Generated:** {{ generated_at }}
+{% if flagged_count %}
+
+> ⚠️ {{ flagged_count }} finding group(s) contained unverified LLM references automatically removed during generation.
+{% endif %}
+
+## Executive Summary
+
+{{ exec_summary }}
+
+## Risk Posture
+
+| Metric | Value |
+| --- | --- |
+| Raw findings | {{ summary.raw_findings }} |
+| Deduplicated issues | {{ summary.deduplicated_groups }} |
+| Confirmed | {{ summary.confirmed }} |
+| Max severity | {{ summary.max_severity or "none" }} |
+| Affected hosts | {{ summary.affected_hosts | join(", ") if summary.affected_hosts else "-" }} |
+
+Severity distribution: {% for sev, count in summary.by_severity.items() %}**{{ sev }}**: {{ count }}{{ ", " if not loop.last }}{% endfor %}
+{% for sev in severity_order %}{% set sev_sections = sections_by_severity.get(sev, []) %}{% if sev_sections %}
+
+## {{ sev | capitalize }} Severity Findings
+
+{% for s in sev_sections %}
+### {{ loop.index }}. {{ s.narrative.title }}
+
+- **URL:** `{{ s.url }}`
+- **Method:** {{ s.method }} · **Parameter:** `{{ s.param_name or "-" }}` ({{ s.param_location }}) · **Technique:** `{{ s.technique }}`
+- **Confidence:** {{ s.confidence }}{% if s.occurrences > 1 %} · **Occurrences:** {{ s.occurrences }} (deduplicated){% endif %} · **Scanner:** {{ s.scanner }}
+{% if s.flagged %}- ⚠️ Unverified LLM references were removed from this entry.{% endif %}
+
+{{ s.narrative.description }}
+
+**Impact.** {{ s.narrative.impact_paragraph }}
+{% if s.payloads %}
+
+**Payloads:**
+
+{% for p in s.payloads %}`{{ p }}`
+{% endfor %}{% endif %}
+
+{% endfor %}{% endif %}{% endfor %}
+## Remediation Plan
+
+{% for s in sections %}
+### {{ s.narrative.title }}
+
+{% for step in s.narrative.remediation_steps %}1. {{ step }}
+{% endfor %}
+{% endfor %}
+
+## Appendix: Evidence
+
+<details>
+<summary>Click to expand raw evidence</summary>
+
+{% for s in sections %}
+### {{ s.narrative.title }}
+
+```
+{{ s.evidence }}
+```
+{% if s.request_data_json %}
+Request/response data:
+
+```
+{{ s.request_data_json }}
+```
+{% endif %}
+
+{% endfor %}
+
+</details>

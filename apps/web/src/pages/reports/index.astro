@@ -1,15 +1,22 @@
 ---
 import Base from "@/layouts/Base.astro";
 import Card from "@/ui/Card.astro";
+import { ReportGenerator } from "@/components/reports/ReportGenerator";
 ---
 
 <Base title="Reports" page="/reports">
   <div class="mb-6">
     <h1 class="text-xl font-bold text-neutral-50">Reports</h1>
-    <p class="mt-0.5 text-sm text-neutral-400">Export findings as SARIF or JSON</p>
+    <p class="mt-0.5 text-sm text-neutral-400">AI-written reports from session findings, or export raw data</p>
   </div>
 
-  <div class="mb-4 flex items-center gap-2">
+  <Card>
+    <div slot="title">Generate report</div>
+    <ReportGenerator client:load />
+  </Card>
+
+  <div class="mb-4 mt-6 flex items-center gap-2">
+    <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Raw findings</span>
     {["sqli", "xss", "lfi", "xxe", "ssrf", "all"].map((s) => (
       <button
         data-scanner={s}

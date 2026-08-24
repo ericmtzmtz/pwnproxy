@@ -102,7 +102,11 @@ export function TaskPoller({ taskId, onComplete }: TaskPollerProps) {
       <div class="flex items-center justify-center py-8">
         <svg class="h-6 w-6 animate-spin text-primary-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
         <span class="ml-2 text-sm text-neutral-400">
-          {task.type === "intruder" ? `${task.progress} / ${task.total} requests` : `${task.type}...`}
+          {task.type === "intruder"
+            ? `${task.progress} / ${task.total} requests`
+            : task.type === "report" && (task.result as any)?.phase
+              ? `report — ${(task.result as any).phase} (${task.progress}%)`
+              : `${task.type}...`}
         </span>
       </div>
     );

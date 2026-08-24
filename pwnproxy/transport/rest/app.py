@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 
-from pwnproxy.transport.rest import findings, health, interceptor, intruder, plugins, proxy, repeater, scanners, session, tasks, tokens, traffic
+from pwnproxy.transport.rest import findings, health, interceptor, intruder, plugins, proxy, repeater, reports, scanners, session, tasks, tokens, traffic
 from pwnproxy.transport.ws.events import router as ws_router
 
 _ORIGINS_ENV = os.environ.get("CORS_ORIGINS", "http://localhost:4321,http://127.0.0.1:4321,http://localhost:4322,http://127.0.0.1:4322")
@@ -34,5 +34,6 @@ app.include_router(scanners)
 app.include_router(plugins)
 app.include_router(ws_router)
 app.include_router(tasks)
+app.include_router(reports)
 app.include_router(proxy)
 app.include_router(health)
