@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from pwnproxy.transport.rest.app import app
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.ai.llm import create_client_from_config
+from pwnproxy.ai.llm.usage import UsageLedger, default_ledger_engine
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +84,9 @@ async def start_api_server(
     app.state.proxy_engine = proxy_engine or (session_manager.get_proxy_engine() if session_manager else None)
     app.state.task_store = session_manager.task_store if session_manager else None
     app.state.proxy_port = proxy_port
+
+    llm_ledger = UsageLedger(default_ledger_engine())
+    app.state.llm_client = create_client_from_config(ledger=llm_ledger)
 
     config = uvicorn.Config(
         app,
