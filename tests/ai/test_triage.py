@@ -11,7 +11,6 @@ from pwnproxy.ai.llm.testing import FakeLLMClient
 from pwnproxy.ai.triage import TriagePipeline, TriageConfig, score_finding
 from pwnproxy.ai.triage.judge import JudgeVerdict, LLMJudge
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.shared.db import Base
 from pwnproxy.shared.findings.storage import FindingStorage, TriageHistoryORM
 from pwnproxy.transport.rest.app import app
 
@@ -69,20 +68,6 @@ class TestHeuristic:
     def test_clamped(self):
         res = score_finding({"id": 1, "evidence": "", "confidence": "tentative"})
         assert 0.0 <= res.score <= 1.0
-
-
-@pytest.fixture
-def triage_env():
-    engine = None
-
-    async def _setup():
-        nonlocal engine
-        engine, st = await _make_storage()
-        return st
-
-    st = asyncio.run(_setup())
-    yield st
-    FindingStorage.on_saved = None
 
 
 class TestPipeline:
@@ -247,6 +232,21 @@ class TestApi:
         assert body["triage_verdict"] == "false_positive"
         assert body["triage_method"] == "human"
         assert any(t == "triage.updated" for t, _ in bus.published)
+
+    def test_feedback_single_publish_when_pipeline_wired(self, client):
+        """Regression: pipeline publishes the event itself; endpoint must not duplicate it."""
+        c, st, id1, _, _ = client
+        bus = FakeHookBus()
+        pipe = TriagePipeline(lambda: st, hook_bus=bus, judge=None, config=TriageConfig())
+        c.app.state.triage_pipeline = pipe
+        try:
+            r = c.patch(f"/api/v1/findings/{id1}/feedback", json={"verdict": "false_positive"})
+            assert r.status_code == 200
+            events = [p for t, p in bus.published if t == "triage.updated"]
+            assert len(events) == 1
+            assert events[0]["method"] == "human"
+        finally:
+            c.app.state.triage_pipeline = None
 
     def test_feedback_404_and_422(self, client):
         c, *_ = client

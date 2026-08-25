@@ -55,5 +55,7 @@ def score_finding(row: dict, config: Optional[TriageConfig] = None) -> Heuristic
         reasons.append("request_context")
 
     final = round(min(1.0, max(0.0, score)), 3)
+    # Dedup preserving order (payload_in_evidence and detailed_evidence share the tag).
+    reasons = list(dict.fromkeys(reasons))
     logger.debug("triage heuristic finding=%s score=%.3f reasons=%s", row.get("id"), final, reasons)
     return HeuristicResult(score=final, reasons=reasons, features=features)

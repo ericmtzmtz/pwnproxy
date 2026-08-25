@@ -41,11 +41,6 @@ class TriageFeedback(BaseModel):
     reason: Optional[str] = None
 
 
-def _storage(request: Request):
-    engine = request.app.state.session_manager.get_scanner_engine()
-    return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-
 @router.patch("/findings/{finding_id}/feedback")
 async def triage_feedback(finding_id: int, payload: TriageFeedback, request: Request):
     """Human triage verdict: overwrites any automatic one (method=human) + history row."""
@@ -66,18 +61,21 @@ async def triage_feedback(finding_id: int, payload: TriageFeedback, request: Req
         raise HTTPException(status_code=500, detail=str(exc))
     if updated is None:
         raise HTTPException(status_code=404, detail="Finding not found")
-    hook_bus = request.app.state.hook_bus
-    if hook_bus:
-        try:
-            hook_bus.publish("triage.updated", {
-                "finding_id": finding_id,
-                "verdict": payload.verdict,
-                "method": "human",
-                "score": updated.get("triage_score"),
-                "reason": updated.get("triage_reason"),
-            })
-        except Exception:
-            logger.debug("could not publish triage.updated", exc_info=True)
+    # Publish only when no pipeline handled it: TriagePipeline._set already
+    # emits triage.updated on the same hook_bus (avoid duplicate WS events).
+    if pipeline is None or getattr(pipeline, "hook_bus", None) is None:
+        hook_bus = request.app.state.hook_bus
+        if hook_bus:
+            try:
+                hook_bus.publish("triage.updated", {
+                    "finding_id": finding_id,
+                    "verdict": payload.verdict,
+                    "method": "human",
+                    "score": updated.get("triage_score"),
+                    "reason": updated.get("triage_reason"),
+                })
+            except Exception:
+                logger.debug("could not publish triage.updated", exc_info=True)
     return {"ok": True, "finding": updated}
 
 
