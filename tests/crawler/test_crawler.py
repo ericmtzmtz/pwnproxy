@@ -313,6 +313,38 @@ class TestApiCrawler:
 
 class TestWorkerE2E:
     @pytest.mark.asyncio
+    async def test_crawler_process_does_not_drop_flows_at_startup(self):
+        """Regression: relay_flow immediately after CrawlerProcess.start() must
+        reach the worker. The worker prints EVENT_PORT before connecting its
+        feed client; the manager must wait for that connection, otherwise the
+        first flows published after startup are silently dropped."""
+        from pwnproxy.services.crawler.process import CrawlerProcess
+
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+            db_path = str(Path(tmp) / "crawler.db")
+            cp = CrawlerProcess()
+            events: list[tuple[str, dict]] = []
+            cp.set_event_callback(lambda topic, data: events.append((topic, data)))
+            await cp.start(db_path=db_path, scope_json=json.dumps({"enabled": False}))
+
+            # No artificial sleep: publish immediately after start() returns.
+            assert cp.relay_flow(_make_flow(body='<a href="/race">race</a>')) is True
+
+            engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+            st = DiscoveredURLStorage(engine)
+            found = False
+            for _ in range(300):
+                rows = await st.list(limit=100)
+                if any(r["url"].endswith("/race") for r in rows):
+                    found = True
+                    break
+                await asyncio.sleep(0.05)
+            await engine.dispose()
+            await cp.stop()
+
+            assert found, "relay_flow immediately after start() must reach the worker"
+
+    @pytest.mark.asyncio
     async def test_spawn_worker_and_feed_flow(self):
         """Spawn crawler worker, feed a response with links, verify row persisted."""
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:

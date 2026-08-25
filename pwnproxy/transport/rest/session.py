@@ -1,10 +1,32 @@
 import json
+import logging
 import os
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
+
+logger = logging.getLogger(__name__)
+
+
+async def _restart_crawler_for_scope(request: Request) -> None:
+    """Restart the crawler worker so its scope filter reflects the current scope.
+
+    The worker receives a snapshot of the scope at spawn time; after a scope
+    change the snapshot is stale, so restart it (idempotent via CrawlerProcess).
+    """
+    manager = getattr(request.app.state, "session_manager", None)
+    crawler = getattr(request.app.state, "crawler_process", None)
+    if not manager or not crawler or not manager.has_active_session:
+        return
+    try:
+        await crawler.restart(
+            db_path=str(manager.active_path / "crawler.db"),
+            scope_json=json.dumps(manager.scope.to_dict()),
+        )
+    except Exception as exc:
+        logger.warning("Could not restart crawler after scope change: %s", exc)
 
 
 def _db_size(session_path: Path, db_name: str) -> int:
@@ -120,5 +142,8 @@ async def update_scope(request: Request):
             await proxy.send_scope_update(scope_json=json.dumps(manager.scope.to_dict()))
         else:
             await manager._apply_proxy_config()
+
+    # Crawler (subprocess mode): scope snapshot is fixed at spawn, restart it
+    await _restart_crawler_for_scope(request)
 
     return {"status": "ok", "message": "Scope updated"}

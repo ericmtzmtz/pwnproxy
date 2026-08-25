@@ -87,6 +87,18 @@ class CrawlerProcess:
         self._event_port = int(raw.split("=")[1])
         logger.info("Crawler event port: %s", self._event_port)
 
+        # The worker prints EVENT_PORT before its feed client connects; wait
+        # for that connection so flows published right after start() are not
+        # silently dropped by the feed server (publish to zero clients is a no-op).
+        for _ in range(50):
+            if self._feed_server.clients > 0:
+                break
+            if self._proc.returncode is not None:
+                raise RuntimeError("Crawler worker exited during startup")
+            await asyncio.sleep(0.1)
+        else:
+            logger.warning("Crawler feed client did not connect within 5s; flows may be dropped")
+
         self._results_bridge = TcpBridgeClient(
             host="127.0.0.1",
             port=self._event_port,
@@ -101,8 +113,9 @@ class CrawlerProcess:
             while self._proc and self._proc.stderr:
                 try:
                     line = await asyncio.wait_for(self._proc.stderr.readline(), timeout=0.5)
-                    if line:
-                        logger.warning("[crawler stderr] %s", line.decode().strip())
+                    if not line:
+                        break
+                    logger.warning("[crawler stderr] %s", line.decode().strip())
                 except asyncio.TimeoutError:
                     continue
         except Exception as e:
@@ -111,7 +124,7 @@ class CrawlerProcess:
     def relay_flow(self, flow_dict: dict) -> bool:
         """Forward a proxy flow dict to the worker. Best-effort: drops silently
         when the crawler is not running or no client is connected."""
-        if not self.running:
+        if not self.running or self._feed_server.clients == 0:
             return False
         asyncio.create_task(self._feed_server.publish("crawler.feed", flow_dict))
         return True

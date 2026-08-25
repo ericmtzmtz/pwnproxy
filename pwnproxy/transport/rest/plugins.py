@@ -172,6 +172,8 @@ async def import_burp(request: Request, body: BurpImportRequest):
         manager.scope.out_of_scope = out_scope
         manager.scope.enabled = True
         manager.mark_unsaved()
+        from pwnproxy.transport.rest.session import _restart_crawler_for_scope
+        await _restart_crawler_for_scope(request)
 
     return {
         "status": "ok",

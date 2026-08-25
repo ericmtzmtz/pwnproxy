@@ -23,6 +23,10 @@ class TcpBridgeServer:
     def port(self) -> int:
         return self._port
 
+    @property
+    def clients(self) -> int:
+        return len(self._writers)
+
     async def start(self) -> int:
         self._server = await asyncio.start_server(self._on_connect, self._host, self._port)
         self._port = self._server.sockets[0].getsockname()[1]

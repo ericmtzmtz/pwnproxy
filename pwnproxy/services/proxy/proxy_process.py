@@ -99,8 +99,9 @@ class ProxyProcess:
             while self._proc and self._proc.stderr:
                 try:
                     line = await asyncio.wait_for(self._proc.stderr.readline(), timeout=0.5)
-                    if line:
-                        logger.warning(f"[worker stderr] {line.decode().strip()}")
+                    if not line:
+                        break
+                    logger.warning(f"[worker stderr] {line.decode().strip()}")
                 except asyncio.TimeoutError:
                     continue
         except Exception as e:
