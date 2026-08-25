@@ -107,8 +107,10 @@ async def _export_lines(storage):
 
 
 @router.get("/findings/export-triage")
-async def export_triage(request: Request):
+async def export_triage(request: Request, format: str = Query("jsonl", description="Export format (jsonl)")):
     """Stream every finding + full triage state as JSONL (training dataset)."""
+    if format != "jsonl":
+        raise HTTPException(status_code=422, detail="unsupported format (only 'jsonl')")
     from pwnproxy.shared.findings.storage import FindingStorage
     storage = FindingStorage(request.app.state.session_manager.get_scanner_engine())
     return StreamingResponse(

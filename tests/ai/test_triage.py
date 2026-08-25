@@ -268,6 +268,7 @@ class TestApi:
         assert by_id[id1]["ground_truth"] is None          # automatic verdict -> no ground truth
         assert by_id[id2]["ground_truth"] == "false_positive"  # human verdict -> ground truth
         assert "features" in by_id[id1]
+        assert c.get("/api/v1/findings/export-triage", params={"format": "csv"}).status_code == 422
 
     def test_verdict_filter(self, client):
         c, st, id1, id2, _ = client
