@@ -68,7 +68,7 @@ class RoomManager:
                 dead.append(ws)
         for ws in dead:
             room.discard(ws)
-        if room and not room:
+        if not room:
             del self._rooms[room_id]
 
 
