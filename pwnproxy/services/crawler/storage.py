@@ -1,6 +1,7 @@
+import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import Column, Integer, String, Text, DateTime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,21 @@ class DiscoveredURLORM(CrawlerBase):
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
+class JobORM(CrawlerBase):
+    __tablename__ = "jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    type = Column(String(20), nullable=False, default="active")
+    status = Column(String(20), nullable=False, default="queued")
+    config = Column(Text, nullable=False, default="{}")
+    stats = Column(Text, nullable=False, default="{}")
+    error = Column(Text, nullable=True)
+    tenant_id = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+
+
 class DiscoveredURLStorage:
     def __init__(self, engine):
         self._engine = engine
@@ -34,6 +50,9 @@ class DiscoveredURLStorage:
         async with self._engine.begin() as conn:
             await conn.run_sync(
                 lambda sync_conn: DiscoveredURLORM.__table__.create(sync_conn, checkfirst=True)
+            )
+            await conn.run_sync(
+                lambda sync_conn: JobORM.__table__.create(sync_conn, checkfirst=True)
             )
         # Enable WAL: the crawler worker writes while the API process reads.
         from sqlalchemy import text
@@ -98,3 +117,98 @@ class DiscoveredURLStorage:
                 query = query.where(DiscoveredURLORM.source == source)
             result = await session.execute(query)
             return result.scalar() or 0
+
+
+class JobStorage:
+    def __init__(self, engine):
+        self._engine = engine
+        self._factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+    async def create(self, job_type: str = "active", config: Optional[dict] = None) -> int:
+        """Create a new job and return its id."""
+        now = datetime.now(timezone.utc)
+        record = JobORM(
+            type=job_type,
+            status="queued",
+            config=json.dumps(config or {}),
+            stats="{}",
+            created_at=now,
+        )
+        async with self._factory() as session:
+            session.add(record)
+            await session.commit()
+            return record.id  # type: ignore[return-value]
+
+    async def get(self, job_id: int) -> Optional[dict]:
+        """Fetch a job by id, or None."""
+        from sqlalchemy import select
+        async with self._factory() as session:
+            result = await session.execute(
+                select(JobORM).where(JobORM.id == job_id)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                return None
+            return self._row_dict(row)
+
+    async def list_active(self) -> list[dict]:
+        """Return all queued or running jobs."""
+        from sqlalchemy import select
+        async with self._factory() as session:
+            result = await session.execute(
+                select(JobORM)
+                .where(JobORM.status.in_(["queued", "running"]))
+                .order_by(JobORM.id)
+            )
+            return [self._row_dict(r) for r in result.scalars().all()]
+
+    async def list_all(self, limit: int = 50) -> list[dict]:
+        """Return jobs ordered by most recent."""
+        from sqlalchemy import select
+        async with self._factory() as session:
+            result = await session.execute(
+                select(JobORM).order_by(JobORM.id.desc()).limit(limit)
+            )
+            return [self._row_dict(r) for r in result.scalars().all()]
+
+    async def update_status(self, job_id: int, status: str, error: Optional[str] = None) -> None:
+        """Transition job status; sets started_at/finished_at timestamps."""
+        from sqlalchemy import update
+        now = datetime.now(timezone.utc)
+        values: dict[str, Any] = {"status": status, "error": error}
+        if status == "running":
+            values["started_at"] = now
+        elif status in ("completed", "failed", "stopped"):
+            values["finished_at"] = now
+        async with self._factory() as session:
+            await session.execute(
+                update(JobORM).where(JobORM.id == job_id).values(**values)
+            )
+            await session.commit()
+
+    async def update_stats(self, job_id: int, stats: dict) -> None:
+        """Replace the JSON stats blob."""
+        from sqlalchemy import update
+        async with self._factory() as session:
+            await session.execute(
+                update(JobORM).where(JobORM.id == job_id).values(stats=json.dumps(stats))
+            )
+            await session.commit()
+
+    async def mark_stale_running_failed(self) -> int:
+        """Mark any jobs stuck in 'running' as 'failed' (crash recovery).
+        Returns the number of affected rows."""
+        from sqlalchemy import update
+        now = datetime.now(timezone.utc)
+        async with self._factory() as session:
+            result = await session.execute(
+                update(JobORM)
+                .where(JobORM.status == "running")
+                .values(status="failed", error="worker restarted", finished_at=now)
+            )
+            await session.commit()
+            return result.rowcount
+
+    @staticmethod
+    def _row_dict(record: JobORM) -> dict:
+        return {c.name: getattr(record, c.name) for c in JobORM.__table__.columns}

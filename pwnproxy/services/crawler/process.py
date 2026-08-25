@@ -129,6 +129,14 @@ class CrawlerProcess:
         asyncio.create_task(self._feed_server.publish("crawler.feed", flow_dict))
         return True
 
+    def send_to_worker(self, topic: str, data: dict) -> bool:
+        """Send an arbitrary message to the worker via the feed bridge.
+        Returns False if not connected."""
+        if not self.running or self._feed_server.clients == 0:
+            return False
+        asyncio.create_task(self._feed_server.publish(topic, data))
+        return True
+
     async def stop(self) -> None:
         if self._results_bridge:
             await self._results_bridge.stop()

@@ -50,6 +50,29 @@ export function NotificationLayer() {
         window.dispatchEvent(new CustomEvent("pwnproxy-crawler-url", { detail: msg }));
         return;
       }
+      if (msg.type === "crawl.completed") {
+        const stats = (msg as any).stats ?? msg;
+        addToast({
+          id: generateId(),
+          icon: "✅",
+          title: "Crawl completed",
+          message: `Fetched: ${msg.fetched ?? "?"}, Discovered: ${msg.discovered ?? "?"}`,
+          navTo: "/crawler",
+          severity: "success",
+        });
+        return;
+      }
+      if (msg.type === "crawl.failed") {
+        addToast({
+          id: generateId(),
+          icon: "❌",
+          title: "Crawl failed",
+          message: (msg.error as string) ?? "Unknown error",
+          navTo: "/crawler",
+          severity: "error",
+        });
+        return;
+      }
       const preset = getPreset(msg.type as string);
       if (!preset) return;
 
