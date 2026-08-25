@@ -51,9 +51,9 @@ class CrawlerProcess:
             "feed_port": self._feed_server.port if self._feed_started else 0,
         }
 
-    async def start(self, db_path: str, scope_json: Optional[str] = None) -> None:
+    async def start(self, db_path: str, scope_json: Optional[str] = None, ssl_insecure: bool = True) -> None:
         """Start the crawler worker (idempotent for identical parameters)."""
-        params = (db_path, scope_json)
+        params = (db_path, scope_json, ssl_insecure)
         if self.running and self._last_params == params:
             return
         await self.stop()
@@ -67,6 +67,8 @@ class CrawlerProcess:
             "--db-path", db_path,
             "--feed-port", str(self._feed_server.port),
         ]
+        if ssl_insecure:
+            args.append("--ssl-insecure")
         if scope_json:
             args.extend(["--scope-json", scope_json])
 
@@ -167,5 +169,5 @@ class CrawlerProcess:
         self._event_port = 0
         self._last_params = None
 
-    async def restart(self, db_path: str, scope_json: Optional[str] = None) -> None:
-        await self.start(db_path=db_path, scope_json=scope_json)
+    async def restart(self, db_path: str, scope_json: Optional[str] = None, ssl_insecure: bool = True) -> None:
+        await self.start(db_path=db_path, scope_json=scope_json, ssl_insecure=ssl_insecure)

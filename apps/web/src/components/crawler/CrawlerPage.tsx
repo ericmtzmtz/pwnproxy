@@ -57,15 +57,6 @@ export function CrawlerPage() {
           pollRef.current = window.setInterval(pollStatus, 2000);
         }
       } else {
-        if (activeJob && activeJob.status === "running") {
-          // Job just finished — refresh final stats
-          const finishedJobs = (await getCrawlStatus()).active_jobs ?? [];
-          const finished = finishedJobs.find((j: CrawlJob) => j.id === activeJob.id);
-          if (finished) {
-            setActiveJob(finished);
-            try { setStats(JSON.parse(finished.stats || "{}")); } catch {}
-          }
-        }
         setActiveJob(null);
         setLoading(false);
         if (pollRef.current) {

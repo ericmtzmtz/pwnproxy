@@ -35,8 +35,8 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--db-path", required=True, help="Path to crawler.db SQLite file")
     parser.add_argument("--feed-port", type=int, required=True, help="Port of the main-process feed bridge")
     parser.add_argument("--scope-json", default=None, help="JSON-encoded ScopeConfig")
-    parser.add_argument("--ssl-insecure", action="store_true", default=True,
-                        help="Disable TLS verification for active fetches (default True)")
+    parser.add_argument("--ssl-insecure", action="store_true", default=False,
+                        help="Disable TLS verification for active fetches")
     return parser.parse_args()
 
 
@@ -57,6 +57,7 @@ class CrawlerWorker:
         self._running = False
         self._active_task: asyncio.Task | None = None
         self._active_job_id: int | None = None
+        self._stop_requested = False
 
     async def start(self) -> None:
         engine = create_async_engine(f"sqlite+aiosqlite:///{self._db_path}", echo=False)
@@ -140,12 +141,14 @@ class CrawlerWorker:
         job_id = msg.get("job_id")
         if self._active_task and not self._active_task.done():
             logger.info("Stopping crawl job %s", job_id)
+            self._stop_requested = True
             self._active_task.cancel()
         if self._job_storage and job_id:
             asyncio.create_task(self._job_storage.update_status(job_id, "stopped"))
         self._active_task = None
 
     async def _run_crawl(self, job_id: int | None, config: CrawlConfig) -> None:
+        engine: CrawlEngine | None = None
         try:
             # If include_discovered, add existing discovered URLs as seeds.
             if config.include_discovered and self._storage:
@@ -158,9 +161,9 @@ class CrawlerWorker:
             engine = CrawlEngine(
                 config=config,
                 scope=self._scope,
-                verify=self._ssl_insecure,
+                verify=not self._ssl_insecure,
             )
-            fetcher = Fetcher(rate_limit=config.rate_limit, verify=self._ssl_insecure)
+            fetcher = Fetcher(rate_limit=config.rate_limit, verify=not self._ssl_insecure)
             await fetcher.start()
             try:
                 last_progress = datetime.now(timezone.utc)
@@ -202,19 +205,21 @@ class CrawlerWorker:
         except asyncio.CancelledError:
             if self._job_storage and job_id:
                 await self._job_storage.update_status(job_id, "stopped")
-            await self._bridge.publish("crawl.failed", {
-                "job_id": job_id,
-                "error": "cancelled",
-            })
+            if not self._stop_requested:
+                await self._bridge.publish("crawl.failed", {
+                    "job_id": job_id,
+                    "error": "cancelled",
+                })
         except Exception as exc:
             logger.exception("Crawl job %s failed", job_id)
+            stats = (
+                engine.stats.to_dict()
+                if engine is not None
+                else {"fetched": 0, "queued": 0, "discovered": 0, "errors": 0, "maxed": False}
+            )
+            stats["errors"] = stats.get("errors", 0) + 1
             if self._job_storage and job_id:
-                await self._job_storage.update_stats(job_id, {
-                    "fetched": getattr(exc, "_stats_fetched", 0),
-                    "queued": 0,
-                    "discovered": 0,
-                    "errors": 1,
-                })
+                await self._job_storage.update_stats(job_id, stats)
                 await self._job_storage.update_status(job_id, "failed", error=str(exc))
             await self._bridge.publish("crawl.failed", {
                 "job_id": job_id,
@@ -223,6 +228,7 @@ class CrawlerWorker:
         finally:
             self._active_task = None
             self._active_job_id = None
+            self._stop_requested = False
 
     async def _publish_discovered(self, flow_dict: dict) -> None:
         """From a crawled response, extract and persist URLs to discovered_urls."""

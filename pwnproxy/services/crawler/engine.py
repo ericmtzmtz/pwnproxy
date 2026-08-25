@@ -42,6 +42,7 @@ class CrawlStats:
     queued: int = 0
     discovered: int = 0
     errors: int = 0
+    maxed: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -49,6 +50,7 @@ class CrawlStats:
             "queued": self.queued,
             "discovered": self.discovered,
             "errors": self.errors,
+            "maxed": self.maxed,
         }
 
 
@@ -75,6 +77,8 @@ class CrawlEngine:
 
     def __post_init__(self) -> None:
         for seed in self.config.seeds:
+            self._visited.add(seed)
+            self._visited_paths.add(self._path_key(seed))
             self._queue.put_nowait(_QueueEntry(url=seed, depth=0))
 
     def _path_key(self, url: str) -> str:
@@ -140,8 +144,6 @@ class CrawlEngine:
                     entry = self._queue.get_nowait()
                     if entry is None:
                         break
-                    if entry.url in self._visited and entry.depth > 0:
-                        continue
                     batch.append(entry)
                 except asyncio.QueueEmpty:
                     break
@@ -187,6 +189,10 @@ class CrawlEngine:
                         self._queue.put_nowait(_QueueEntry(url=candidate_url, depth=next_depth))
                         self._stats.queued += 1
                         self._stats.discovered += 1
+
+        # Record the max_urls cap if the loop exited because of it.
+        if self._stats.fetched >= self.config.max_urls:
+            self._stats.maxed = True
 
         # Drain sentinel
         self._queue.put_nowait(None)

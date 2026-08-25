@@ -136,34 +136,16 @@ def start(
 
         def _on_crawler_event(topic: str, data: dict) -> None:
             """Forward crawler events: persist crawler.flow to traffic.db,
-            forward crawl.* to hook_bus for WS delivery."""
+            forward everything else to hook_bus for WS delivery."""
             try:
                 if topic == "crawler.flow" and isinstance(data, dict):
                     # Persist the crawled flow to traffic.db (2nd writer pattern).
-                    asyncio.create_task(_store_crawl_flow(data))
-                elif topic.startswith("crawl."):
-                    hook_bus.publish(topic, data)
+                    from pwnproxy.services.crawler.republish import persist_crawl_flow
+                    asyncio.create_task(persist_crawl_flow(traffic_engine, hook_bus, data))
                 else:
                     hook_bus.publish(topic, data)
             except Exception:
                 logger.debug("could not publish crawler event", exc_info=True)
-
-        def _store_crawl_done(flow_data: dict) -> None:
-            """Publish done event for a crawl flow only if scan_while_crawl=true."""
-            if flow_data.get("_scan_while_crawl"):
-                hook_bus.publish("done", {
-                    "id": str(flow_data.get("_db_id", "")),
-                    "method": flow_data.get("method", "GET"),
-                    "url": flow_data.get("url", ""),
-                    "request_headers": flow_data.get("request_headers") or {},
-                    "request_body": flow_data.get("request_body"),
-                    "status_code": flow_data.get("status_code"),
-                    "response_headers": flow_data.get("response_headers") or {},
-                    "response_body": flow_data.get("response_body"),
-                    "duration_ms": flow_data.get("duration_ms"),
-                    "tls": flow_data.get("tls", False),
-                    "error": flow_data.get("error"),
-                })
 
         crawler.set_event_callback(_on_crawler_event)
 
@@ -208,44 +190,6 @@ def start(
             token_storage=token_storage,
         )
 
-        async def _store_crawl_flow(data: dict) -> None:
-            """Persist a crawler.flow event as a FlowRecord in traffic.db."""
-            from pwnproxy.shared.db import FlowRecord
-            from sqlalchemy.orm import sessionmaker as sm_factory
-            from sqlalchemy.ext.asyncio import AsyncSession
-            try:
-                sf = sm_factory(traffic_engine, class_=AsyncSession, expire_on_commit=False)
-                body_bytes = (data.get("response_body") or "").encode("utf-8", errors="replace") if isinstance(data.get("response_body"), str) else data.get("response_body")
-                record = FlowRecord(
-                    method=data.get("method", "GET"),
-                    url=data.get("url", ""),
-                    request_headers=data.get("request_headers") or {},
-                    request_body=data.get("request_body"),
-                    request_body_truncated=data.get("request_body_truncated", False),
-                    status_code=data.get("status_code"),
-                    response_headers=data.get("response_headers") or {},
-                    response_body=body_bytes,
-                    response_body_truncated=data.get("response_body_truncated", False),
-                    duration_ms=data.get("duration_ms"),
-                    error=data.get("error"),
-                    tls=data.get("tls", False),
-                )
-                async with sf() as session:
-                    session.add(record)
-                    await session.commit()
-                    db_id = record.id
-                hook_bus.publish("flow_stored", {
-                    "id": db_id,
-                    "method": data.get("method", "GET"),
-                    "url": data.get("url", ""),
-                    "status_code": data.get("status_code"),
-                })
-                # Publish done for scanners only if scan_while_crawl is enabled.
-                data["_db_id"] = db_id
-                _store_crawl_done(data)
-            except Exception as exc:
-                logger.debug("could not persist crawl flow: %s", exc)
-
         # Wire crawler restart on session change (no lambdas for clean closure).
         async def _on_session_change(_name: str) -> None:
             try:
@@ -253,6 +197,7 @@ def start(
                     await crawler.start(
                         db_path=str(session_manager.active_path / "crawler.db"),
                         scope_json=json.dumps(session_manager.scope.to_dict()),
+                        ssl_insecure=session_manager.proxy_config.ssl_insecure,
                     )
                 elif crawler.running:
                     await crawler.stop()
@@ -368,6 +313,7 @@ def start(
                 await crawler.start(
                     db_path=str(session_manager.active_path / "crawler.db"),
                     scope_json=json.dumps(session_manager.scope.to_dict()),
+                    ssl_insecure=session_manager.proxy_config.ssl_insecure,
                 )
             except Exception as e:
                 logger.warning("Initial crawler start failed: %s", e)
