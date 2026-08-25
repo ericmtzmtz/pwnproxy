@@ -46,6 +46,10 @@ export function NotificationLayer() {
         window.dispatchEvent(new CustomEvent("pwnproxy-triage-updated", { detail: msg }));
         return;
       }
+      if (msg.type === "crawler.url") {
+        window.dispatchEvent(new CustomEvent("pwnproxy-crawler-url", { detail: msg }));
+        return;
+      }
       const preset = getPreset(msg.type as string);
       if (!preset) return;
 

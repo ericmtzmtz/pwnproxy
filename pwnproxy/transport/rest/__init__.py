@@ -1,4 +1,5 @@
 "REST API routers."
+from pwnproxy.transport.rest.crawler import router as crawler
 from pwnproxy.transport.rest.findings import router as findings
 from pwnproxy.transport.rest.health import router as health
 from pwnproxy.transport.rest.interceptor import router as interceptor

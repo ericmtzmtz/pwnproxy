@@ -132,6 +132,7 @@ async def ws_events(ws: WebSocket):
     scan_started_queue = hook_bus.register("scan.started")
     scan_completed_queue = hook_bus.register("scan.completed")
     triage_queue = hook_bus.register("triage.updated")
+    crawler_queue = hook_bus.register("crawler.url")
 
     try:
         while True:
@@ -141,9 +142,10 @@ async def ws_events(ws: WebSocket):
             started_task = asyncio.create_task(scan_started_queue.get())
             completed_task = asyncio.create_task(scan_completed_queue.get())
             triage_task = asyncio.create_task(triage_queue.get())
+            crawler_task = asyncio.create_task(crawler_queue.get())
 
             done, pending = await asyncio.wait(
-                [flow_task, finding_task, started_task, completed_task, triage_task],
+                [flow_task, finding_task, started_task, completed_task, triage_task, crawler_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
@@ -175,6 +177,9 @@ async def ws_events(ws: WebSocket):
                 elif task is triage_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "triage.updated", **result}, default=str)
+                elif task is crawler_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "crawler.url", **result}, default=str)
 
                 if payload:
                     await ws.send_text(payload)

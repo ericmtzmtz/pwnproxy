@@ -13,6 +13,7 @@ from rich.prompt import Prompt
 from apps.api.server import start_api_server
 from pwnproxy.shared.db import create_engine as create_traffic_engine, init_db
 from pwnproxy.services.proxy.proxy_process import ProxyProcess
+from pwnproxy.services.crawler.process import CrawlerProcess
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
@@ -129,6 +130,18 @@ def start(
         hook_bus = HookBus()
         bus = InProcessBus()
 
+        # Crawler process: created before SessionManager so it can be passed as on_session_change callback.
+        crawler = CrawlerProcess()
+
+        def _on_crawler_event(topic: str, data: dict) -> None:
+            """Forward crawler.result events to the hook_bus for WS delivery."""
+            try:
+                hook_bus.publish("crawler.url", data)
+            except Exception:
+                logger.debug("could not publish crawler event", exc_info=True)
+
+        crawler.set_event_callback(_on_crawler_event)
+
         def _on_proxy_event(topic: str, data: dict) -> None:
             """Bridge events from proxy worker to HookBus (PluginLoader consumers)."""
             from pwnproxy.shared.models import Flow
@@ -144,6 +157,10 @@ def start(
                 channel = topic.removeprefix("proxy.") if topic.startswith("proxy.") else topic
                 hook_bus.publish(channel, data)
                 asyncio.create_task(bus.publish(channel, data))
+
+            # Relay scope-filtered responses to the crawler worker.
+            if topic == "proxy.flow" and crawler.running:
+                crawler.relay_flow(data)
 
         traffic_engine = create_traffic_engine()
         await init_db(traffic_engine)
@@ -165,6 +182,20 @@ def start(
             scanner_engine=scanner_engine,
             token_storage=token_storage,
         )
+        # Wire crawler restart on session change (no lambdas for clean closure).
+        async def _on_session_change(_name: str) -> None:
+            try:
+                if session_manager.has_active_session:
+                    await crawler.start(
+                        db_path=str(session_manager.active_path / "crawler.db"),
+                        scope_json=json.dumps(session_manager.scope.to_dict()),
+                    )
+                elif crawler.running:
+                    await crawler.stop()
+            except Exception as _exc:
+                logger.warning("crawler session-change hook failed: %s", _exc)
+
+        session_manager._on_session_change = _on_session_change
         # Override proxy host/port with CLI values BEFORE any session ops
         session_manager.proxy_config.host = host
         session_manager.proxy_config.port = proxy_port
@@ -261,10 +292,21 @@ def start(
             session_manager=session_manager,
             plugin_loader=plugin_loader,
             proxy_engine=proxy,
+            crawler_process=crawler,
             host=host,
             port=api_port,
             proxy_port=proxy_port,
         )
+
+        # Ensure crawler is running for the initial session (idempotent if already started via callback).
+        if session_manager.has_active_session:
+            try:
+                await crawler.start(
+                    db_path=str(session_manager.active_path / "crawler.db"),
+                    scope_json=json.dumps(session_manager.scope.to_dict()),
+                )
+            except Exception as e:
+                logger.warning("Initial crawler start failed: %s", e)
 
         shutdown_event = asyncio.Event()
 
@@ -325,6 +367,7 @@ def start(
             pass
 
         console.print("\n[bold yellow]Shutting down...[/]")
+        await crawler.stop()
         await proxy.stop()
         interceptor_controller.stop()
         await plugin_loader.shutdown()

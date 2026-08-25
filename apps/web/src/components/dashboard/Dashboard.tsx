@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { StatCards } from "./StatCards";
 import { FindingsSection } from "./FindingsSection";
+import { DiscoveredSection } from "./DiscoveredSection";
 import { listFlows } from "@/api/traffic/calls";
 import { listFindings } from "@/api/findings/calls";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
@@ -48,6 +49,10 @@ export function Dashboard() {
 
       <div class="mt-8">
         <FindingsSection liveFindings={findings} />
+      </div>
+
+      <div class="mt-8">
+        <DiscoveredSection />
       </div>
 
       {recentFlows.length > 0 && (

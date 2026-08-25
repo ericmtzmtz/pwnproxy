@@ -114,6 +114,7 @@ class SessionManager:
         self._interceptor_controller: Optional[any] = None
         self._proxy_engine: Optional[any] = None
         self._pending_module_state: Optional[dict] = None
+        self._crawler_engine = None
 
     def set_module_providers(self, plugin_loader=None, interceptor_controller=None) -> None:
         self._plugin_loader = plugin_loader
@@ -416,6 +417,12 @@ class SessionManager:
         self.task_store = TaskStore(task_engine)
         await self.task_store.init()
 
+        crawler_db = session_path / "crawler.db"
+        crawler_url = f"sqlite+aiosqlite:///{crawler_db.absolute()}"
+        if self._crawler_engine is not None:
+            await self._crawler_engine.dispose()
+        self._crawler_engine = create_async_engine(crawler_url, echo=False)
+
     async def _write_last_session(self, name: str) -> None:
         SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
         (LAST_SESSION_FILE).write_text(name)
@@ -450,3 +457,6 @@ class SessionManager:
 
     def get_token_storage(self) -> TokenStorage:
         return self._token_storage
+
+    def get_crawler_engine(self):
+        return self._crawler_engine
