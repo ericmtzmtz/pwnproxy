@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -77,3 +77,59 @@ class TestSessionList:
                 assert s["last_active"] is True
             else:
                 assert s["last_active"] is False
+
+
+class TestScopeAPI:
+    @pytest.fixture
+    def scope_client(self, test_client):
+        manager = app.state.session_manager
+        manager.save = AsyncMock()
+        manager.get_proxy_engine.return_value = None
+        return test_client
+
+    def test_update_scope_valid_strings(self, scope_client):
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={"in_scope": ["http://127.0.0.1:9999/*"], "out_of_scope": [], "enabled": True},
+        )
+        assert resp.status_code == 200
+        scope = app.state.session_manager.scope
+        assert scope.in_scope == ["http://127.0.0.1:9999/*"]
+        assert scope.enabled is True
+        app.state.session_manager.save.assert_awaited_once()
+
+    def test_update_scope_rejects_dict_patterns(self, scope_client):
+        # Regression: structured dicts used to be stored verbatim and later
+        # crash ScopeConfig.is_in_scope inside fnmatch (TypeError → 500).
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={
+                "enabled": True,
+                "in_scope": [{"host": "127.0.0.1", "protocol": "http", "port": 9999, "path": "/"}],
+                "out_of_scope": [],
+            },
+        )
+        assert resp.status_code == 422
+
+    def test_update_scope_rejects_non_string_entries(self, scope_client):
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={"in_scope": ["http://ok.com/*", 42], "enabled": True},
+        )
+        assert resp.status_code == 422
+
+    def test_update_scope_legacy_patterns_alias(self, scope_client):
+        resp = scope_client.put("/api/v1/sessions/scope", json={"patterns": ["https://x.com/*"]})
+        assert resp.status_code == 200
+        assert app.state.session_manager.scope.in_scope == ["https://x.com/*"]
+
+    def test_update_scope_auto_enable(self, scope_client):
+        resp = scope_client.put("/api/v1/sessions/scope", json={"in_scope": ["https://y.com/*"]})
+        assert resp.status_code == 200
+        assert app.state.session_manager.scope.enabled is True
+
+    def test_update_scope_disable_only(self, scope_client):
+        resp = scope_client.put("/api/v1/sessions/scope", json={"enabled": False})
+        assert resp.status_code == 200
+        assert app.state.session_manager.scope.enabled is False
+        assert app.state.session_manager.scope.in_scope == []

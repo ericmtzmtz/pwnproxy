@@ -2,12 +2,34 @@ import json
 import logging
 import os
 from pathlib import Path
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field, model_validator
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 
 logger = logging.getLogger(__name__)
+
+
+class ScopeUpdateRequest(BaseModel):
+    """Scope patterns MUST be fnmatch strings (e.g. 'http://host:8080/*').
+
+    Structured objects like {"host": ..., "port": ...} are rejected with 422:
+    they used to be stored verbatim and later crash ScopeConfig.is_in_scope
+    at runtime inside fnmatch().
+    """
+
+    in_scope: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    enabled: Optional[bool] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_patterns_alias(cls, data):
+        if isinstance(data, dict) and "patterns" in data:
+            data = {**data, "in_scope": data.pop("patterns")}
+        return data
 
 
 async def _restart_crawler_for_scope(request: Request) -> None:
@@ -117,15 +139,13 @@ async def get_scope(request: Request):
 
 
 @router.put("/sessions/scope")
-async def update_scope(request: Request):
-    body = await request.json()
+async def update_scope(payload: ScopeUpdateRequest, request: Request):
     manager = request.app.state.session_manager
     from pwnproxy.services.session.manager import ScopeConfig
-    if "patterns" in body:
-        body["in_scope"] = body.pop("patterns")
-    if "in_scope" in body and "enabled" not in body:
-        body["enabled"] = True
-    manager.scope = ScopeConfig(body)
+    data = payload.model_dump(exclude_unset=True)
+    if "in_scope" in data and "enabled" not in data:
+        data["enabled"] = True
+    manager.scope = ScopeConfig(data)
     await manager.save()
 
     # ── Push scope filter to running components ──
