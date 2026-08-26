@@ -109,7 +109,7 @@ def start(
     async def _run():
         # Reconfigure logging based on mode
         for h in logging.root.handlers[:]:
-            logging.root.removeHandler(h)
+            logging.root.removeChild(h)
 
         if tui:
             log_file = Path.home() / ".pwnproxy" / "proxy.log"
@@ -143,6 +143,7 @@ def start(
                     from pwnproxy.services.crawler.republish import persist_crawl_flow
                     asyncio.create_task(persist_crawl_flow(traffic_engine, hook_bus, data))
                 else:
+                    # bruteforce.started|progress|completed|failed are also forwarded here
                     hook_bus.publish(topic, data)
             except Exception:
                 logger.debug("could not publish crawler event", exc_info=True)

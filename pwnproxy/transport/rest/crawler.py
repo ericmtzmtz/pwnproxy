@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from pwnproxy.services.crawler.storage import DiscoveredURLORM, JobStorage
+from pwnproxy.services.crawler.wordlist import resolve_wordlist, builtin_sizes
 
 logger = logging.getLogger(__name__)
 
@@ -116,16 +117,109 @@ async def stop_crawl(request: Request):
         raise HTTPException(status_code=503, detail="Crawler storage unavailable")
 
     active = await job_storage.list_active()
-    if not active:
+    job = next((j for j in active if j.get("type") == "active"), None)
+    if job is None:
         return {"stopped": False, "detail": "No active crawl job"}
 
-    job = active[0]
     crawler = getattr(request.app.state, "crawler_process", None)
     if crawler and getattr(crawler, "running", False):
         crawler.send_to_worker("crawl.stop", {"job_id": job["id"]})
 
     await job_storage.update_status(job["id"], "stopped")
     return {"stopped": True, "job_id": job["id"]}
+
+
+# ── Bruteforce control ───────────────────────────────────────────────────
+
+
+class BruteforceStartRequest(BaseModel):
+    base_urls: list[str] = Field(..., min_length=1)
+    wordlist: str | list[str] = Field("medium")
+    extensions: list[str] = Field(default_factory=list)
+    status_filter: list[int] = Field(default=[200, 204, 301, 302, 307, 401, 403])
+    rate_limit: float = Field(20.0, gt=0, le=200)
+    concurrency: int = Field(10, ge=1, le=100)
+    max_requests: int = Field(100_000, ge=1, le=2_000_000)
+    detect_soft404: bool = Field(True)
+
+
+@router.post("/bruteforce/start")
+async def start_bruteforce(request: Request, body: BruteforceStartRequest):
+    job_storage = await _get_job_storage(request)
+    if job_storage is None:
+        raise HTTPException(status_code=503, detail="Crawler storage unavailable")
+
+    # Only one active job at a time (shared slot with crawl)
+    active = await job_storage.list_active()
+    if active:
+        raise HTTPException(status_code=409, detail="A crawler job is already running")
+
+    # Resolve wordlist
+    try:
+        resolved_words = resolve_wordlist(body.wordlist)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    if len(resolved_words) < 1:
+        raise HTTPException(status_code=422, detail="Wordlist resolved to 0 entries")
+
+    # Validate base_urls are in scope
+    sm = getattr(request.app.state, "session_manager", None)
+    scope = sm.scope if sm and hasattr(sm, "scope") else None
+    if scope and scope.enabled:
+        for url in body.base_urls:
+            if not scope.is_in_scope(url):
+                raise HTTPException(status_code=422, detail=f"Base URL out of scope: {url}")
+
+    config = {
+        "base_urls": body.base_urls,
+        "wordlist": resolved_words,
+        "extensions": body.extensions,
+        "status_filter": body.status_filter,
+        "rate_limit": body.rate_limit,
+        "concurrency": body.concurrency,
+        "max_requests": body.max_requests,
+        "detect_soft404": body.detect_soft404,
+    }
+    job_id = await job_storage.create(job_type="bruteforce", config=config)
+    await job_storage.update_status(job_id, "running")
+
+    crawler = getattr(request.app.state, "crawler_process", None)
+    if crawler is None or not getattr(crawler, "running", False):
+        await job_storage.update_status(job_id, "failed", error="Crawler process not running")
+        raise HTTPException(status_code=503, detail="Crawler process not running")
+
+    sent = crawler.send_to_worker("bruteforce.start", {"job_id": job_id, "config": config})
+    if not sent:
+        await job_storage.update_status(job_id, "failed", error="Could not reach crawler worker")
+        raise HTTPException(status_code=503, detail="Could not reach crawler worker")
+
+    total_est = len(resolved_words) * (1 + len(body.extensions)) * len(body.base_urls)
+    return {"job_id": job_id, "status": "running", "total_estimated": total_est}
+
+
+@router.post("/bruteforce/stop")
+async def stop_bruteforce(request: Request):
+    job_storage = await _get_job_storage(request)
+    if job_storage is None:
+        raise HTTPException(status_code=503, detail="Crawler storage unavailable")
+
+    active = await job_storage.list_active()
+    job = next((j for j in active if j.get("type") == "bruteforce"), None)
+    if job is None:
+        return {"stopped": False, "detail": "No active bruteforce job"}
+
+    crawler = getattr(request.app.state, "crawler_process", None)
+    if crawler and getattr(crawler, "running", False):
+        crawler.send_to_worker("bruteforce.stop", {"job_id": job["id"]})
+
+    await job_storage.update_status(job["id"], "stopped")
+    return {"stopped": True, "job_id": job["id"]}
+
+
+@router.get("/bruteforce/wordlists")
+async def list_wordlists():
+    return {"wordlists": [{"name": k, "entries": v} for k, v in builtin_sizes().items()]}
 
 
 # ── Status ───────────────────────────────────────────────────────────────

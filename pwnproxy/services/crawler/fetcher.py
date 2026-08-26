@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import secrets
 import time
 from typing import Any, Optional
 from urllib.parse import urlparse
@@ -60,6 +61,7 @@ class Fetcher:
             self._client = None
 
     async def fetch(self, url: str) -> Optional[dict]:
+        # existing fetch method unchanged
         """GET *url* and return a flow-like dict, or None on failure.
 
         Retries once on transient connection errors.
@@ -94,8 +96,48 @@ class Fetcher:
             except Exception as exc:
                 logger.warning("fetch %s permanent error: %s", url, exc)
                 return None
-        logger.warning("fetch %s failed after retries: %s", url, last_exc)
+
+    async def probe(self, url: str) -> tuple[int, int, str] | None:
+        """GET *url* and return (status_code, content_length, content_type)."""
+        if self._client is None:
+            raise RuntimeError("Fetcher not started")
+        last_exc: Optional[Exception] = None
+        for _ in range(1 + _MAX_RETRIES):
+            await self._limiter.acquire()
+            try:
+                resp = await self._client.get(url)
+                content_len = len(resp.content or b"")
+                content_type = ""
+                for name, value in (resp.headers.items() if hasattr(resp.headers, "items") else []):
+                    if (name or "").lower() == "content-type":
+                        content_type = value or ""
+                        break
+                return (resp.status_code, content_len, content_type)
+            except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
+                last_exc = exc
+                logger.debug("probe %s transient error: %s", url, exc)
+                continue
+            except Exception as exc:
+                logger.warning("probe %s permanent error: %s", url, exc)
+                return None
+        logger.warning("probe %s failed after retries: %s", url, last_exc)
         return None
+
+async def learn_baseline(fetcher: Fetcher, base_url: str, n: int = 3) -> set[tuple[int, int]]:
+    """Probe N random non-existent paths and return set of (status, length) signatures.
+
+    Uses random paths like '/__nonexistent_{randhex}' that are unlikely to exist.
+    The returned set is used to filter soft-404 responses.
+    """
+    signatures: set[tuple[int, int]] = set()
+    for _ in range(n):
+        rand_path = f"/__nonexistent_{secrets.token_hex(8)}"
+        url = base_url.rstrip('/') + rand_path
+        result = await fetcher.probe(url)
+        if result is not None:
+            status, length, _ = result
+            signatures.add((status, length))
+    return signatures
 
 
 async def fetch_robots(url: str, verify: bool = False) -> Optional[str]:

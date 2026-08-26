@@ -137,6 +137,10 @@ async def ws_events(ws: WebSocket):
     crawl_progress_queue = hook_bus.register("crawl.progress")
     crawl_completed_queue = hook_bus.register("crawl.completed")
     crawl_failed_queue = hook_bus.register("crawl.failed")
+    bruteforce_started_queue = hook_bus.register("bruteforce.started")
+    bruteforce_progress_queue = hook_bus.register("bruteforce.progress")
+    bruteforce_completed_queue = hook_bus.register("bruteforce.completed")
+    bruteforce_failed_queue = hook_bus.register("bruteforce.failed")
 
     try:
         while True:
@@ -151,11 +155,17 @@ async def ws_events(ws: WebSocket):
             crawl_progress_task = asyncio.create_task(crawl_progress_queue.get())
             crawl_completed_task = asyncio.create_task(crawl_completed_queue.get())
             crawl_failed_task = asyncio.create_task(crawl_failed_queue.get())
+            bruteforce_started_task = asyncio.create_task(bruteforce_started_queue.get())
+            bruteforce_progress_task = asyncio.create_task(bruteforce_progress_queue.get())
+            bruteforce_completed_task = asyncio.create_task(bruteforce_completed_queue.get())
+            bruteforce_failed_task = asyncio.create_task(bruteforce_failed_queue.get())
 
             done, pending = await asyncio.wait(
                 [flow_task, finding_task, started_task, completed_task, triage_task,
                  crawler_task, crawl_started_task, crawl_progress_task,
-                 crawl_completed_task, crawl_failed_task],
+                 crawl_completed_task, crawl_failed_task,
+                 bruteforce_started_task, bruteforce_progress_task,
+                 bruteforce_completed_task, bruteforce_failed_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
@@ -202,6 +212,18 @@ async def ws_events(ws: WebSocket):
                 elif task is crawl_failed_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "crawl.failed", **result}, default=str)
+                elif task is bruteforce_started_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "bruteforce.started", **result}, default=str)
+                elif task is bruteforce_progress_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "bruteforce.progress", **result}, default=str)
+                elif task is bruteforce_completed_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "bruteforce.completed", **result}, default=str)
+                elif task is bruteforce_failed_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
 
                 if payload:
                     await ws.send_text(payload)

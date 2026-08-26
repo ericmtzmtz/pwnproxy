@@ -32,6 +32,12 @@ export const TOAST_PRESETS: Record<string, ToastPreset> = {
     navTo: "/scanners",
     badgeTarget: "#sidebar-scanners-badge",
   },
+  bruteforce: {
+    shouldToast: () => false,
+    icon: "🔓",
+    navTo: "/bruteforce",
+    badgeTarget: null,
+  },
 };
 
 export function getPreset(type: string): ToastPreset | undefined {

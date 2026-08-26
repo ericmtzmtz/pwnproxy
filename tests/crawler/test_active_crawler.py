@@ -1,4 +1,5 @@
 """Tests for active crawler: storage, engine, fetcher, API, WS."""
+from pwnproxy.services.crawler.wordlist import resolve_wordlist, estimate_requests
 import asyncio
 import ipaddress
 import json
@@ -1178,3 +1179,696 @@ class TestPersistCrawlFlow:
         await engine.dispose()
         db_id = await persist_crawl_flow(engine, hb, self._payload())
         assert db_id is None
+
+# ── 9.1 Bruteforce feature tests ────────────────────────────────────────────────
+
+class TestBruteforceWordlist:
+    def test_resolve_medium_builtin(self):
+        words = resolve_wordlist("medium")
+        assert len(words) > 3000
+        assert all(isinstance(w, str) for w in words)
+
+    def test_resolve_small_builtin(self):
+        words = resolve_wordlist("small")
+        assert len(words) >= 360
+
+    def test_resolve_large_builtin(self):
+        words = resolve_wordlist("large")
+        assert len(words) >= 7000
+
+    def test_resolve_custom_inline(self):
+        words = resolve_wordlist(["admin", "login", "backup"])
+        assert words == ["admin", "login", "backup"]
+
+    def test_resolve_empty_list_raises(self):
+        with pytest.raises((ValueError, TypeError)):
+            resolve_wordlist([])
+
+    def test_resolve_unknown_name_raises(self):
+        with pytest.raises((ValueError, TypeError)):
+            resolve_wordlist("nonexistent_wordlist_name")
+
+    def test_estimate_requests_simple(self):
+        words = ["admin", "login"]
+        est = estimate_requests(words, extensions=[], base_urls=["https://x.com"])
+        assert est == 2
+
+    def test_estimate_requests_with_extensions(self):
+        words = ["admin", "login"]
+        est = estimate_requests(words, extensions=[".php", ".html"], base_urls=["https://x.com"])
+        assert est == 6
+
+    def test_estimate_requests_multiple_bases(self):
+        words = ["admin"]
+        est = estimate_requests(words, extensions=[".php"], base_urls=["https://a.com", "https://b.com"])
+        assert est == 4
+
+
+class TestBruteforceProbeBaseline:
+    @pytest.mark.asyncio
+    async def test_probe_returns_status_and_length(self):
+        from pwnproxy.services.crawler.fetcher import Fetcher
+        import httpx
+
+        pages = {
+            "https://target.com/admin": (200, b"<html>admin</html>"),
+            "https://target.com/secret": (403, b"forbidden"),
+        }
+
+        async def _mock_get(url, **kwargs):
+            if url in pages:
+                status, body = pages[url]
+                return httpx.Response(status_code=status, content=body, request=httpx.Request("GET", url))
+            return httpx.Response(status_code=404, content=b"not found", request=httpx.Request("GET", url))
+
+        fetcher = Fetcher.__new__(Fetcher)
+        fetcher._client = AsyncMock()
+        fetcher._client.get = _mock_get
+        fetcher._limiter = AsyncMock()
+        fetcher._limiter.acquire = AsyncMock()
+        fetcher._timeout = 10
+        fetcher._max_retries = 1
+        fetcher._ssl_insecure = True
+
+        result = await fetcher.probe("https://target.com/admin")
+        assert result is not None
+        status, length, ctype = result
+        assert status == 200
+        assert length > 0
+
+    @pytest.mark.asyncio
+    async def test_learn_baseline_discovers_firmas(self):
+        from pwnproxy.services.crawler.fetcher import Fetcher, learn_baseline
+        import httpx
+
+        async def _mock_get(url, **kwargs):
+            path = str(url).split("target.com")[-1]
+            if path.startswith("/__nonexistent_"):
+                return httpx.Response(status_code=200, content=b"<html>Custom 404</html>", request=httpx.Request("GET", url))
+            return httpx.Response(status_code=404, content=b"Not Found", request=httpx.Request("GET", url))
+
+        fetcher = Fetcher.__new__(Fetcher)
+        fetcher._client = AsyncMock()
+        fetcher._client.get = _mock_get
+        fetcher._limiter = AsyncMock()
+        fetcher._limiter.acquire = AsyncMock()
+        fetcher._timeout = 10
+        fetcher._max_retries = 1
+        fetcher._ssl_insecure = True
+
+        baseline = await learn_baseline(fetcher, "https://target.com", n=5)
+        assert len(baseline) >= 1
+        assert any(s == 200 for s, _ in baseline)
+
+
+class TestBruteforceFilterAndURLs:
+    def test_url_construction_with_extensions(self):
+        words = ["admin", "login"]
+        exts = [".php", ".html"]
+        bases = ["https://target.com/"]
+        urls = []
+        for base in bases:
+            for w in words:
+                urls.append(f"{base}{w}")
+                for ext in exts:
+                    urls.append(f"{base}{w}{ext}")
+        assert urls == [
+            "https://target.com/admin",
+            "https://target.com/admin.php",
+            "https://target.com/admin.html",
+            "https://target.com/login",
+            "https://target.com/login.php",
+            "https://target.com/login.html",
+        ]
+
+    def test_status_filter_default(self):
+        default_filter = [200, 204, 301, 302, 307, 401, 403]
+        assert 200 in default_filter
+        assert 404 not in default_filter
+        assert 500 not in default_filter
+
+    def test_soft404_baseline_exclusion(self):
+        baseline = {(200, 1234), (302, 0)}
+        assert (200, 1234) in baseline
+        assert (200, 9999) not in baseline
+        assert (404, 0) not in baseline
+
+
+class FakeBruteFetcher:
+    """Fetcher double for bruteforce E2E: canned (status, length) per URL.
+
+    Any URL not in ``responses`` gets ``default`` — models a server whose
+    404 page is a custom 200 page of fixed size (soft-404 scenario).
+    Class-level state so tests can configure it before the worker
+    constructs its own instance inside _run_bruteforce.
+    """
+
+    default = (404, 13)
+    responses: dict[str, tuple[int, int]] = {}
+    last_instance = None
+
+    def __init__(self, rate_limit: float = 10.0, verify: bool = False):
+        self.calls: list[str] = []
+        self.stop_called = False
+        FakeBruteFetcher.last_instance = self
+
+    async def start(self) -> None:
+        pass
+
+    async def stop(self) -> None:
+        self.stop_called = True
+
+    async def probe(self, url: str):
+        self.calls.append(url)
+        status, length = FakeBruteFetcher.responses.get(url, FakeBruteFetcher.default)
+        return (status, length, "text/html")
+
+    async def fetch(self, url: str):
+        return None
+
+
+def _make_brute_worker(storage, job_storage):
+    """Build a CrawlerWorker via __new__ with test doubles injected."""
+    from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+
+    w = CrawlerWorker.__new__(CrawlerWorker)
+    w._scope = _scope(["*target.com*"])
+    w._ssl_insecure = False
+    w._bridge = MagicMock()
+    w._bridge.publish = AsyncMock()
+    w._storage = storage
+    w._job_storage = job_storage
+    w._stop_requested = False
+    w._active_task = None
+    w._active_job_id = None
+    return w
+
+
+def _published_topics(worker) -> list[str]:
+    return [c.args[0] for c in worker._bridge.publish.call_args_list]
+
+
+class TestBruteforceWorkerE2E:
+    @pytest.mark.asyncio
+    async def test_bruteforce_completes_cleanly_when_nothing_found(self, monkeypatch):
+        """All-404 target: job completes with zero hits and clean stats."""
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="bruteforce", config={"base_urls": ["https://target.com"]})
+        try:
+            fake = FakeBruteFetcher
+            fake.default = (404, 13)
+            fake.responses = {}
+            monkeypatch.setattr(cw_mod, "Fetcher", fake)
+
+            worker = _make_brute_worker(st, js)
+            config = BruteforceConfig(
+                base_urls=["https://target.com"],
+                wordlist=["admin", "login", "soft404x"],
+                extensions=[],
+                detect_soft404=True,
+                rate_limit=1000.0,
+            )
+            await worker._run_bruteforce(jid, config)
+
+            topics = _published_topics(worker)
+            assert "bruteforce.completed" in topics
+            assert "bruteforce.failed" not in topics
+
+            completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
+            assert completed["found"] == 0
+            assert completed["probed"] == 3
+            assert completed["errors"] == 0
+            assert completed["maxed"] is False
+            job = await js.get(jid)
+            assert job["status"] == "completed"
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_soft404_filtered_and_hits_persisted(self, monkeypatch):
+        """Custom 404 page (200 + fixed size): hits kept, soft-404 filtered out."""
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="bruteforce", config={})
+        try:
+            fake = FakeBruteFetcher
+            fake.default = (200, 500)  # every unknown path → custom 404 page
+            fake.responses = {
+                "https://target.com/admin": (200, 800),  # real hit (distinct size)
+                "https://target.com/login": (403, 50),   # real hit, 403 in filter
+                # soft404x keeps default → matches baseline → filtered
+            }
+            monkeypatch.setattr(cw_mod, "Fetcher", fake)
+
+            worker = _make_brute_worker(st, js)
+            config = BruteforceConfig(
+                base_urls=["https://target.com"],
+                wordlist=["admin", "login", "soft404x"],
+                extensions=[],
+                detect_soft404=True,
+                rate_limit=1000.0,
+            )
+            FakeBruteFetcher.last_instance = None
+            await worker._run_bruteforce(jid, config)
+
+            completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
+            assert completed["probed"] == 3
+            assert completed["found"] == 2          # admin (200,800) + login (403,50)
+            assert completed["soft404_filtered"] == 1  # soft404x matches baseline sig
+            assert completed["skipped"] == 0
+            assert completed["errors"] == 0
+
+            rows = await st.list(limit=10)
+            hit_urls = {r["url"] for r in rows}
+            assert hit_urls == {"https://target.com/admin", "https://target.com/login"}
+            assert all(r["source"] == "bruteforce" for r in rows)
+            assert all(r["base_url"] == "https://target.com/" for r in rows)
+
+            crawler_urls = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "crawler.url"]
+            assert len(crawler_urls) == 2
+
+            job = await js.get(jid)
+            assert job["status"] == "completed"
+            stats = json.loads(job["stats"])
+            assert stats["found"] == 2
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_max_requests_backstop(self, monkeypatch):
+        """max_requests truncates the queue and marks maxed=true (spec 3.6)."""
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="bruteforce", config={})
+        try:
+            fake = FakeBruteFetcher
+            fake.default = (404, 13)
+            fake.responses = {}
+            monkeypatch.setattr(cw_mod, "Fetcher", fake)
+
+            worker = _make_brute_worker(st, js)
+            config = BruteforceConfig(
+                base_urls=["https://target.com"],
+                wordlist=["a", "b", "c", "d", "e"],
+                extensions=[".php"],          # 5 × 2 = 10 planned
+                detect_soft404=False,
+                max_requests=3,
+                rate_limit=1000.0,
+            )
+            await worker._run_bruteforce(jid, config)
+
+            completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
+            assert completed["total_planned"] == 3
+            assert len(fake.last_instance.calls) == 3   # only 3 probes actually sent
+            assert completed["maxed"] is True
+            assert completed["probed"] <= 3
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_out_of_scope_skipped_not_errors(self, monkeypatch):
+        """Out-of-scope URLs count as skipped, NOT as errors."""
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="bruteforce", config={})
+        try:
+            fake = FakeBruteFetcher
+            fake.default = (200, 500)
+            fake.responses = {}
+            monkeypatch.setattr(cw_mod, "Fetcher", fake)
+
+            worker = _make_brute_worker(st, js)
+            config = BruteforceConfig(
+                base_urls=["https://target.com", "https://other.com"],  # other.com fuera de scope
+                wordlist=["admin"],
+                extensions=[],
+                detect_soft404=False,
+                rate_limit=1000.0,
+            )
+            await worker._run_bruteforce(jid, config)
+
+            completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
+            assert completed["probed"] == 1
+            assert completed["skipped"] == 1
+            assert completed["errors"] == 0
+            # Only the in-scope probe was actually sent.
+            assert all("other.com" not in u for u in fake.last_instance.calls)
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_cooperative_stop_publishes_no_completed(self, monkeypatch):
+        """Cooperative stop: no completed/failed events; fetcher still closed."""
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        try:
+            fake = FakeBruteFetcher
+            fake.default = (200, 500)
+            fake.responses = {}
+            monkeypatch.setattr(cw_mod, "Fetcher", fake)
+
+            worker = _make_brute_worker(st, None)
+            worker._stop_requested = True  # user already asked to stop
+            config = BruteforceConfig(
+                base_urls=["https://target.com"],
+                wordlist=["admin", "login"],
+                extensions=[],
+                rate_limit=1000.0,
+            )
+            await worker._run_bruteforce(None, config)
+
+            topics = _published_topics(worker)
+            assert "bruteforce.completed" not in topics
+            assert "bruteforce.failed" not in topics
+            assert all(t.startswith("bruteforce.progress") for t in topics)
+            assert fake.last_instance.stop_called is True
+        finally:
+            await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_handle_bruteforce_stop_cancels_active_task(self):
+        """Real stop handler: sets flag, cancels task, clears slot."""
+        from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        try:
+            js = JobStorage(engine)
+            jid = await js.create(job_type="bruteforce", config={})
+
+            worker = CrawlerWorker.__new__(CrawlerWorker)
+            worker._job_storage = js
+            worker._stop_requested = False
+
+            started = asyncio.Event()
+            finished = asyncio.Event()
+
+            async def _dummy():
+                started.set()
+                try:
+                    await asyncio.sleep(30)
+                except asyncio.CancelledError:
+                    finished.set()
+                    raise
+
+            worker._active_task = asyncio.create_task(_dummy())
+            task_ref = worker._active_task
+            await asyncio.wait_for(started.wait(), timeout=1.0)
+
+            worker._handle_bruteforce_stop({"job_id": jid})
+
+            with pytest.raises(asyncio.CancelledError):
+                await task_ref
+            assert finished.is_set() is True
+            assert worker._active_task is None
+            assert worker._stop_requested is True
+
+            # Give the fire-and-forget DB update a moment.
+            await asyncio.sleep(0.05)
+            job = await js.get(jid)
+            assert job["status"] == "stopped"
+        finally:
+            await engine.dispose()
+
+
+class TestBruteforceAPICrossStop:
+    @pytest.mark.asyncio
+    async def test_bruteforce_stop_does_not_stop_crawl_job(self):
+        """POST /bruteforce/stop must not touch a running crawl job."""
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+
+        js = JobStorage(engine)
+        crawl_jid = await js.create(job_type="active", config={"seeds": ["https://x.com"]})
+        await js.update_status(crawl_jid, "running")
+
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        app.state.crawler_process = MagicMock(running=True)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/stop")
+        assert resp.status_code == 200
+        assert resp.json()["stopped"] is False
+
+        job = await js.get(crawl_jid)
+        assert job["status"] == "running"  # untouched
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_crawl_stop_does_not_stop_bruteforce_job(self):
+        """POST /crawler/stop must not touch a running bruteforce job."""
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+
+        js = JobStorage(engine)
+        bf_jid = await js.create(job_type="bruteforce", config={"base_urls": ["https://x.com"]})
+        await js.update_status(bf_jid, "running")
+
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        app.state.crawler_process = MagicMock(running=True)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/crawler/stop")
+        assert resp.status_code == 200
+        assert resp.json()["stopped"] is False
+
+        job = await js.get(bf_jid)
+        assert job["status"] == "running"
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_stop_stops_own_job(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+
+        js = JobStorage(engine)
+        bf_jid = await js.create(job_type="bruteforce", config={"base_urls": ["https://x.com"]})
+        await js.update_status(bf_jid, "running")
+
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+
+        crawler_mock = MagicMock()
+        crawler_mock.running = True
+        app.state.crawler_process = crawler_mock
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/stop")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["stopped"] is True
+        assert data["job_id"] == bf_jid
+        crawler_mock.send_to_worker.assert_called_once()
+        topic = crawler_mock.send_to_worker.call_args.args[0]
+        assert topic == "bruteforce.stop"
+
+        job = await js.get(bf_jid)
+        assert job["status"] == "stopped"
+        await engine.dispose()
+
+
+class TestWordlistLazyLoading:
+    def test_builtin_sizes_lazy_and_cached(self):
+        from pwnproxy.services.crawler import wordlist as wl
+
+        wl._sizes_cache = None
+        sizes = wl.builtin_sizes()
+        assert set(sizes.keys()) == {"small", "medium", "large"}
+        assert sizes["small"] >= 360
+        # Second call served from cache (same dict object).
+        assert wl.builtin_sizes() is sizes
+
+    def test_resolve_unknown_name_still_rejected_without_loading(self):
+        from pwnproxy.services.crawler.wordlist import resolve_wordlist
+        with pytest.raises(ValueError):
+            resolve_wordlist("no_such_wordlist")
+
+
+class TestBruteforceAPI:
+    @pytest.mark.asyncio
+    async def test_start_422_no_base_urls(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        sm.scope = ScopeConfig({"enabled": False, "in_scope": [], "out_of_scope": []})
+        app.state.session_manager = sm
+        crawler_mock = MagicMock()
+        crawler_mock.running = True
+        app.state.crawler_process = crawler_mock
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/start", json={"base_urls": []})
+        assert resp.status_code == 422
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_start_409_job_already_active(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        await js.create(job_type="active", config={"seeds": ["https://x.com"]})
+        await js.update_status(1, "running")
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        crawler_mock = MagicMock()
+        crawler_mock.running = True
+        app.state.crawler_process = crawler_mock
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/start", json={"base_urls": ["https://target.com"]})
+        assert resp.status_code == 409
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_start_200_success(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        sm.scope = ScopeConfig({"enabled": False, "in_scope": [], "out_of_scope": []})
+        app.state.session_manager = sm
+        crawler_mock = MagicMock()
+        crawler_mock.running = True
+        crawler_mock.send_to_worker.return_value = True
+        app.state.crawler_process = crawler_mock
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/start", json={"base_urls": ["https://target.com"]})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "job_id" in data
+        assert data["status"] == "running"
+        assert data["total_estimated"] > 0
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_stop_no_active(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/stop")
+        assert resp.status_code == 200
+        assert resp.json()["stopped"] is False
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_wordlists_endpoint(self):
+        from pwnproxy.transport.rest.app import app
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/bruteforce/wordlists")
+        assert resp.status_code == 200
+        data = resp.json()
+        names = [w["name"] for w in data["wordlists"]]
+        assert "small" in names
+        assert "medium" in names
+        assert "large" in names
+
+    @pytest.mark.asyncio
+    async def test_status_shows_bruteforce_job(self):
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="bruteforce", config={"base_urls": ["https://x.com"]})
+        await js.update_status(jid, "running")
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        crawler_mock = MagicMock()
+        crawler_mock.status.return_value = {"running": True, "pid": 1234}
+        app.state.crawler_process = crawler_mock
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.get("/api/v1/crawler/status")
+        data = resp.json()
+        assert data["running"] is True
+        assert len(data["active_jobs"]) == 1
+        assert data["active_jobs"][0]["type"] == "bruteforce"
+        await engine.dispose()
+
+
+class TestBruteforceWSEvents:
+    @pytest.mark.asyncio
+    async def test_bruteforce_completed_dispatched(self):
+        from pwnproxy.shared.hooks import HookBus
+        hb = HookBus()
+        q = hb.register("bruteforce.completed")
+        hb.publish("bruteforce.completed", {"job_id": 1, "hits": 5, "tested": 100})
+        payload = await asyncio.wait_for(q.get(), timeout=1.0)
+        assert payload["job_id"] == 1
+        assert payload["hits"] == 5
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_started_dispatched(self):
+        from pwnproxy.shared.hooks import HookBus
+        hb = HookBus()
+        q = hb.register("bruteforce.started")
+        hb.publish("bruteforce.started", {"job_id": 1})
+        payload = await asyncio.wait_for(q.get(), timeout=1.0)
+        assert payload["job_id"] == 1
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_progress_dispatched(self):
+        from pwnproxy.shared.hooks import HookBus
+        hb = HookBus()
+        q = hb.register("bruteforce.progress")
+        hb.publish("bruteforce.progress", {"job_id": 1, "tested": 500, "hits": 3})
+        payload = await asyncio.wait_for(q.get(), timeout=1.0)
+        assert payload["tested"] == 500
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_failed_dispatched(self):
+        from pwnproxy.shared.hooks import HookBus
+        hb = HookBus()
+        q = hb.register("bruteforce.failed")
+        hb.publish("bruteforce.failed", {"error": "timeout"})
+        payload = await asyncio.wait_for(q.get(), timeout=1.0)
+        assert payload["error"] == "timeout"
+

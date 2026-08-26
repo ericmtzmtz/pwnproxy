@@ -73,6 +73,28 @@ export function NotificationLayer() {
         });
         return;
       }
+      if (msg.type === "bruteforce.completed") {
+        addToast({
+          id: generateId(),
+          icon: "🔓",
+          title: "Bruteforce completed",
+          message: `Hits: ${msg.found ?? "?"}, Probed: ${msg.probed ?? "?"}`,
+          navTo: "/bruteforce",
+          severity: "success",
+        });
+        return;
+      }
+      if (msg.type === "bruteforce.failed") {
+        addToast({
+          id: generateId(),
+          icon: "❌",
+          title: "Bruteforce failed",
+          message: (msg.error as string) ?? "Unknown error",
+          navTo: "/bruteforce",
+          severity: "error",
+        });
+        return;
+      }
       const preset = getPreset(msg.type as string);
       if (!preset) return;
 
