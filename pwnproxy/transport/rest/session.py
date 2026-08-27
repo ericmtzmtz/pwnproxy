@@ -163,7 +163,17 @@ async def update_scope(payload: ScopeUpdateRequest, request: Request):
         else:
             await manager._apply_proxy_config()
 
-    # Crawler (subprocess mode): scope snapshot is fixed at spawn, restart it
-    await _restart_crawler_for_scope(request)
+    # Crawler (subprocess mode): publish scope.updated via feed bridge
+    # (restart is the fallback if the worker can't handle live updates)
+    crawler = getattr(request.app.state, "crawler_process", None)
+    if crawler and crawler.running:
+        crawler.send_to_worker("scope.updated", manager.scope.to_dict())
+
+    # Notify in-process consumers (hook_bus subscribers)
+    if manager._on_scope_change:
+        try:
+            await manager._on_scope_change(manager.scope.to_dict())
+        except Exception as exc:
+            logger.warning("Scope change callback failed: %s", exc)
 
     return {"status": "ok", "message": "Scope updated"}

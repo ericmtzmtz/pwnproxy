@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 
 from pwnproxy.services.crawler.storage import DiscoveredURLORM, JobStorage
 from pwnproxy.services.crawler.wordlist import resolve_wordlist, builtin_sizes
+from pwnproxy.services.jobs.lifecycle import JobLifecycle
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,13 @@ async def start_crawl(request: Request, body: CrawlStartRequest):
 
 @router.post("/crawler/stop")
 async def stop_crawl(request: Request):
-    """Stop the active crawl job."""
+    """Stop the active crawl job (idempotent).
+
+    Ownership rule: the crawler worker owns the job lifecycle. When the
+    worker is alive the API only sends the stop intent and the worker
+    persists RUNNING→STOPPING→CANCELLED. When the worker is dead the API
+    acts as executor of last resort so the job never stays RUNNING forever.
+    """
     job_storage = await _get_job_storage(request)
     if job_storage is None:
         raise HTTPException(status_code=503, detail="Crawler storage unavailable")
@@ -119,14 +126,20 @@ async def stop_crawl(request: Request):
     active = await job_storage.list_active()
     job = next((j for j in active if j.get("type") == "active"), None)
     if job is None:
-        return {"stopped": False, "detail": "No active crawl job"}
+        return {"stopped": True, "detail": "No active crawl job"}
 
     crawler = getattr(request.app.state, "crawler_process", None)
-    if crawler and getattr(crawler, "running", False):
+    worker_alive = bool(crawler and getattr(crawler, "running", False))
+    if worker_alive:
         crawler.send_to_worker("crawl.stop", {"job_id": job["id"]})
+        # Intent only: the API does not invent a state it has not persisted.
+        return {"stopped": True, "accepted": True, "job_id": job["id"]}
 
-    await job_storage.update_status(job["id"], "stopped")
-    return {"stopped": True, "job_id": job["id"]}
+    try:
+        await JobLifecycle(job_storage).request_stop(job["id"])
+    except Exception:
+        logger.exception("Crawl stop: state machine transition failed for job %s", job["id"])
+    return {"stopped": True, "accepted": False, "job_id": job["id"], "state": "cancelled"}
 
 
 # ── Bruteforce control ───────────────────────────────────────────────────
@@ -200,6 +213,7 @@ async def start_bruteforce(request: Request, body: BruteforceStartRequest):
 
 @router.post("/bruteforce/stop")
 async def stop_bruteforce(request: Request):
+    """Stop the active bruteforce job (idempotent). Ownership: see stop_crawl."""
     job_storage = await _get_job_storage(request)
     if job_storage is None:
         raise HTTPException(status_code=503, detail="Crawler storage unavailable")
@@ -207,14 +221,19 @@ async def stop_bruteforce(request: Request):
     active = await job_storage.list_active()
     job = next((j for j in active if j.get("type") == "bruteforce"), None)
     if job is None:
-        return {"stopped": False, "detail": "No active bruteforce job"}
+        return {"stopped": True, "detail": "No active bruteforce job"}
 
     crawler = getattr(request.app.state, "crawler_process", None)
-    if crawler and getattr(crawler, "running", False):
+    worker_alive = bool(crawler and getattr(crawler, "running", False))
+    if worker_alive:
         crawler.send_to_worker("bruteforce.stop", {"job_id": job["id"]})
+        return {"stopped": True, "accepted": True, "job_id": job["id"]}
 
-    await job_storage.update_status(job["id"], "stopped")
-    return {"stopped": True, "job_id": job["id"]}
+    try:
+        await JobLifecycle(job_storage).request_stop(job["id"])
+    except Exception:
+        logger.exception("Bruteforce stop: state machine transition failed for job %s", job["id"])
+    return {"stopped": True, "accepted": False, "job_id": job["id"], "state": "cancelled"}
 
 
 @router.get("/bruteforce/wordlists")
@@ -235,7 +254,14 @@ async def crawler_status(request: Request):
     if job_storage:
         try:
             active = await job_storage.list_active()
-            jobs = active
+            # Validate through the canonical Job contract
+            from pwnproxy.shared.contracts.job import Job
+            for raw in active:
+                try:
+                    job = Job.model_validate(raw)
+                    jobs.append(job.model_dump(mode="json"))
+                except Exception:
+                    jobs.append(raw)  # fallback: raw dict if validation fails
         except Exception:
             pass
 

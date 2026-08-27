@@ -314,7 +314,15 @@ class TestWorkerCrawlE2E:
                 "include_discovered": False,
                 "scan_while_crawl": False,
             }
-            await feed_server.publish("crawl.start", {"job_id": 1, "config": crawl_config})
+            # Mimic the API: the main process creates the job row first.
+            pre_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+            st_pre = DiscoveredURLStorage(pre_engine)
+            await st_pre.create_table()
+            js_pre = JobStorage(pre_engine)
+            job_id = await js_pre.create(job_type="active", config=crawl_config)
+            await pre_engine.dispose()
+
+            await feed_server.publish("crawl.start", {"job_id": job_id, "config": crawl_config})
 
             # Wait for crawl.completed or crawl.failed (up to 30s)
             found = False
@@ -413,17 +421,17 @@ class TestWorkerCrawlE2E:
             assert not any(r["topic"] == "crawl.failed" for r in results), \
                 f"unexpected crawl.failed on user stop: {results}"
 
-            # Verify the job transitioned to "stopped" in crawler.db.
+            # Verify the job transitioned to "cancelled" (state machine) in crawler.db.
             check_engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
             try:
                 js = JobStorage(check_engine)
                 for _ in range(40):
                     job = await js.get(job_id)
-                    if job and job["status"] == "stopped":
+                    if job and job["status"] == "cancelled":
                         break
                     await asyncio.sleep(0.05)
                 assert job is not None
-                assert job["status"] == "stopped", f"expected stopped, got {job['status']}"
+                assert job["status"] == "cancelled", f"expected cancelled, got {job['status']}"
                 assert job["finished_at"] is not None
             finally:
                 await check_engine.dispose()
@@ -492,7 +500,8 @@ class TestCrawlerAPI:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
-        assert resp.json()["stopped"] is False
+        # Idempotent: no active job = success
+        assert resp.json()["stopped"] is True
         await engine.dispose()
 
     @pytest.mark.asyncio
@@ -820,14 +829,33 @@ class TestWorkerCrawlE2EExtended:
         event_port = int(raw.split("=")[1])
         return proc, db_path, event_port
 
-    async def _run_crawl(self, feed_server, results: list[dict], config: dict, timeout: float = 30.0) -> list[dict]:
-        await feed_server.publish("crawl.start", {"job_id": 1, "config": config})
+    async def _run_crawl(
+        self,
+        feed_server,
+        results: list[dict],
+        config: dict,
+        timeout: float = 30.0,
+        db_path: str | None = None,
+    ) -> tuple[int, list[dict]]:
+        """Create the job row (mimicking the API) then publish crawl.start.
+        Returns (job_id, results)."""
+        job_id = 1
+        if db_path:
+            engine = create_async_engine(f"sqlite+aiosqlite:///{db_path}", echo=False)
+            try:
+                st = DiscoveredURLStorage(engine)
+                await st.create_table()
+                js = JobStorage(engine)
+                job_id = await js.create(job_type="active", config=config)
+            finally:
+                await engine.dispose()
+        await feed_server.publish("crawl.start", {"job_id": job_id, "config": config})
         for _ in range(int(timeout * 20)):
             for r in results:
                 if r["topic"] in ("crawl.completed", "crawl.failed"):
-                    return results
+                    return job_id, results
             await asyncio.sleep(0.05)
-        return results
+        return job_id, results
 
     @pytest.mark.asyncio
     async def test_include_discovered_adds_seeds(self):
@@ -866,14 +894,14 @@ class TestWorkerCrawlE2EExtended:
             await asyncio.sleep(0.3)
 
             try:
-                results = await self._run_crawl(feed_server, results, {
+                _, results = await self._run_crawl(feed_server, results, {
                     "seeds": [f"http://127.0.0.1:{port}/"],
                     "depth": 2,
                     "rate_limit": 50,
                     "concurrency": 5,
                     "max_urls": 10,
                     "include_discovered": True,
-                })
+                }, db_path=db_path)
                 flows = [r for r in results if r["topic"] == "crawler.flow"]
                 flow_urls = {r["data"]["url"] for r in flows}
                 assert f"http://127.0.0.1:{port}/" in flow_urls, f"seed missing: {flow_urls}"
@@ -946,7 +974,7 @@ class TestWorkerCrawlE2EExtended:
             await site.start()
             port = site._server.sockets[0].getsockname()[1]
 
-            proc, _, event_port = await self._spawn_worker(tmp, feed_server, ["--ssl-insecure"])
+            proc, db_path, event_port = await self._spawn_worker(tmp, feed_server, ["--ssl-insecure"])
             results: list[dict] = []
             results_bridge = TcpBridgeClient(
                 host="127.0.0.1", port=event_port,
@@ -956,13 +984,13 @@ class TestWorkerCrawlE2EExtended:
             await asyncio.sleep(0.3)
 
             try:
-                results = await self._run_crawl(feed_server, results, {
+                _, results = await self._run_crawl(feed_server, results, {
                     "seeds": [f"https://127.0.0.1:{port}/"],
                     "depth": 1,
                     "rate_limit": 50,
                     "concurrency": 1,
                     "max_urls": 10,
-                })
+                }, db_path=db_path)
                 completed = [r for r in results if r["topic"] == "crawl.completed"]
                 assert completed, f"crawl did not complete: {[r['topic'] for r in results]}"
                 assert completed[0]["data"]["fetched"] >= 1, \
@@ -996,7 +1024,7 @@ class TestWorkerCrawlE2EExtended:
             await site.start()
             port = site._server.sockets[0].getsockname()[1]
 
-            proc, _, event_port = await self._spawn_worker(tmp, feed_server, [])
+            proc, db_path, event_port = await self._spawn_worker(tmp, feed_server, [])
             results: list[dict] = []
             results_bridge = TcpBridgeClient(
                 host="127.0.0.1", port=event_port,
@@ -1006,13 +1034,13 @@ class TestWorkerCrawlE2EExtended:
             await asyncio.sleep(0.3)
 
             try:
-                results = await self._run_crawl(feed_server, results, {
+                _, results = await self._run_crawl(feed_server, results, {
                     "seeds": [f"https://127.0.0.1:{port}/"],
                     "depth": 1,
                     "rate_limit": 50,
                     "concurrency": 1,
                     "max_urls": 10,
-                })
+                }, db_path=db_path)
                 completed = [r for r in results if r["topic"] == "crawl.completed"]
                 assert completed, f"crawl did not complete: {[r['topic'] for r in results]}"
                 assert completed[0]["data"]["fetched"] == 0, \
@@ -1055,7 +1083,9 @@ class TestCrawlerAPIConflict:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_stop_marks_job_stopped(self):
+    async def test_stop_sends_intent_when_worker_alive(self):
+        """Ownership: with the worker alive the API only sends the stop
+        intent; the worker owns the RUNNING→STOPPING→CANCELLED transition."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1079,11 +1109,45 @@ class TestCrawlerAPIConflict:
         assert resp.status_code == 200
         assert resp.json()["stopped"] is True
         assert resp.json()["job_id"] == jid
+        # Intent response: no invented state, worker owns the transition.
+        assert resp.json()["accepted"] is True
+        assert "state" not in resp.json()
+
+        # API must NOT write the state: the worker is the owner.
+        job = await js.get(jid)
+        assert job["status"] == "running"
+        crawler_mock.send_to_worker.assert_called_once_with("crawl.stop", {"job_id": jid})
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_stop_transitions_job_when_worker_dead(self):
+        """Ownership fallback: with the worker dead the API transitions the
+        job itself so it never stays RUNNING forever."""
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+
+        js = JobStorage(engine)
+        jid = await js.create(job_type="active", config={"seeds": ["https://x.com"]})
+        await js.update_status(jid, "running")
+
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+
+        crawler_mock = MagicMock()
+        crawler_mock.running = False
+        app.state.crawler_process = crawler_mock
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/crawler/stop")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "cancelled"
 
         job = await js.get(jid)
-        assert job["status"] == "stopped"
+        assert job["status"] == "cancelled"
         assert job["finished_at"] is not None
-        crawler_mock.send_to_worker.assert_called_once_with("crawl.stop", {"job_id": jid})
         await engine.dispose()
 
 
@@ -1368,6 +1432,103 @@ def _published_topics(worker) -> list[str]:
     return [c.args[0] for c in worker._bridge.publish.call_args_list]
 
 
+class TestScopeUpdatedDuringActiveCrawl:
+    """Regression (review blocker): a live scope.updated must affect an ACTIVE
+    crawl — the engine holds a reference to the worker's scope object, so the
+    update must mutate in place and new candidates must respect the new scope."""
+
+    BASE = "https://target.com"
+
+    @pytest.mark.asyncio
+    async def test_scope_update_filters_candidates_mid_crawl(self, monkeypatch):
+        from pwnproxy.services.crawler.crawler_worker import CrawlConfig
+        import pwnproxy.services.crawler.crawler_worker as cw_mod
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+        js = JobStorage(engine)
+        jid = await js.create(job_type="active")
+        await js.transition_status(jid, "running")
+
+        gate = asyncio.Event()
+        base = self.BASE
+        pages = {
+            f"{base}/": '<a href="/a">a</a>',
+            f"{base}/a": '<a href="/b">b</a> <a href="/c">c</a>',
+            f"{base}/b": "b page",
+            f"{base}/c": "c page",
+        }
+
+        class GatedFetcher:
+            """Fetches canned pages; /a blocks on a gate so the test can
+            inject the scope.updated between discovery of /a and its links."""
+
+            def __init__(self):
+                self.fetch_log: list[str] = []
+
+            async def start(self):
+                pass
+
+            async def stop(self):
+                pass
+
+            async def fetch(self, url: str):
+                self.fetch_log.append(url)
+                if url == f"{base}/a":
+                    await gate.wait()
+                body = pages.get(url)
+                if body is None:
+                    return None
+                return {
+                    "method": "GET",
+                    "url": url,
+                    "request_headers": {},
+                    "request_body": None,
+                    "response_headers": {"content-type": "text/html"},
+                    "response_body": body,
+                    "response_body_truncated": False,
+                    "status_code": 200,
+                    "duration_ms": 1.0,
+                    "tls": False,
+                }
+
+        fetcher = GatedFetcher()
+        monkeypatch.setattr(cw_mod, "Fetcher", lambda **kw: fetcher)
+
+        worker = _make_brute_worker(st, js)
+        worker._scope = _scope(["*target.com*"])
+
+        config = CrawlConfig(seeds=[f"{self.BASE}/"], depth=3, concurrency=1, rate_limit=1000.0)
+        task = asyncio.create_task(worker._run_crawl(jid, config))
+
+        # Wait until the seed was fetched and /a is parked on the gate.
+        for _ in range(500):
+            if f"{self.BASE}/a" in fetcher.fetch_log:
+                break
+            await asyncio.sleep(0.01)
+        assert f"{self.BASE}/a" in fetcher.fetch_log, "fetch of /a never started"
+
+        # Live scope update: exclude /b while the crawl is RUNNING.
+        worker._on_feed_event("scope.updated", {
+            "in_scope": ["*target.com*"],
+            "out_of_scope": [f"{self.BASE}/b*"],
+            "enabled": True,
+        })
+        gate.set()
+        await asyncio.wait_for(task, timeout=10)
+
+        fetched = set(fetcher.fetch_log)
+        assert f"{self.BASE}/b" not in fetched, (
+            f"/b was fetched despite live scope exclusion; fetched={fetched}"
+        )
+        assert f"{self.BASE}/c" in fetched, f"/c missing (still in scope); fetched={fetched}"
+
+        job = await js.get(jid)
+        assert job["status"] == "completed"
+        await engine.dispose()
+
+
 class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_completes_cleanly_when_nothing_found(self, monkeypatch):
@@ -1394,6 +1555,8 @@ class TestBruteforceWorkerE2E:
                 detect_soft404=True,
                 rate_limit=1000.0,
             )
+            # Mimic _handle_bruteforce_start: job must be running first.
+            await js.transition_status(jid, "running")
             await worker._run_bruteforce(jid, config)
 
             topics = _published_topics(worker)
@@ -1440,6 +1603,7 @@ class TestBruteforceWorkerE2E:
                 rate_limit=1000.0,
             )
             FakeBruteFetcher.last_instance = None
+            await js.transition_status(jid, "running")
             await worker._run_bruteforce(jid, config)
 
             completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
@@ -1491,6 +1655,7 @@ class TestBruteforceWorkerE2E:
                 max_requests=3,
                 rate_limit=1000.0,
             )
+            await js.transition_status(jid, "running")
             await worker._run_bruteforce(jid, config)
 
             completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
@@ -1526,6 +1691,7 @@ class TestBruteforceWorkerE2E:
                 detect_soft404=False,
                 rate_limit=1000.0,
             )
+            await js.transition_status(jid, "running")
             await worker._run_bruteforce(jid, config)
 
             completed = [c.args[1] for c in worker._bridge.publish.call_args_list if c.args[0] == "bruteforce.completed"][-1]
@@ -1612,7 +1778,7 @@ class TestBruteforceWorkerE2E:
             # Give the fire-and-forget DB update a moment.
             await asyncio.sleep(0.05)
             job = await js.get(jid)
-            assert job["status"] == "stopped"
+            assert job["status"] == "cancelled"
         finally:
             await engine.dispose()
 
@@ -1638,7 +1804,8 @@ class TestBruteforceAPICrossStop:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
-        assert resp.json()["stopped"] is False
+        # Idempotent: no bruteforce job = success (crawl job untouched)
+        assert resp.json()["stopped"] is True
 
         job = await js.get(crawl_jid)
         assert job["status"] == "running"  # untouched
@@ -1664,14 +1831,16 @@ class TestBruteforceAPICrossStop:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
-        assert resp.json()["stopped"] is False
+        # Idempotent: no crawl job = success (bruteforce job untouched)
+        assert resp.json()["stopped"] is True
 
         job = await js.get(bf_jid)
         assert job["status"] == "running"
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_bruteforce_stop_stops_own_job(self):
+    async def test_bruteforce_stop_sends_intent_when_worker_alive(self):
+        """Ownership: worker alive → API sends intent, worker writes state."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1695,12 +1864,41 @@ class TestBruteforceAPICrossStop:
         data = resp.json()
         assert data["stopped"] is True
         assert data["job_id"] == bf_jid
+        assert data["accepted"] is True
+        assert "state" not in data
         crawler_mock.send_to_worker.assert_called_once()
         topic = crawler_mock.send_to_worker.call_args.args[0]
         assert topic == "bruteforce.stop"
 
+        # API must NOT write the state.
         job = await js.get(bf_jid)
-        assert job["status"] == "stopped"
+        assert job["status"] == "running"
+        await engine.dispose()
+
+    @pytest.mark.asyncio
+    async def test_bruteforce_stop_transitions_job_when_worker_dead(self):
+        """Ownership fallback: worker dead → API cancels the job itself."""
+        from pwnproxy.transport.rest.app import app
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
+        st = DiscoveredURLStorage(engine)
+        await st.create_table()
+
+        js = JobStorage(engine)
+        bf_jid = await js.create(job_type="bruteforce", config={"base_urls": ["https://x.com"]})
+        await js.update_status(bf_jid, "running")
+
+        sm = MagicMock()
+        sm.get_crawler_engine.return_value = engine
+        app.state.session_manager = sm
+        app.state.crawler_process = MagicMock(running=False)
+
+        client = TestClient(app, raise_server_exceptions=False)
+        resp = client.post("/api/v1/bruteforce/stop")
+        assert resp.status_code == 200
+        assert resp.json()["state"] == "cancelled"
+
+        job = await js.get(bf_jid)
+        assert job["status"] == "cancelled"
         await engine.dispose()
 
 
@@ -1795,7 +1993,8 @@ class TestBruteforceAPI:
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
-        assert resp.json()["stopped"] is False
+        # Idempotent: no active job = success
+        assert resp.json()["stopped"] is True
         await engine.dispose()
 
     @pytest.mark.asyncio

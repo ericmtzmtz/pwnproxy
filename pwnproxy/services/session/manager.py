@@ -115,6 +115,12 @@ class SessionManager:
         self._proxy_engine: Optional[any] = None
         self._pending_module_state: Optional[dict] = None
         self._crawler_engine = None
+        self._on_scope_change: Optional[Callable] = None
+
+    def set_scope_change_handler(self, handler: Callable) -> None:
+        """Register the callback fired after every scope update with the
+        serialized scope dict (single consumer: the main-process event bus)."""
+        self._on_scope_change = handler
 
     def set_module_providers(self, plugin_loader=None, interceptor_controller=None) -> None:
         self._plugin_loader = plugin_loader

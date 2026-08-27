@@ -484,3 +484,80 @@ class TestWorkerE2E:
             proc.kill()
             await proc.wait()
             await feed_server.stop()
+
+
+class TestScopeUpdatedEvent:
+    """Test that crawler worker handles scope.updated events for live scope sync."""
+
+    def test_scope_updated_replaces_scope(self):
+        """_on_feed_event('scope.updated', ...) replaces the worker's scope."""
+        from argparse import Namespace
+        from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+
+        args = Namespace(
+            db_path=":memory:",
+            feed_port=0,
+            scope_json=json.dumps({"in_scope": ["https://old.com/*"], "enabled": True, "out_of_scope": []}),
+            ssl_insecure=False,
+        )
+        worker = CrawlerWorker(args)
+        assert worker._scope.in_scope == ["https://old.com/*"]
+
+        worker._on_feed_event("scope.updated", {
+            "in_scope": ["https://new.com/*"],
+            "out_of_scope": ["https://ads.com/*"],
+            "enabled": True,
+        })
+        assert worker._scope.in_scope == ["https://new.com/*"]
+        assert worker._scope.out_of_scope == ["https://ads.com/*"]
+
+    def test_scope_updated_affects_filtering(self):
+        """After scope.updated, is_in_scope uses the new scope."""
+        from argparse import Namespace
+        from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+
+        args = Namespace(
+            db_path=":memory:",
+            feed_port=0,
+            scope_json=json.dumps({"in_scope": ["https://old.com/*"], "enabled": True, "out_of_scope": []}),
+            ssl_insecure=False,
+        )
+        worker = CrawlerWorker(args)
+        assert worker._scope.is_in_scope("https://old.com/page")
+        assert not worker._scope.is_in_scope("https://new.com/page")
+
+        worker._on_feed_event("scope.updated", {
+            "in_scope": ["https://new.com/*"],
+            "out_of_scope": [],
+            "enabled": True,
+        })
+        assert not worker._scope.is_in_scope("https://old.com/page")
+        assert worker._scope.is_in_scope("https://new.com/page")
+
+    def test_scope_updated_preserves_object_identity(self):
+        """Regression: scope.updated mutates IN PLACE.
+
+        A running CrawlEngine holds a reference to the worker's scope object;
+        replacing the object would leave the active crawl with a stale
+        snapshot (review blocker: live scope update must affect active jobs).
+        """
+        from argparse import Namespace
+        from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+
+        args = Namespace(
+            db_path=":memory:",
+            feed_port=0,
+            scope_json=json.dumps({"in_scope": ["https://old.com/*"], "enabled": True, "out_of_scope": []}),
+            ssl_insecure=False,
+        )
+        worker = CrawlerWorker(args)
+        original = worker._scope
+
+        worker._on_feed_event("scope.updated", {
+            "in_scope": ["https://new.com/*"],
+            "out_of_scope": ["https://ads.com/*"],
+            "enabled": True,
+        })
+        assert worker._scope is original
+        assert original.in_scope == ["https://new.com/*"]
+        assert original.out_of_scope == ["https://ads.com/*"]

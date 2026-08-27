@@ -9,6 +9,9 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 logger = logging.getLogger(__name__)
 
+# Sentinel: distinguish "leave the error column untouched" from "set to NULL".
+_UNSET = object()
+
 
 class CrawlerBase(DeclarativeBase):
     """Dedicated metadata so discovered_urls is never created inside
@@ -171,20 +174,45 @@ class JobStorage:
             )
             return [self._row_dict(r) for r in result.scalars().all()]
 
-    async def update_status(self, job_id: int, status: str, error: Optional[str] = None) -> None:
-        """Transition job status; sets started_at/finished_at timestamps."""
+    async def update_status(
+        self,
+        job_id: int,
+        status: str,
+        error: Any = _UNSET,
+        expected_status: Optional[str] = None,
+    ) -> int:
+        """Low-level status write. PREFER ``transition_status`` — it enforces
+        the JobState machine; this method only validates enum membership.
+
+        ``expected_status`` turns the write into a compare-and-set: the row
+        is updated only if its current status matches, and the number of
+        affected rows is returned (0 = lost race).
+
+        ``error`` default is a sentinel: when omitted the error column is
+        left untouched; pass ``None`` explicitly to clear it.
+        """
+        from pwnproxy.shared.contracts.job import JobState, _LEGACY_MAP
+        canonical = _LEGACY_MAP.get(status, status)
+        try:
+            JobState(canonical)
+        except ValueError:
+            raise ValueError(f"Invalid job status: {status!r}")
         from sqlalchemy import update
         now = datetime.now(timezone.utc)
-        values: dict[str, Any] = {"status": status, "error": error}
+        values: dict[str, Any] = {"status": status}
+        if error is not _UNSET:
+            values["error"] = error
         if status == "running":
             values["started_at"] = now
-        elif status in ("completed", "failed", "stopped"):
+        elif status in ("completed", "failed", "stopped", "cancelled"):
             values["finished_at"] = now
         async with self._factory() as session:
-            await session.execute(
-                update(JobORM).where(JobORM.id == job_id).values(**values)
-            )
+            stmt = update(JobORM).where(JobORM.id == job_id)
+            if expected_status is not None:
+                stmt = stmt.where(JobORM.status == expected_status)
+            result = await session.execute(stmt.values(**values))
             await session.commit()
+            return result.rowcount
 
     async def update_stats(self, job_id: int, stats: dict) -> None:
         """Replace the JSON stats blob."""
@@ -197,17 +225,145 @@ class JobStorage:
 
     async def mark_stale_running_failed(self) -> int:
         """Mark any jobs stuck in 'running' as 'failed' (crash recovery).
+        Uses the state machine (RUNNING→FAILED is a legal transition).
         Returns the number of affected rows."""
-        from sqlalchemy import update
-        now = datetime.now(timezone.utc)
+        from sqlalchemy import select
         async with self._factory() as session:
             result = await session.execute(
-                update(JobORM)
-                .where(JobORM.status == "running")
-                .values(status="failed", error="worker restarted", finished_at=now)
+                select(JobORM.id).where(JobORM.status == "running")
             )
+            running_ids = [row[0] for row in result.fetchall()]
+        count = 0
+        for jid in running_ids:
+            try:
+                # expected_state=RUNNING: if another actor moved the job since
+                # the SELECT, transition_status skips it (no write).
+                new_status = await self.transition_status(
+                    jid, "failed", error="worker restarted", expected_state="running"
+                )
+                if new_status == "failed":
+                    count += 1
+            except Exception:
+                logger.exception("Crash recovery: failed to mark stale job %s as failed", jid)
+        return count
+
+    async def clone_job(self, original_id: int) -> int:
+        """Create a new job from an existing one (for retry after terminal state).
+
+        Returns the new job id. The original job is NOT modified.
+        """
+        original = await self.get(original_id)
+        if original is None:
+            raise ValueError(f"Job {original_id} not found")
+        now = datetime.now(timezone.utc)
+        record = JobORM(
+            type=original["type"],
+            status="created",
+            config=original["config"],
+            stats="{}",
+            created_at=now,
+        )
+        async with self._factory() as session:
+            session.add(record)
             await session.commit()
-            return result.rowcount
+            return record.id  # type: ignore[return-value]
+
+    async def transition_status(
+        self,
+        job_id: int,
+        target_status: str,
+        error: Optional[str] = None,
+        expected_state: Optional[str] = None,
+    ) -> str:
+        """Load a job, validate the transition via the canonical JobState
+        machine, and persist every step with an atomic compare-and-set.
+
+        Returns the final status string (the winner's state if the race
+        was lost).
+
+        Idempotent: ``current == target`` is a no-op returning the current
+        status. Transitions OUT of a terminal state (COMPLETED/FAILED/
+        CANCELLED) raise ``InvalidJobTransition`` — a terminal job trying to
+        move is a bug, not a no-op (e.g. FAILED → COMPLETED must fail loudly).
+
+        ``expected_state`` guards against TOCTOU: if the job is not in the
+        expected state when read, nothing is written and the current status
+        is returned (the other writer won).
+
+        Operation commands walk their implicit legal path and PERSIST every
+        intermediate state (each step is a CAS UPDATE WHERE status = prev):
+          start:  CREATED → STARTING → RUNNING
+          stop:   RUNNING → STOPPING → CANCELLED
+
+        If any CAS step affects 0 rows, another writer won the race: the
+        transition stops and the winner's current status is returned.
+        """
+        from pwnproxy.shared.contracts.job import (
+            Job,
+            JobState,
+            InvalidJobTransition,
+            TERMINAL_STATES,
+            transition as job_transition,
+        )
+        raw = await self.get(job_id)
+        if raw is None:
+            raise ValueError(f"Job {job_id} not found")
+        # The actual status string in the DB — may be a legacy value
+        # (e.g. "queued") that the CAS must match against on the first step.
+        raw_status = raw.get("status", "created")
+        # Remap ORM column names → contract field names and deserialize JSON blobs
+        import json as _json
+        job_data = {
+            **raw,
+            "state": raw.pop("status", "created"),
+            "config": _json.loads(raw.get("config") or "{}"),
+            "stats": _json.loads(raw.get("stats") or "{}"),
+        }
+        job = Job.model_validate(job_data)
+        current = JobState(job.state) if isinstance(job.state, str) else job.state
+        target = JobState(target_status) if isinstance(target_status, str) else target_status
+        # Idempotent: already in target → no-op.
+        if current == target:
+            return current.value
+        # TOCTOU guard: another writer changed the state since the caller
+        # decided to act — skip without touching anything.
+        if expected_state is not None and current != JobState(expected_state):
+            return current.value
+        # Terminal states have no exit: raise instead of silently ignoring.
+        if current in TERMINAL_STATES:
+            raise InvalidJobTransition(
+                f"Cannot transition terminal job {current.value!r} -> {target.value!r}"
+            )
+
+        # Build the full path of states to persist (implicit legal steps first).
+        path: list[JobState] = []
+        if target == JobState.RUNNING and current == JobState.CREATED:
+            path.append(JobState.STARTING)
+        if target == JobState.CANCELLED and current in (JobState.RUNNING, JobState.STARTING):
+            path.append(JobState.STOPPING)
+        path.append(target)
+
+        prev_value = raw_status
+        for index, step in enumerate(path):
+            job_transition(job, step)  # raises InvalidJobTransition if illegal
+            step_value = job.state if isinstance(job.state, str) else job.state.value
+            step_error = error if index == len(path) - 1 else _UNSET
+            affected = await self.update_status(
+                job_id, step_value, error=step_error, expected_status=prev_value
+            )
+            if affected == 0:
+                # Lost the race: another writer changed the state. Report the
+                # winner's status; do not touch the row.
+                latest = await self.get(job_id)
+                if latest is None:
+                    raise ValueError(f"Job {job_id} disappeared during transition")
+                logger.warning(
+                    "Job %s transition to %s lost race (expected %s, now %s)",
+                    job_id, target.value, prev_value, latest["status"],
+                )
+                return latest["status"]
+            prev_value = step_value
+        return prev_value
 
     @staticmethod
     def _row_dict(record: JobORM) -> dict:

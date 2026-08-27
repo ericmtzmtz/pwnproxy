@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from pwnproxy.transport.rest.app import app
 from pwnproxy.services.session.manager import ScopeConfig, SESSIONS_ROOT, LAST_SESSION_FILE
+from pwnproxy.shared.bus.topics import SCOPE_UPDATED
 
 
 @pytest.fixture
@@ -14,6 +15,7 @@ def test_client(monkeypatch, tmp_path):
     manager.active_path = tmp_path / "test-session"
     manager.has_unsaved_changes = False
     manager.scope = ScopeConfig()
+    manager._on_scope_change = None
     manager.list.return_value = [
         {"name": "test-session", "created_at": "2026-01-01", "last_modified": "2026-01-02"},
         {"name": "other-session", "created_at": "2026-01-03", "last_modified": "2026-01-04"},
@@ -133,3 +135,54 @@ class TestScopeAPI:
         assert resp.status_code == 200
         assert app.state.session_manager.scope.enabled is False
         assert app.state.session_manager.scope.in_scope == []
+
+    def test_update_scope_publishes_event(self, scope_client):
+        """scope.updated is published on hook_bus after a scope change."""
+        hook_bus = app.state.hook_bus
+        queue = hook_bus.register(SCOPE_UPDATED)
+
+        async def _on_scope_change(scope_dict):
+            hook_bus.publish(SCOPE_UPDATED, scope_dict)
+
+        # The mocked manager must emulate the real SessionManager wiring.
+        sm = app.state.session_manager
+        sm.set_scope_change_handler = lambda h: setattr(sm, "_on_scope_change", h)
+        sm.set_scope_change_handler(_on_scope_change)
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={"in_scope": ["https://target.com/*"], "enabled": True},
+        )
+        assert resp.status_code == 200
+        data = queue.get_nowait()
+        assert data["in_scope"] == ["https://target.com/*"]
+        assert data["enabled"] is True
+
+    def test_update_scope_fires_callback(self, scope_client):
+        """scope change handler is called with the scope dict."""
+        callback = AsyncMock()
+        sm = app.state.session_manager
+        sm.set_scope_change_handler = lambda h: setattr(sm, "_on_scope_change", h)
+        sm.set_scope_change_handler(callback)
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={"in_scope": ["https://z.com/*"]},
+        )
+        assert resp.status_code == 200
+        callback.assert_awaited_once()
+        arg = callback.call_args[0][0]
+        assert arg["in_scope"] == ["https://z.com/*"]
+
+    def test_update_scope_sends_to_crawler(self, scope_client):
+        """scope.updated is sent to crawler subprocess via feed bridge."""
+        crawler = MagicMock()
+        crawler.running = True
+        app.state.crawler_process = crawler
+        resp = scope_client.put(
+            "/api/v1/sessions/scope",
+            json={"in_scope": ["https://w.com/*"]},
+        )
+        assert resp.status_code == 200
+        crawler.send_to_worker.assert_called_once()
+        call_args = crawler.send_to_worker.call_args
+        assert call_args[0][0] == "scope.updated"
+        assert call_args[0][1]["in_scope"] == ["https://w.com/*"]

@@ -23,6 +23,7 @@ from pwnproxy.services.crawler.engine import CrawlConfig, CrawlEngine
 from pwnproxy.services.crawler.extractor import extract_from_headers, extract_urls
 from pwnproxy.services.crawler.fetcher import Fetcher, learn_baseline
 from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
+from pwnproxy.services.jobs.lifecycle import JobLifecycle
 from pwnproxy.services.session.manager import ScopeConfig
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient, TcpBridgeServer
 
@@ -59,6 +60,7 @@ class CrawlerWorker:
         self._bridge = TcpBridgeServer()
         self._storage: DiscoveredURLStorage | None = None
         self._job_storage: JobStorage | None = None
+        self._lifecycle_obj: JobLifecycle | None = None
         scope_data = json.loads(args.scope_json) if args.scope_json else None
         self._scope = ScopeConfig(scope_data)
         self._feed_client = TcpBridgeClient(
@@ -71,6 +73,14 @@ class CrawlerWorker:
         self._active_job_id: int | None = None
         self._stop_requested = False
 
+    @property
+    def _lifecycle(self) -> JobLifecycle | None:
+        """Lazy lifecycle service over the job storage (None until started or
+        injected by tests)."""
+        if getattr(self, "_lifecycle_obj", None) is None and self._job_storage is not None:
+            self._lifecycle_obj = JobLifecycle(self._job_storage)
+        return getattr(self, "_lifecycle_obj", None)
+
     async def start(self) -> None:
         engine = create_async_engine(f"sqlite+aiosqlite:///{self._db_path}", echo=False)
         self._storage = DiscoveredURLStorage(engine)
@@ -78,7 +88,7 @@ class CrawlerWorker:
         self._job_storage = JobStorage(engine)
 
         # Crash recovery: mark stale running jobs as failed.
-        stale = await self._job_storage.mark_stale_running_failed()
+        stale = await self._lifecycle.recover_stale()
         if stale:
             logger.info("Crash recovery: marked %d stale running job(s) as failed", stale)
 
@@ -111,6 +121,20 @@ class CrawlerWorker:
     # ── Feed event dispatcher ────────────────────────────────────────
 
     def _on_feed_event(self, topic: str, data: dict) -> None:
+        if topic == "scope.updated" and isinstance(data, dict):
+            new_scope = ScopeConfig(data)
+            if self._scope is not None:
+                # Mutate IN PLACE: a running CrawlEngine holds a reference to
+                # this object, so replacing it would leave the active crawl
+                # with a stale scope snapshot.
+                self._scope.in_scope = new_scope.in_scope
+                self._scope.out_of_scope = new_scope.out_of_scope
+                self._scope.enabled = new_scope.enabled
+            else:
+                self._scope = new_scope
+            logger.info("Scope updated live: in=%d out=%d enabled=%s",
+                        len(self._scope.in_scope), len(self._scope.out_of_scope), self._scope.enabled)
+            return
         if topic == "crawl.start" and isinstance(data, dict):
             asyncio.create_task(self._handle_crawl_start(data))
             return
@@ -152,8 +176,8 @@ class CrawlerWorker:
         )
         self._active_job_id = job_id
         await self._bridge.publish("crawl.started", {"job_id": job_id})
-        if self._job_storage and job_id:
-            await self._job_storage.update_status(job_id, "running")
+        if self._lifecycle and job_id:
+            await self._lifecycle.start(job_id)
         self._active_task = asyncio.create_task(self._run_crawl(job_id, config))
 
     def _handle_crawl_stop(self, msg: dict) -> None:
@@ -162,8 +186,8 @@ class CrawlerWorker:
             logger.info("Stopping crawl job %s", job_id)
             self._stop_requested = True
             self._active_task.cancel()
-        if self._job_storage and job_id:
-            asyncio.create_task(self._job_storage.update_status(job_id, "stopped"))
+        if self._lifecycle and job_id:
+            asyncio.create_task(self._lifecycle.safe_request_stop(job_id))
         self._active_task = None
 
     async def _handle_bruteforce_start(self, msg: dict) -> None:
@@ -186,8 +210,8 @@ class CrawlerWorker:
         )
         self._active_job_id = job_id
         await self._bridge.publish("bruteforce.started", {"job_id": job_id})
-        if self._job_storage and job_id:
-            await self._job_storage.update_status(job_id, "running")
+        if self._lifecycle and job_id:
+            await self._lifecycle.start(job_id)
         self._active_task = asyncio.create_task(self._run_bruteforce(job_id, config))
 
     def _handle_bruteforce_stop(self, msg: dict) -> None:
@@ -196,8 +220,8 @@ class CrawlerWorker:
             logger.info("Stopping bruteforce job %s", job_id)
             self._stop_requested = True
             self._active_task.cancel()
-        if self._job_storage and job_id:
-            asyncio.create_task(self._job_storage.update_status(job_id, "stopped"))
+        if self._lifecycle and job_id:
+            asyncio.create_task(self._lifecycle.safe_request_stop(job_id))
         self._active_task = None
 
     async def _run_crawl(self, job_id: int | None, config: CrawlConfig) -> None:
@@ -248,16 +272,16 @@ class CrawlerWorker:
                 await fetcher.stop()
 
             # Mark completed.
-            if self._job_storage and job_id:
-                await self._job_storage.update_stats(job_id, engine.stats.to_dict())
-                await self._job_storage.update_status(job_id, "completed")
+            if self._lifecycle and job_id:
+                await self._lifecycle.update_stats(job_id, engine.stats.to_dict())
+                await self._lifecycle.complete(job_id)
             await self._bridge.publish("crawl.completed", {
                 "job_id": job_id,
                 **engine.stats.to_dict(),
             })
         except asyncio.CancelledError:
-            if self._job_storage and job_id:
-                await self._job_storage.update_status(job_id, "stopped")
+            if self._lifecycle and job_id:
+                await self._lifecycle.safe_cancel(job_id)
             if not self._stop_requested:
                 await self._bridge.publish("crawl.failed", {
                     "job_id": job_id,
@@ -271,9 +295,9 @@ class CrawlerWorker:
                 else {"fetched": 0, "queued": 0, "discovered": 0, "errors": 0, "maxed": False}
             )
             stats["errors"] = stats.get("errors", 0) + 1
-            if self._job_storage and job_id:
-                await self._job_storage.update_stats(job_id, stats)
-                await self._job_storage.update_status(job_id, "failed", error=str(exc))
+            if self._lifecycle and job_id:
+                await self._lifecycle.update_stats(job_id, stats)
+                await self._lifecycle.safe_fail(job_id, str(exc))
             await self._bridge.publish("crawl.failed", {
                 "job_id": job_id,
                 "error": str(exc),
@@ -405,25 +429,25 @@ class CrawlerWorker:
                 }
                 await self._bridge.publish("bruteforce.progress", {"job_id": job_id, **stats})
 
-                if self._job_storage and job_id:
-                    await self._job_storage.update_stats(job_id, stats)
-                    await self._job_storage.update_status(job_id, "completed")
+                if self._lifecycle and job_id:
+                    await self._lifecycle.update_stats(job_id, stats)
+                    await self._lifecycle.complete(job_id)
                 await self._bridge.publish("bruteforce.completed", {"job_id": job_id, **stats})
 
             finally:
                 await fetcher.stop()
 
         except asyncio.CancelledError:
-            if self._job_storage and job_id:
-                await self._job_storage.update_status(job_id, "stopped")
+            if self._lifecycle and job_id:
+                await self._lifecycle.safe_cancel(job_id)
             if not self._stop_requested:
                 await self._bridge.publish("bruteforce.failed", {
                     "job_id": job_id, "error": "cancelled",
                 })
         except Exception as exc:
             logger.exception("Bruteforce job %s failed", job_id)
-            if self._job_storage and job_id:
-                await self._job_storage.update_status(job_id, "failed", error=str(exc))
+            if self._lifecycle and job_id:
+                await self._lifecycle.safe_fail(job_id, str(exc))
             await self._bridge.publish("bruteforce.failed", {
                 "job_id": job_id, "error": str(exc),
             })

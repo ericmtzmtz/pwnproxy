@@ -206,6 +206,14 @@ def start(
                 logger.warning("crawler session-change hook failed: %s", _exc)
 
         session_manager._on_session_change = _on_session_change
+
+        # Scope change callback: publish scope.updated on hook_bus
+        from pwnproxy.shared.bus.topics import SCOPE_UPDATED
+
+        async def _on_scope_change(scope_dict: dict) -> None:
+            hook_bus.publish(SCOPE_UPDATED, scope_dict)
+
+        session_manager.set_scope_change_handler(_on_scope_change)
         # Override proxy host/port with CLI values BEFORE any session ops
         session_manager.proxy_config.host = host
         session_manager.proxy_config.port = proxy_port
