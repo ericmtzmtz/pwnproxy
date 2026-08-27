@@ -28,6 +28,14 @@ apps/web/dist/
 # Temp files
 cookies.txt
 
+# Build artifacts + review diffs
+*.zip
+*.diff
+
+# Internal drafts
+docs/pwnproxy_analisis.md
+docs/pwnproxy_post_linkedin.md
+
 # Astro auto-generated
 apps/web/.astro/
 
