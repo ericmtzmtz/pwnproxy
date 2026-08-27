@@ -1,5 +1,6 @@
 """UnifiedLLMClient: provider chain with fallback, circuit breaker, structured output."""
 import json
+import logging
 import re
 import time
 from typing import Optional, Protocol, TypeVar
@@ -10,6 +11,8 @@ from pydantic import BaseModel, ValidationError
 from pwnproxy.ai.llm.errors import LLMSchemaError, LLMTimeout, LLMUnavailable
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest, LLMResponse
 from pwnproxy.ai.llm.usage import UsageLedger
+
+logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -104,6 +107,7 @@ class UnifiedLLMClient:
             except (LLMTimeout, LLMUnavailable) as e:
                 self.circuit.record_failure(name)
                 last_error = e
+                logger.warning("LLM provider %s failed: %s (falling through chain)", name, e)
                 if self._ledger is not None:
                     status = "timeout" if isinstance(e, LLMTimeout) else "error"
                     await self._ledger.record_error(name, status, str(e), self._summary(request))

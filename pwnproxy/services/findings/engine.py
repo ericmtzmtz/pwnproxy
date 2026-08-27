@@ -17,7 +17,7 @@ def _get_env() -> Environment:
     global _env
     if _env is None:
         _env = Environment(
-            loader=PackageLoader("pwnproxy.export", "templates"),
+            loader=PackageLoader("pwnproxy.services.findings", "templates"),
             autoescape=select_autoescape(["html", "xml"]),
         )
     return _env
