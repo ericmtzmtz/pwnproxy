@@ -35,6 +35,12 @@ httpx = "^0.28"
 [tool.poetry.scripts]
 pwnproxy = "apps.terminal.cli:app"
 
+[tool.pytest.ini_options]
+markers = [
+    "golden: end-to-end golden workflow tests (deselect with '-m not golden')",
+    "live: tests against real targets (bWAPP + real LLM API), opt-in, never in CI",
+]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
