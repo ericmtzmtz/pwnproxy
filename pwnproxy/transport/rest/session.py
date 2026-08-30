@@ -141,14 +141,13 @@ async def get_scope(request: Request):
 @router.put("/sessions/scope")
 async def update_scope(payload: ScopeUpdateRequest, request: Request):
     manager = request.app.state.session_manager
-    from pwnproxy.services.session.manager import ScopeConfig
     data = payload.model_dump(exclude_unset=True)
     if "in_scope" in data and "enabled" not in data:
         data["enabled"] = True
-    manager.scope = ScopeConfig(data)
-    await manager.save()
+    # SessionManager owns the scope write (mutate + save + publish callback).
+    scope_dict = await manager.update_scope(data)
 
-    # ── Push scope filter to running components ──
+    # ── Push scope filter to running components (transport fan-out) ──
     # HookBus: dynamic lambda, scope is already updated on SessionManager
     # Interceptor addon (embedded mode): re-wire if available
     intercept = getattr(request.app.state, "interceptor_controller", None)
@@ -159,7 +158,7 @@ async def update_scope(payload: ScopeUpdateRequest, request: Request):
     proxy = manager.get_proxy_engine()
     if proxy and hasattr(proxy, "running") and proxy.running:
         if hasattr(proxy, "send_scope_update"):
-            await proxy.send_scope_update(scope_json=json.dumps(manager.scope.to_dict()))
+            await proxy.send_scope_update(scope_json=json.dumps(scope_dict))
         else:
             await manager._apply_proxy_config()
 
@@ -167,13 +166,6 @@ async def update_scope(payload: ScopeUpdateRequest, request: Request):
     # (restart is the fallback if the worker can't handle live updates)
     crawler = getattr(request.app.state, "crawler_process", None)
     if crawler and crawler.running:
-        crawler.send_to_worker("scope.updated", manager.scope.to_dict())
-
-    # Notify in-process consumers (hook_bus subscribers)
-    if manager._on_scope_change:
-        try:
-            await manager._on_scope_change(manager.scope.to_dict())
-        except Exception as exc:
-            logger.warning("Scope change callback failed: %s", exc)
+        crawler.send_to_worker("scope.updated", scope_dict)
 
     return {"status": "ok", "message": "Scope updated"}

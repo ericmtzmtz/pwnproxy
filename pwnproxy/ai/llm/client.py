@@ -53,6 +53,20 @@ class CircuitBreaker:
         if self._failures[provider] >= self.threshold:
             self._opened_at[provider] = time.monotonic()
 
+    def circuit_state(self, provider: str) -> str:
+        """Return 'open', 'closed', or 'half-open' for a provider.
+
+        'half-open' means: cooldown expired (_opened_at still set) and there
+        are recorded failures, so the provider is being tested. record_success()
+        clears _opened_at (→ closed); record_failure() above threshold re-opens.
+        """
+        if self.is_open(provider):
+            return "open"
+        opened_at = self._opened_at.get(provider)
+        if opened_at is not None and self._failures.get(provider, 0) > 0:
+            return "half-open"
+        return "closed"
+
 
 def extract_json(text: str) -> str:
     """Strip markdown fences / surrounding prose and return the JSON payload string."""
@@ -88,21 +102,48 @@ class UnifiedLLMClient:
     def chain(self) -> list[str]:
         return list(self._chain)
 
+    def _next_candidate(self, after: str) -> str:
+        """Look ahead in chain to find the next provider that would actually be tried."""
+        names = list(self._chain)
+        try:
+            idx = names.index(after)
+        except ValueError:
+            return ""
+        for n in names[idx + 1:]:
+            provider = self._providers.get(n)
+            if provider is not None and not self.circuit.is_open(n):
+                return n
+        return ""
+
     def _summary(self, request: LLMRequest) -> str:
         last_user = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
         return last_user
 
-    async def generate(self, request: LLMRequest) -> LLMResponse:
+    async def generate(
+        self,
+        request: LLMRequest,
+        *,
+        workflow: str = "",
+        operation: str = "",
+        schema_retry: int = 0,
+    ) -> LLMResponse:
         last_error: Exception | None = None
+        fallback_from: str = ""
         for name in self._chain:
             provider = self._providers.get(name)
             if provider is None or self.circuit.is_open(name):
                 continue
+            circuit = self.circuit.circuit_state(name)
             try:
                 resp = await provider.generate(request, self._http)
                 self.circuit.record_success(name)
                 if self._ledger is not None:
-                    await self._ledger.record_ok(resp, self._summary(request))
+                    await self._ledger.record_ok(
+                        resp, self._summary(request),
+                        workflow=workflow, operation=operation,
+                        fallback_from=fallback_from, circuit_state=circuit,
+                        schema_retry=schema_retry,
+                    )
                 return resp
             except (LLMTimeout, LLMUnavailable) as e:
                 self.circuit.record_failure(name)
@@ -110,19 +151,34 @@ class UnifiedLLMClient:
                 logger.warning("LLM provider %s failed: %s (falling through chain)", name, e)
                 if self._ledger is not None:
                     status = "timeout" if isinstance(e, LLMTimeout) else "error"
-                    await self._ledger.record_error(name, status, str(e), self._summary(request))
+                    await self._ledger.record_error(
+                        name, status, str(e), self._summary(request),
+                        workflow=workflow, operation=operation,
+                        fallback_from=fallback_from,
+                        fallback_to=self._next_candidate(name),
+                        circuit_state=circuit,
+                        schema_retry=schema_retry,
+                    )
+                fallback_from = name
         if last_error is not None:
             raise last_error
         raise LLMUnavailable("-", "no LLM provider configured (set an api_key or install/run Ollama)")
 
-    async def generate_structured(self, request: LLMRequest, schema: type[T]) -> tuple[T, "LLMResponse"]:
+    async def generate_structured(
+        self,
+        request: LLMRequest,
+        schema: type[T],
+        *,
+        workflow: str = "",
+        operation: str = "",
+    ) -> tuple[T, "LLMResponse"]:
         first = request.model_copy(update={"json_mode": True})
         messages = list(first.messages)
         if not any(m.role == "system" and _JSON_INSTRUCTION in m.content for m in messages):
             messages.append(LLMMessage(role="system", content=_JSON_INSTRUCTION))
         first = first.model_copy(update={"messages": messages})
 
-        resp = await self.generate(first)
+        resp = await self.generate(first, workflow=workflow, operation=operation)
         parsed = self._validate(resp.text, schema)
         if parsed is not None:
             return parsed, resp
@@ -143,7 +199,7 @@ class UnifiedLLMClient:
                 ]
             }
         )
-        resp2 = await self.generate(retry_request)
+        resp2 = await self.generate(retry_request, workflow=workflow, operation=operation, schema_retry=1)
         parsed2 = self._validate(resp2.text, schema)
         if parsed2 is not None:
             return parsed2, resp2

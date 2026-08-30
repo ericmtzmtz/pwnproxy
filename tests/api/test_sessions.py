@@ -21,6 +21,15 @@ def test_client(monkeypatch, tmp_path):
         {"name": "other-session", "created_at": "2026-01-03", "last_modified": "2026-01-04"},
     ]
 
+    async def _update_scope(data):
+        manager.scope = ScopeConfig(data)
+        await manager.save()
+        if manager._on_scope_change:
+            await manager._on_scope_change(manager.scope.to_dict())
+        return manager.scope.to_dict()
+
+    manager.update_scope = _update_scope
+
     app.state.session_manager = manager
     app.state.plugin_loader = None
     app.state.proxy_port = 19999

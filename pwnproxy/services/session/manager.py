@@ -122,6 +122,24 @@ class SessionManager:
         serialized scope dict (single consumer: the main-process event bus)."""
         self._on_scope_change = handler
 
+    async def update_scope(self, data: dict) -> dict:
+        """Single write point for scope (ownership matrix: SessionManager is
+        the scope owner). Mutates the config, persists, and publishes via the
+        scope-change handler. Returns the serialized scope.
+
+        Transport layers (REST/TUI/CLI) MUST call this instead of assigning
+        ``manager.scope`` directly — component fan-out (proxy/crawler) stays
+        in the transport because it needs app-level component handles.
+        """
+        self.scope = ScopeConfig(data)
+        await self.save()
+        if self._on_scope_change:
+            try:
+                await self._on_scope_change(self.scope.to_dict())
+            except Exception as exc:
+                logger.warning("Scope change callback failed: %s", exc)
+        return self.scope.to_dict()
+
     def set_module_providers(self, plugin_loader=None, interceptor_controller=None) -> None:
         self._plugin_loader = plugin_loader
         self._interceptor_controller = interceptor_controller

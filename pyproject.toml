@@ -39,6 +39,7 @@ pwnproxy = "apps.terminal.cli:app"
 markers = [
     "golden: end-to-end golden workflow tests (deselect with '-m not golden')",
     "live: tests against real targets (bWAPP + real LLM API), opt-in, never in CI",
+    "perf: performance baseline test (opt-in via --perf-record/--perf-check)",
 ]
 
 [build-system]

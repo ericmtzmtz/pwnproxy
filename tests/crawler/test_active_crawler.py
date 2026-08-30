@@ -1414,6 +1414,7 @@ class FakeBruteFetcher:
 def _make_brute_worker(storage, job_storage):
     """Build a CrawlerWorker via __new__ with test doubles injected."""
     from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
+    from pwnproxy.services.crawler.events import EventPublisher
 
     w = CrawlerWorker.__new__(CrawlerWorker)
     w._scope = _scope(["*target.com*"])
@@ -1422,9 +1423,8 @@ def _make_brute_worker(storage, job_storage):
     w._bridge.publish = AsyncMock()
     w._storage = storage
     w._job_storage = job_storage
-    w._stop_requested = False
-    w._active_task = None
-    w._active_job_id = None
+    w._state = {"active_task": None, "active_job_id": None, "stop_requested": False}
+    w._events = EventPublisher(w._bridge)
     return w
 
 
@@ -1719,7 +1719,7 @@ class TestBruteforceWorkerE2E:
             monkeypatch.setattr(cw_mod, "Fetcher", fake)
 
             worker = _make_brute_worker(st, None)
-            worker._stop_requested = True  # user already asked to stop
+            worker._state["stop_requested"] = True  # user already asked to stop
             config = BruteforceConfig(
                 base_urls=["https://target.com"],
                 wordlist=["admin", "login"],
@@ -1750,7 +1750,7 @@ class TestBruteforceWorkerE2E:
 
             worker = CrawlerWorker.__new__(CrawlerWorker)
             worker._job_storage = js
-            worker._stop_requested = False
+            worker._state = {"active_task": None, "active_job_id": None, "stop_requested": False}
 
             started = asyncio.Event()
             finished = asyncio.Event()
@@ -1763,8 +1763,8 @@ class TestBruteforceWorkerE2E:
                     finished.set()
                     raise
 
-            worker._active_task = asyncio.create_task(_dummy())
-            task_ref = worker._active_task
+            worker._state["active_task"] = asyncio.create_task(_dummy())
+            task_ref = worker._state["active_task"]
             await asyncio.wait_for(started.wait(), timeout=1.0)
 
             worker._handle_bruteforce_stop({"job_id": jid})
@@ -1772,8 +1772,8 @@ class TestBruteforceWorkerE2E:
             with pytest.raises(asyncio.CancelledError):
                 await task_ref
             assert finished.is_set() is True
-            assert worker._active_task is None
-            assert worker._stop_requested is True
+            assert worker._state["active_task"] is None
+            assert worker._state["stop_requested"] is True
 
             # Give the fire-and-forget DB update a moment.
             await asyncio.sleep(0.05)

@@ -123,7 +123,12 @@ async def test_tcp_bridge_send_receive():
     await asyncio.sleep(0.3)
 
     await server.publish("proxy.flow", {"id": "test-1"})
-    await asyncio.sleep(0.3)
+
+    # Poll instead of fixed sleep — consumer needs event loop time
+    for _ in range(20):
+        await asyncio.sleep(0.1)
+        if received:
+            break
 
     await client.stop()
     await server.stop()

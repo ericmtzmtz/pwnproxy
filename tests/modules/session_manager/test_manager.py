@@ -82,3 +82,52 @@ def test_scope_config_url_without_scheme(mock_sessions_root):
     scope = ScopeConfig({"enabled": True, "in_scope": ["*.target.com"]})
     assert not scope.is_in_scope("http://evil.com/test")
     assert scope.is_in_scope("http://sub.target.com/test")
+
+
+class TestUpdateScopeOwnerAPI:
+    """SessionManager.update_scope is the single scope write point (ownership
+    matrix). It must mutate config, persist, and fire the change handler."""
+
+    def _manager(self, monkeypatch, tmp_path):
+        from unittest.mock import AsyncMock
+        import asyncio
+        from pwnproxy.services.session.manager import LAST_SESSION_FILE
+        monkeypatch.setattr("pwnproxy.services.session.manager.SESSIONS_ROOT", tmp_path)
+        monkeypatch.setattr("pwnproxy.services.session.manager.LAST_SESSION_FILE", tmp_path / ".last_session")
+        m = SessionManager.__new__(SessionManager)
+        m._active_name = "s"
+        m._active_path = tmp_path / "s"
+        m._save_lock = asyncio.Lock()
+        m._traffic_engine = AsyncMock()
+        m._scanner_engine = AsyncMock()
+        m._token_storage = AsyncMock()
+        m._on_scope_change = None
+        m.scope = ScopeConfig()
+        m.save = AsyncMock()
+        return m
+
+    @pytest.mark.asyncio
+    async def test_update_scope_mutates_and_saves(self, monkeypatch, tmp_path):
+        m = self._manager(monkeypatch, tmp_path)
+        result = await m.update_scope({"in_scope": ["https://x.com/*"], "enabled": True})
+        assert m.scope.in_scope == ["https://x.com/*"]
+        assert result["in_scope"] == ["https://x.com/*"]
+        m.save.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_update_scope_fires_handler(self, monkeypatch, tmp_path):
+        from unittest.mock import AsyncMock
+        m = self._manager(monkeypatch, tmp_path)
+        handler = AsyncMock()
+        m._on_scope_change = handler
+        await m.update_scope({"in_scope": ["https://z.com/*"]})
+        handler.assert_awaited_once()
+        assert handler.call_args[0][0]["in_scope"] == ["https://z.com/*"]
+
+    @pytest.mark.asyncio
+    async def test_update_scope_handler_error_does_not_raise(self, monkeypatch, tmp_path):
+        from unittest.mock import AsyncMock
+        m = self._manager(monkeypatch, tmp_path)
+        m._on_scope_change = AsyncMock(side_effect=RuntimeError("boom"))
+        result = await m.update_scope({"enabled": False})
+        assert result["enabled"] is False

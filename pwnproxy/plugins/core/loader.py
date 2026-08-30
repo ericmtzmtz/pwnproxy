@@ -19,6 +19,22 @@ class PluginLoadError(Exception):
     pass
 
 
+def _implicit_consumes(plugin: PwnPlugin) -> List[str]:
+    """Channels a plugin consumes implicitly via duck-typed handlers.
+
+    Shared by ``load``, ``start`` and ``activate`` (3 real consumers) — the
+    same computation was duplicated verbatim in all three before extraction.
+    """
+    implicit: List[str] = []
+    if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
+        implicit.append("finding")
+    if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
+        implicit.append("surface")
+    if hasattr(plugin, "on_evidence") and "evidence" not in plugin.metadata.consumes:
+        implicit.append("evidence")
+    return implicit
+
+
 class UniversalPluginLoader:
     """Universal plugin loader that connects plugins based on contracts."""
     
@@ -65,13 +81,7 @@ class UniversalPluginLoader:
             channel_mapping = {}
         
         # Register channels that the plugin consumes from, including implicit handlers
-        implicit_consumes = []
-        if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
-            implicit_consumes.append("finding")
-        if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
-            implicit_consumes.append("surface")
-        if hasattr(plugin, "on_evidence") and "evidence" not in plugin.metadata.consumes:
-            implicit_consumes.append("evidence")
+        implicit_consumes = _implicit_consumes(plugin)
         # Combine explicit and implicit consumes
         all_consumes = list(plugin.metadata.consumes) + implicit_consumes
         # Register consume channels (tasks will be started in start())
@@ -236,13 +246,7 @@ class UniversalPluginLoader:
             plugins_to_start = dict(self._plugins)
         
         for pname, plugin in plugins_to_start.items():
-            implicit_consumes = []
-            if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
-                implicit_consumes.append("finding")
-            if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
-                implicit_consumes.append("surface")
-            if hasattr(plugin, "on_evidence") and "evidence" not in plugin.metadata.consumes:
-                implicit_consumes.append("evidence")
+            implicit_consumes = _implicit_consumes(plugin)
             all_consumes = list(plugin.metadata.consumes) + implicit_consumes
             for consume_type in all_consumes:
                 channel_name = consume_type
@@ -370,13 +374,7 @@ class PluginLoader(UniversalPluginLoader):
             logger.debug("Plugin %s is already enabled", name)
             return True
         plugin.metadata.disabled = False
-        implicit_consumes = []
-        if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
-            implicit_consumes.append("finding")
-        if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
-            implicit_consumes.append("surface")
-        if hasattr(plugin, "on_evidence") and "evidence" not in plugin.metadata.consumes:
-            implicit_consumes.append("evidence")
+        implicit_consumes = _implicit_consumes(plugin)
         all_consumes = list(plugin.metadata.consumes) + implicit_consumes
         for consume_type in all_consumes:
             channel_name = consume_type

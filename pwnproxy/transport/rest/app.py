@@ -1,8 +1,10 @@
 import os
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import Response
 
+from pwnproxy.shared.observability import gen_correlation_id, set_correlation_id
 from pwnproxy.transport.rest import crawler, findings, health, interceptor, intruder, plugins, proxy, repeater, reports, scanners, session, tasks, tokens, traffic
 from pwnproxy.transport.ws.events import router as ws_router
 
@@ -14,6 +16,17 @@ app = FastAPI(
     description="Control plane for pwnproxy - traffic, findings, sessions, interceptor, repeater, intruder, plugins, scan",
     version="0.1.0",
 )
+
+
+@app.middleware("http")
+async def correlation_middleware(request: Request, call_next):
+    """Assign a correlation_id to every request and propagate via contextvar."""
+    cid = request.headers.get("X-Correlation-ID") or gen_correlation_id()
+    set_correlation_id(cid)
+    response: Response = await call_next(request)
+    response.headers["X-Correlation-ID"] = cid
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,

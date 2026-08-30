@@ -402,6 +402,14 @@ class TestWorkerE2E:
 
             assert found, "Worker should persist discovered URL from fed flow"
 
+            # Wait for the crawler.url event to arrive via the results bridge.
+            # (The worker publishes events through a QoS queue + consumer task,
+            # which adds ~100ms latency vs. the old direct-write path.)
+            for _ in range(30):
+                if any(r["topic"] == "crawler.url" for r in results):
+                    break
+                await asyncio.sleep(0.1)
+
             # Verify results bridge received crawler.url event
             assert any(r["topic"] == "crawler.url" for r in results)
 
