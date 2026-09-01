@@ -7,6 +7,39 @@ Versions are not yet tagged; this file tracks work since the hardening cycle.
 
 ## Unreleased (0.2.0-dev)
 
+### DOM XSS Detection
+
+#### Added
+- **Detección de DOM XSS (estática)**: nueva etapa `DomStage` (corre en todos los depths, costo regex-only sobre la respuesta del probe) con dos señales:
+  - **canary-in-sink**: el canary inyectado aparece dentro de una sink DOM en el script servido.
+  - **param-reads-location**: el script lee el NOMBRE del parámetro desde `location.href/search/hash` (indexOf/split/substring) o `URLSearchParams.get()` y el mismo bloque escribe a una sink — patrón clásico DVWA xss_d donde el servidor NO refleja el valor.
+- Sinks cubiertas: `document.write`, `innerHTML`/`outerHTML`/`insertAdjacentHTML`, `eval`/`Function`, `setTimeout`/`setInterval`, `location.href`/`assign`/`replace`, `window.open`, `document.location`. Emite `dom-xss` con `confidence="inferred"` y `severity="medium"` — sin ejecutar JS.
+- **Anti-duplicado con reflected**: si el canary está en el HTML body, `ReflectedStage` lo cubre y `DomStage` no reporta.
+- **`dom_sinks.py`**: matcher de sinks por regex con canary/param escapados, extensible a nuevas sinks.
+- **Verificado en vivo**: el lab `xss_d` de DVWA ahora emite `dom-xss inferred` (sink `document.write`).
+
+### SSRF Scanner Accuracy
+
+#### Added
+- **Confirmación OOB obligatoria**: el scanner SSRF solo reporta cuando el callback server recibe la petición del canary inyectado (evidencia real de que el servidor hizo una petición al callback). Un response HTTP (200/302/...) ya no cuenta como SSRF.
+- **Filtro de parámetros URL-like**: solo se testean parámetros cuyo nombre sugiera URL/path (`url`, `uri`, `redirect`, `callback`, `file`, ...); se descartan `Referer`/`User-Agent` y parámetros genéricos (`name`, `id`, `default`).
+- **Fail-closed**: si el callback server no está corriendo, el scanner no emite findings SSRF.
+- **Fix `HTTPCallbackServer`**: al enlazar a puerto 0 (ephemeral), el puerto real ahora se propaga a `get_callback_url()` (antes devolvía `http://host:0/...` inalcanzable).
+
+#### Removed
+- **Técnica `ssrf-error-based`**: eliminada — reportaba cualquier response < 400 como SSRF, generando falsos positivos masivos en el auto-scan del proxy.
+
+### Proxy Scope Enforcement
+
+#### Added
+- **Scope enforcement en persistencia**: `StorageAddon` acepta un `FlowFilter` opcional y descarta flows out-of-scope antes de escribir a `traffic.db` y de publicar `flow_stored`/`done` (el auto-scan ya no toca sitios fuera de scope). `HookRelayAddon` y el `BridgeRelay` del worker filtran request + response + error de forma consistente.
+- **`FlowFilter.set_scope()`**: hot-swap del scope sin reconstruir addons; `reload_scope()` del worker y el `update_scope` de la API lo propagan en runtime (file-watch/Windows, signal/POSIX, y modo embedded).
+- **Matcher por candidatos**: `ScopeConfig.is_in_scope` evalúa cada patrón contra `netloc` (`host:port`), hostname y URL completa. Un patrón bare `localhost:4280` ahora matchea su tráfico (antes no matcheaba nada).
+
+#### Fixed
+- **Scope era cosmético**: los flows out-of-scope (ej. telemetría de Chrome) seguían persistiéndose y auto-escanéándose; el único filtro existente vivía en el relay y con un `FlowFilter` stale (nunca recibía el scope recargado).
+- **Patrón `host:port` no matcheaba**: `urlparse().hostname` no incluye el puerto y `fnmatch` es match completo, así que `localhost:4280` ni siquiera cubría el tráfico legítimo.
+
 ### Hardening Cycle (groups 1–9)
 
 #### Added
@@ -32,6 +65,11 @@ Versions are not yet tagged; this file tracks work since the hardening cycle.
 #### Changed
 - **README repositioned as platform overview**; reference docs split to standalone files (ARCHITECTURE.md, docs/DOCS.md).
 - **CrawlStats.maxed** field added to track `max_urls` cap in stats.
+
+#### Scanner Accuracy
+- **SQLi boolean-blind 4 rounds + baseline**: canonical pair first, escalation to extra pairs only when ambiguous, 4 consistency rounds (TRUE/FALSE/TRUE/FALSE) against a clean baseline before confirming.
+- **Reflection vs XSS**: XSS scanner separates `reflected-xss` (confirmed exploitable breakout) from `unescaped-reflection` (low/`tentative`) via `ContextAnalyzer.is_exploitable`; CLI output now declares coverage scope.
+- **`confidence` 3 levels**: `tentative` / `inferred` / `confirmed` carried through findings and TUI scanner screens.
 
 ---
 

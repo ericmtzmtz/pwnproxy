@@ -3,9 +3,11 @@ interface StatCardsProps {
   findingsCount: number;
   criticalCount: number;
   mediumCount: number;
+  lowCount: number;
   infoCount: number;
   scannerCount: number;
   scopeCount: number;
+  highCount: number;
 }
 
 export function StatCards({
@@ -14,6 +16,8 @@ export function StatCards({
   criticalCount,
   mediumCount,
   infoCount,
+  highCount,
+  lowCount,
   scannerCount,
   scopeCount,
 }: StatCardsProps) {
@@ -29,7 +33,9 @@ export function StatCards({
         <p class="mt-1 text-2xl font-bold text-neutral-50">{findingsCount}</p>
         <div class="mt-1 flex gap-3 text-xs">
           <span class="text-red-400">{criticalCount} critical</span>
+          <span class="text-orange-400">{highCount} high</span>
           <span class="text-yellow-400">{mediumCount} medium</span>
+          <span class="text-blue-400">{lowCount} low</span>
           <span class="text-neutral-500">{infoCount} info</span>
         </div>
       </div>

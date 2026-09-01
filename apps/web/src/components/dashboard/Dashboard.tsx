@@ -14,9 +14,11 @@ export function Dashboard() {
   const [totalFindings, setTotalFindings] = useState(0);
   const loadedRef = useRef(false);
 
-  const criticalCount = findings.filter((f) => f.severity === "critical" || f.severity === "high").length;
+  const criticalCount = findings.filter((f) => f.severity === "critical").length;
+  const highCount = findings.filter((f) => f.severity === "high").length;
   const mediumCount = findings.filter((f) => f.severity === "medium").length;
-  const infoCount = findings.filter((f) => f.severity === "low" || f.severity === "info").length;
+  const lowCount = findings.filter((f) => f.severity === "low").length;
+  const infoCount = findings.filter((f) =>f.severity === "info").length;
 
   const recentFlows = flows.slice(0, 5);
 
@@ -41,7 +43,9 @@ export function Dashboard() {
         flowsCount={flows.length}
         findingsCount={totalFindings}
         criticalCount={criticalCount}
+        highCount={highCount}
         mediumCount={mediumCount}
+        lowCount={lowCount}
         infoCount={infoCount}
         scannerCount={5}
         scopeCount={0}

@@ -39,6 +39,12 @@ export async function deleteFinding(id: number): Promise<void> {
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete finding`);
 }
 
+export async function deleteFindings(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const res = await fetch(`${API_BASE}/findings?ids=${ids.join(",")}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error(`Failed to delete findings`);
+}
+
 export async function deleteAllFindings(): Promise<void> {
   const res = await fetch(`${API_BASE}/findings`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete findings`);

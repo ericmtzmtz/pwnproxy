@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -41,7 +41,23 @@ class TriageFeedback(BaseModel):
     reason: Optional[str] = None
 
 
-@router.patch("/findings/{finding_id}/feedback")
+class FindingsListResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 20
+
+
+class TriageFeedbackResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    ok: bool = True
+    finding: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.patch("/findings/{finding_id}/feedback", response_model=TriageFeedbackResponse)
 async def triage_feedback(finding_id: int, payload: TriageFeedback, request: Request):
     """Human triage verdict: overwrites any automatic one (method=human) + history row."""
     if payload.verdict not in VALID_TRIAGE_VERDICTS:
@@ -120,7 +136,7 @@ async def export_triage(request: Request, format: str = Query("jsonl", descripti
     )
 
 
-@router.get("/findings/{scanner_name}")
+@router.get("/findings/{scanner_name}", response_model=FindingsListResponse)
 async def get_findings(
     scanner_name: str,
     request: Request,
@@ -148,7 +164,7 @@ async def get_findings(
             return {"items": [], "total": 0, "page": page, "per_page": per_page}
 
 
-@router.get("/findings")
+@router.get("/findings", response_model=FindingsListResponse)
 async def list_all_findings(
     request: Request,
     page: int = Query(1, ge=1),
@@ -176,13 +192,20 @@ async def list_all_findings(
 
 
 @router.delete("/findings", status_code=204)
-async def delete_all_findings(request: Request):
+async def delete_all_findings(request: Request, ids: str = Query(None, description="Comma-separated finding IDs to delete (batch); empty deletes all")):
     engine = request.app.state.session_manager.get_scanner_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as session:
         try:
-            await session.execute(FindingORM.__table__.delete())
+            if ids:
+                id_list = [int(x.strip()) for x in ids.split(",") if x.strip()]
+                if id_list:
+                    await session.execute(FindingORM.__table__.delete().where(FindingORM.id.in_(id_list)))
+            else:
+                await session.execute(FindingORM.__table__.delete())
             await session.commit()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid ids: {exc}")
         except Exception as exc:
             logger.warning(f"Could not delete findings: {exc}")
 

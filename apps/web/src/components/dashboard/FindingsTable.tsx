@@ -1,5 +1,6 @@
+import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
-import { deleteFinding, triageFeedback } from "@/api/findings/calls";
+import { deleteFinding, deleteFindings, triageFeedback } from "@/api/findings/calls";
 import { createTab } from "@/api/repeater/calls";
 import type { Finding } from "@/api/findings/types";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
@@ -61,6 +62,47 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [busy, setBusy] = useState<Record<string, boolean>>({});
   const [triageOverride, setTriageOverride] = useState<Record<number, Finding>>({});
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [deletingSelected, setDeletingSelected] = useState(false);
+
+  const allSelected = findings.length > 0 && findings.every((f) => selected.has(f.id));
+
+  function toggleSelect(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        for (const f of findings) next.delete(f.id);
+      } else {
+        for (const f of findings) next.add(f.id);
+      }
+      return next;
+    });
+  }
+
+  async function handleDeleteSelected() {
+    if (selected.size === 0) return;
+    setDeletingSelected(true);
+    try {
+      await deleteFindings([...selected]);
+      const ids = [...selected];
+      toast("success", `Deleted ${ids.length} finding${ids.length > 1 ? "s" : ""}`);
+      setSelected(new Set());
+      for (const id of ids) onDeleted?.(id);
+    } catch (err: any) {
+      toast("error", err.message ?? "Failed to delete findings");
+    } finally {
+      setDeletingSelected(false);
+    }
+  }
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -93,9 +135,30 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
 
   return (
     <div class="overflow-x-auto rounded-lg border border-neutral-800" style="min-height:580px">
+      <div class="flex items-center justify-between border-b border-neutral-800 bg-neutral-900 px-3 py-2">
+        <label class="flex cursor-pointer items-center gap-2 text-xs text-neutral-400">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={toggleSelectAll}
+            class="h-3.5 w-3.5 accent-primary-500"
+          />
+          Select all on page ({findings.length})
+        </label>
+        {selected.size > 0 && (
+          <button
+            onClick={handleDeleteSelected}
+            disabled={deletingSelected}
+            class="inline-flex items-center gap-1 rounded bg-red-900/40 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider text-red-400 transition-colors hover:bg-red-800/60 disabled:opacity-50"
+          >
+            {deletingSelected ? "Deleting..." : `Delete selected (${selected.size})`}
+          </button>
+        )}
+      </div>
       <table class="w-full text-sm">
         <thead>
           <tr class="border-b border-neutral-800 bg-neutral-900">
+            <th class="w-8 px-2 py-2"></th>
             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">Severity</th>
             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">Method</th>
             <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wider text-neutral-400">URL</th>
@@ -111,13 +174,22 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
             const key = `${f.scanner}-${f.id}`;
             const isOpen = expanded === f.id;
             const isBusy = busy[key];
+            const isSelected = selected.has(f.id);
             return (
-              <>
+              <Fragment key={key}>
                 <tr
-                  key={key}
                   onClick={() => setExpanded(isOpen ? null : f.id)}
-                  class="cursor-pointer bg-neutral-950 hover:bg-neutral-900/50"
+                  class={`cursor-pointer bg-neutral-950 hover:bg-neutral-900/50 ${isSelected ? "bg-primary-950/40" : ""}`}
                 >
+                  <td class="px-2 py-2">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleSelect(f.id)}
+                      class="h-3.5 w-3.5 accent-primary-500"
+                    />
+                  </td>
                   <td class={`px-3 py-2 text-xs font-semibold ${severityColors[f.severity] ?? "text-neutral-400"}`}>
                     {f.severity}
                   </td>
@@ -136,7 +208,7 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                 </tr>
                 {isOpen && (
                   <tr key={`${key}-detail`} class="bg-neutral-900">
-                    <td colspan={7} class="px-6 py-3">
+                    <td colspan={8} class="px-6 py-3">
                       <div class="space-y-2">
                         {f.payload && (
                           <div class="text-xs text-neutral-400">
@@ -274,7 +346,7 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             );
           })}
         </tbody>
