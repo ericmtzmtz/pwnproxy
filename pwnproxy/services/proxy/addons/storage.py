@@ -22,10 +22,13 @@ class StorageAddon:
     so scanners automatically process every captured flow.
     """
 
-    def __init__(self, db_engine: AsyncEngine, hook_bus=None):
+    def __init__(self, db_engine: AsyncEngine, hook_bus=None, flow_filter=None):
         self.db_engine = db_engine
         
         self.hook_bus = hook_bus
+        # Optional FlowFilter gates persistence + flow_stored/done emission.
+        # When None (default), all flows are stored (legacy behavior).
+        self._flow_filter = flow_filter
         
         self._auto_scan = _AUTO_SCAN
         self.session_factory = sessionmaker(
@@ -33,7 +36,15 @@ class StorageAddon:
         )
         self._background_tasks = set()
 
+    def _in_scope(self, url: str) -> bool:
+        if self._flow_filter is None:
+            return True
+        return self._flow_filter.allow(url)
+
     def response(self, f: mitmproxy.http.HTTPFlow):
+        if not self._in_scope(f.request.url):
+            logger.debug("StorageAddon: out of scope, skipping %s", f.request.url)
+            return
         try:
             pwn_flow = Flow.from_mitmproxy(f)
             task = asyncio.create_task(self._store_flow(pwn_flow))

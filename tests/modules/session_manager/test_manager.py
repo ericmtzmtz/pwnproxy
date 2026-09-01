@@ -64,6 +64,41 @@ class TestScopeConfig:
         assert "ports" not in result
 
 
+class TestScopePatternCandidates:
+    """Scope matcher evaluates patterns against netloc/hostname/full URL."""
+
+    def test_bare_host_port_matches_netloc(self):
+        scope = ScopeConfig({"enabled": True, "in_scope": ["localhost:4280"]})
+        assert scope.is_in_scope("http://localhost:4280/vulnerabilities/sqli/?id=1")
+        assert scope.is_in_scope("https://localhost:4280/other")
+        assert not scope.is_in_scope("https://gj.mmstat.com/collect")
+        assert not scope.is_in_scope("http://localhost:8080/other")
+
+    def test_wildcard_hostname_still_matches(self):
+        scope = ScopeConfig({"enabled": True, "in_scope": ["*.example.com"]})
+        assert scope.is_in_scope("http://api.example.com/x")
+        assert scope.is_in_scope("http://example.com/x")
+
+    def test_burp_style_url_pattern_still_matches(self):
+        scope = ScopeConfig({"enabled": True, "in_scope": ["http://example.com:8080/*"]})
+        assert scope.is_in_scope("http://example.com:8080/admin")
+
+    def test_out_of_scope_host_port_takes_precedence(self):
+        scope = ScopeConfig({
+            "enabled": True,
+            "in_scope": ["localhost"],
+            "out_of_scope": ["localhost:4280"],
+        })
+        assert not scope.is_in_scope("http://localhost:4280/sqli")
+        assert scope.is_in_scope("http://localhost:8080/other")
+
+    def test_disabled_or_empty_is_permissive(self):
+        disabled = ScopeConfig({"enabled": False, "in_scope": ["localhost:4280"]})
+        assert disabled.is_in_scope("https://gj.mmstat.com/collect")
+        empty = ScopeConfig({"enabled": True, "in_scope": []})
+        assert empty.is_in_scope("https://gj.mmstat.com/collect")
+
+
 def test_list_empty(mock_sessions_root):
     assert SessionManager.list() == []
 

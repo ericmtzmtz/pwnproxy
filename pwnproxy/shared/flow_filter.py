@@ -14,6 +14,15 @@ class FlowFilter:
             return False
         return self._scope.is_in_scope(url)
 
+    def set_scope(self, scope_config) -> None:
+        """Hot-swap the scope config without rebuilding the filter.
+
+        Used by the proxy worker on scope reload so the live relay and storage
+        addons (which hold a stable reference to this instance) pick up the new
+        scope immediately.
+        """
+        self._scope = scope_config
+
     @property
     def capture_enabled(self) -> bool:
         return self._capture_enabled

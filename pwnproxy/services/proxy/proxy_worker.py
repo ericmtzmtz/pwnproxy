@@ -91,6 +91,8 @@ class ProxyWorker:
                 self._flow_filter = flow_filter
 
             def request(self, f):
+                if not self._flow_filter.allow(f.request.pretty_url):
+                    return
                 flow = Flow.from_mitmproxy(f)
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
@@ -101,6 +103,8 @@ class ProxyWorker:
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
             def error(self, f):
+                if not self._flow_filter.allow(f.request.pretty_url):
+                    return
                 flow = Flow.from_mitmproxy(f)
                 asyncio.create_task(self._bridge.publish("proxy.flow", flow.to_dict()))
 
@@ -121,6 +125,7 @@ class ProxyWorker:
                 StorageAddon(
                     db_engine=engine,
                     hook_bus=BridgeHookBus(self._bridge),
+                    flow_filter=self._flow_filter,
                 )
             )
 
@@ -149,6 +154,8 @@ class ProxyWorker:
         try:
             data = json.loads(scope_file.read_text())
             self._scope_config = ScopeConfig(data)
+            # Propagate to the live FlowFilter shared by BridgeRelay + StorageAddon.
+            self._flow_filter.set_scope(self._scope_config)
             logger.info(f"Scope reloaded: enabled={self._scope_config.enabled}, "
                          f"in={len(self._scope_config.in_scope)}, out={len(self._scope_config.out_of_scope)}")
             return True

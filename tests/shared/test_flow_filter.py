@@ -32,3 +32,18 @@ class TestFlowFilter:
         scope = ScopeConfig()
         f = FlowFilter(scope)
         assert f.capture_enabled is True
+
+    def test_set_scope_changes_verdict_without_rebuild(self):
+        f = FlowFilter(ScopeConfig({"enabled": True, "in_scope": ["a.example.com"]}))
+        assert f.allow("http://a.example.com/x")
+        assert not f.allow("http://b.example.com/x")
+
+        f.set_scope(ScopeConfig({"enabled": True, "in_scope": ["b.example.com"]}))
+        assert not f.allow("http://a.example.com/x")
+        assert f.allow("http://b.example.com/x")
+
+    def test_set_scope_keeps_capture_enabled_state(self):
+        f = FlowFilter(ScopeConfig({"enabled": True, "in_scope": ["a.example.com"]}))
+        f.set_capture_enabled(False)
+        f.set_scope(ScopeConfig({"enabled": True, "in_scope": ["b.example.com"]}))
+        assert not f.allow("http://b.example.com/x")

@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 router = APIRouter(prefix="/api/v1", tags=["sessions"])
 
@@ -30,6 +30,48 @@ class ScopeUpdateRequest(BaseModel):
         if isinstance(data, dict) and "patterns" in data:
             data = {**data, "in_scope": data.pop("patterns")}
         return data
+
+
+class SessionInfo(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: str = ""
+    created_at: Optional[str] = None
+    last_modified: Optional[str] = None
+    active: bool = False
+    last_active: bool = False
+    request_count: int = 0
+    finding_count: int = 0
+
+
+class ActiveSessionResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    name: Optional[str] = None
+    path: Optional[str] = None
+    has_unsaved_changes: bool = False
+    scope_enabled: bool = False
+
+
+class SessionManageRequest(BaseModel):
+    action: str = ""
+    name: str = ""
+    new_name: Optional[str] = None
+
+
+class SessionManageResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    message: Optional[str] = None
+
+
+class ScopeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    in_scope: list[str] = Field(default_factory=list)
+    out_of_scope: list[str] = Field(default_factory=list)
+    enabled: bool = False
 
 
 async def _restart_crawler_for_scope(request: Request) -> None:
@@ -59,7 +101,7 @@ def _db_size(session_path: Path, db_name: str) -> int:
         return 0
 
 
-@router.get("/sessions")
+@router.get("/sessions", response_model=list[SessionInfo])
 async def list_sessions(request: Request):
     """List all proxy sessions."""
     import pwnproxy.services.session.manager as _mgr
@@ -86,7 +128,7 @@ async def list_sessions(request: Request):
     ]
 
 
-@router.get("/sessions/active")
+@router.get("/sessions/active", response_model=ActiveSessionResponse)
 async def get_active_session(request: Request):
     manager = request.app.state.session_manager
     return {
@@ -97,12 +139,11 @@ async def get_active_session(request: Request):
     }
 
 
-@router.post("/sessions/manage")
-async def manage_session(request: Request):
+@router.post("/sessions/manage", response_model=SessionManageResponse)
+async def manage_session(request: Request, body: SessionManageRequest):
     """Create, load, save, or delete sessions."""
-    body = await request.json()
-    action = body.get("action")
-    name = body.get("name", "")
+    action = body.action
+    name = body.name
     manager = request.app.state.session_manager
 
     try:
@@ -119,7 +160,7 @@ async def manage_session(request: Request):
             await manager.delete(name)
             return {"status": "ok", "message": f"Deleted session '{name}'"}
         elif action == "rename":
-            new_name = body.get("new_name", "")
+            new_name = body.new_name or ""
             from pwnproxy.services.session.manager import SessionManager
             await SessionManager.rename(name, new_name)
             if manager._active_name == name:
@@ -132,13 +173,13 @@ async def manage_session(request: Request):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.get("/sessions/scope")
+@router.get("/sessions/scope", response_model=ScopeResponse)
 async def get_scope(request: Request):
     manager = request.app.state.session_manager
     return manager.scope.to_dict()
 
 
-@router.put("/sessions/scope")
+@router.put("/sessions/scope", response_model=SessionManageResponse)
 async def update_scope(payload: ScopeUpdateRequest, request: Request):
     manager = request.app.state.session_manager
     data = payload.model_dump(exclude_unset=True)
@@ -154,13 +195,18 @@ async def update_scope(payload: ScopeUpdateRequest, request: Request):
     if intercept and hasattr(intercept, "_addon"):
         intercept._addon.set_scope_filter(lambda url: manager.scope.is_in_scope(url))
 
-    # Proxy (subprocess mode): live reload if supported, else restart
+    # Proxy (subprocess mode): live reload if supported, else restart.
+    # Embedded mode (ProxyEngine): hot-swap the shared FlowFilter.
     proxy = manager.get_proxy_engine()
-    if proxy and hasattr(proxy, "running") and proxy.running:
-        if hasattr(proxy, "send_scope_update"):
-            await proxy.send_scope_update(scope_json=json.dumps(scope_dict))
-        else:
-            await manager._apply_proxy_config()
+    if proxy:
+        flow_filter = getattr(proxy, "flow_filter", None)
+        if flow_filter is not None and hasattr(flow_filter, "set_scope"):
+            flow_filter.set_scope(manager.scope)
+        if hasattr(proxy, "running") and proxy.running:
+            if hasattr(proxy, "send_scope_update"):
+                await proxy.send_scope_update(scope_json=json.dumps(scope_dict))
+            else:
+                await manager._apply_proxy_config()
 
     # Crawler (subprocess mode): publish scope.updated via feed bridge
     # (restart is the fallback if the worker can't handle live updates)

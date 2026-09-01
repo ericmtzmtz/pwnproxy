@@ -50,20 +50,31 @@ class ScopeConfig:
             return True
         return False
 
+    def _candidates(self, url: str) -> tuple[str, str, str]:
+        """Return (netloc, hostname, full URL) candidates for scope matching.
+
+        ``netloc`` is ``host:port`` (e.g. ``localhost:4280``) so a bare
+        ``host:port`` pattern matches naturally; ``hostname`` drops the port so
+        ``*.example.com`` keeps working; the full URL preserves Burp-style
+        ``http://host:port/*`` patterns.
+        """
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        netloc = parsed.netloc or ""
+        host = parsed.hostname or ""
+        return netloc, host, url
+
     def is_in_scope(self, url: str) -> bool:
         if not self.enabled:
             return True
         if not self.in_scope:
             return True
-        from urllib.parse import urlparse
-        parsed = urlparse(url)
-        host = parsed.hostname or ""
-        combined = url  # Use full URL including query string
+        candidates = self._candidates(url)
         for pattern in self.out_of_scope:
-            if self._match(pattern, combined) or self._match(pattern, host):
+            if any(self._match(pattern, t) for t in candidates):
                 return False
         for pattern in self.in_scope:
-            if self._match(pattern, combined) or self._match(pattern, host):
+            if any(self._match(pattern, t) for t in candidates):
                 return True
         return False
 
