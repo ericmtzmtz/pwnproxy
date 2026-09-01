@@ -1,9 +1,9 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from pwnproxy.services.intruder.generator import read_wordlist
 
@@ -37,7 +37,26 @@ class WordlistEntry(BaseModel):
     line_count: int
 
 
-@router.post("/intruder/run")
+class IntruderRunResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    attack_id: Optional[str] = None
+    task_id: Optional[str] = None
+    status: Optional[str] = None
+    total: int = 0
+
+
+class IntruderPollResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    total: Optional[int] = None
+    completed: Optional[int] = None
+    results: list[Any] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+@router.post("/intruder/run", response_model=IntruderRunResponse)
 async def intruder_run(request: Request, body: IntruderRunRequest):
     from pwnproxy.services.intruder.parser import parse_markers
 
@@ -80,7 +99,7 @@ async def intruder_run(request: Request, body: IntruderRunRequest):
     return {"attack_id": task_id, "task_id": task_id, "status": "running", "total": len(wordlist)}
 
 
-@router.get("/intruder/attack/{attack_id}")
+@router.get("/intruder/attack/{attack_id}", response_model=IntruderPollResponse)
 async def poll_attack(attack_id: str, request: Request):
     from pwnproxy.transport.rest.tasks import get_task_store
     store = get_task_store(request)

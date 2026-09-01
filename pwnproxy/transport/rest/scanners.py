@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -35,7 +35,28 @@ class FlowTriggerRequest(BaseModel):
     response_body: str | None = None
 
 
-@router.post("/scanners/trigger-flow")
+class TriggerResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    flow_id: Any = None
+
+
+class SecondOrderStartResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class SecondOrderStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    running: bool = False
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/scanners/trigger-flow", response_model=TriggerResponse)
 async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
     hook_bus = request.app.state.hook_bus
     if hook_bus is None:
@@ -58,7 +79,7 @@ async def trigger_scanners_for_flow(request: Request, body: FlowTriggerRequest):
     return {"status": "scanning", "flow_id": body.id}
 
 
-@router.post("/scanners/trigger")
+@router.post("/scanners/trigger", response_model=TriggerResponse)
 async def trigger_scanners(request: Request, body: TriggerRequest):
     traffic_engine = request.app.state.session_manager.get_traffic_engine()
     traffic_factory = sessionmaker(traffic_engine, class_=AsyncSession, expire_on_commit=False)
@@ -106,7 +127,7 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
     return {"status": "triggered", "flow_id": body.flow_id}
 
 
-@router.post("/scanners/second-order/start")
+@router.post("/scanners/second-order/start", response_model=SecondOrderStartResponse)
 async def start_second_order(request: Request):
     """Start the second-order detection background task."""
     from pwnproxy.shared.scan.payload_store import get_store
@@ -116,7 +137,7 @@ async def start_second_order(request: Request):
     return {"status": "started", "stats": store.stats()}
 
 
-@router.post("/scanners/second-order/stop")
+@router.post("/scanners/second-order/stop", response_model=SecondOrderStartResponse)
 async def stop_second_order(request: Request):
     """Stop the second-order detection background task."""
     from pwnproxy.shared.scan.payload_store import get_store
@@ -126,7 +147,7 @@ async def stop_second_order(request: Request):
     return {"status": "stopped", "stats": store.stats()}
 
 
-@router.get("/scanners/second-order/status")
+@router.get("/scanners/second-order/status", response_model=SecondOrderStatusResponse)
 async def second_order_status(request: Request):
     """Get second-order detection status."""
     from pwnproxy.shared.scan.payload_store import get_store

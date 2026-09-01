@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from pwnproxy.services.session.manager import SESSIONS_ROOT
 from pwnproxy.transport.rest.tasks import get_task_store
@@ -25,7 +25,13 @@ class ReportGenerateRequest(BaseModel):
     formats: list[Literal["md", "html", "pdf"]] = ["md"]
 
 
-@router.post("/reports/generate", status_code=202)
+class ReportGenerateResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    task_id: str = ""
+
+
+@router.post("/reports/generate", status_code=202, response_model=ReportGenerateResponse)
 async def generate_report(request: Request, body: ReportGenerateRequest):
     from sqlalchemy import func, select
     from sqlalchemy.ext.asyncio import AsyncSession

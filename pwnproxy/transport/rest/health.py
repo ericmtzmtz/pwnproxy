@@ -1,14 +1,23 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from pwnproxy.plugins.core.loader import PluginLoader
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["health"])
+
+
+class HealthResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: str = "ok"
+    version: Optional[str] = None
+    checks: dict[str, Any] = Field(default_factory=dict)
 
 
 def _get_version() -> str:
@@ -32,7 +41,7 @@ async def _check_port(host: str, port: int, timeout: float = 2.0) -> bool:
         return False
 
 
-@router.get("/health")
+@router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request):
     proxy_port = getattr(request.app.state, "proxy_port", 8080)
     proxy_ok = await _check_port("127.0.0.1", proxy_port)

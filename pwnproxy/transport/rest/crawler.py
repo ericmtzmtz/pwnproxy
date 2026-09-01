@@ -1,8 +1,8 @@
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -14,6 +14,53 @@ from pwnproxy.services.jobs.lifecycle import JobLifecycle
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["crawler"])
+
+
+class CrawlerUrlsResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    items: list[dict[str, Any]] = Field(default_factory=list)
+    total: int = 0
+    page: int = 1
+    per_page: int = 20
+
+
+class CrawlStartResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    job_id: Any = None
+    status: Optional[str] = None
+
+
+class CrawlStopResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    stopped: bool = True
+    detail: Optional[str] = None
+    accepted: Optional[bool] = None
+    job_id: Any = None
+    state: Optional[str] = None
+
+
+class BruteforceStartResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    job_id: Any = None
+    status: Optional[str] = None
+    total_estimated: Optional[int] = None
+
+
+class WordlistsResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    wordlists: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class CrawlerStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    running: bool = False
+    active_jobs: list[dict[str, Any]] = Field(default_factory=list)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -39,7 +86,7 @@ async def _get_discovered_storage(request: Request):
 # ── Discovered URLs ──────────────────────────────────────────────────────
 
 
-@router.get("/crawler/urls")
+@router.get("/crawler/urls", response_model=CrawlerUrlsResponse)
 async def list_crawler_urls(
     request: Request,
     page: int = Query(1, ge=1),
@@ -72,7 +119,7 @@ class CrawlStartRequest(BaseModel):
     scan_while_crawl: bool = False
 
 
-@router.post("/crawler/start")
+@router.post("/crawler/start", response_model=CrawlStartResponse)
 async def start_crawl(request: Request, body: CrawlStartRequest):
     """Create a crawl job and start the worker."""
     job_storage = await _get_job_storage(request)
@@ -110,7 +157,7 @@ async def start_crawl(request: Request, body: CrawlStartRequest):
     return {"job_id": job_id, "status": "running"}
 
 
-@router.post("/crawler/stop")
+@router.post("/crawler/stop", response_model=CrawlStopResponse, response_model_exclude_none=True)
 async def stop_crawl(request: Request):
     """Stop the active crawl job (idempotent).
 
@@ -156,7 +203,7 @@ class BruteforceStartRequest(BaseModel):
     detect_soft404: bool = Field(True)
 
 
-@router.post("/bruteforce/start")
+@router.post("/bruteforce/start", response_model=BruteforceStartResponse)
 async def start_bruteforce(request: Request, body: BruteforceStartRequest):
     job_storage = await _get_job_storage(request)
     if job_storage is None:
@@ -211,7 +258,7 @@ async def start_bruteforce(request: Request, body: BruteforceStartRequest):
     return {"job_id": job_id, "status": "running", "total_estimated": total_est}
 
 
-@router.post("/bruteforce/stop")
+@router.post("/bruteforce/stop", response_model=CrawlStopResponse, response_model_exclude_none=True)
 async def stop_bruteforce(request: Request):
     """Stop the active bruteforce job (idempotent). Ownership: see stop_crawl."""
     job_storage = await _get_job_storage(request)
@@ -236,7 +283,7 @@ async def stop_bruteforce(request: Request):
     return {"stopped": True, "accepted": False, "job_id": job["id"], "state": "cancelled"}
 
 
-@router.get("/bruteforce/wordlists")
+@router.get("/bruteforce/wordlists", response_model=WordlistsResponse)
 async def list_wordlists():
     return {"wordlists": [{"name": k, "entries": v} for k, v in builtin_sizes().items()]}
 
@@ -244,7 +291,7 @@ async def list_wordlists():
 # ── Status ───────────────────────────────────────────────────────────────
 
 
-@router.get("/crawler/status")
+@router.get("/crawler/status", response_model=CrawlerStatusResponse)
 async def crawler_status(request: Request):
     crawler = getattr(request.app.state, "crawler_process", None)
     process_status = crawler.status() if crawler else {"running": False}

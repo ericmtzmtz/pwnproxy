@@ -150,7 +150,7 @@ class RepeaterSendResponse(BaseModel):
     timing_ms: float
 
 
-@router.post("/repeater/send")
+@router.post("/repeater/send", response_model=RepeaterSendResponse)
 async def repeater_send(request: Request, body: RepeaterSendRequest):
     from pwnproxy.transport.rest.tasks import get_task_store
     store = get_task_store(request)

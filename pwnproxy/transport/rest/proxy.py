@@ -1,7 +1,34 @@
 import json
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict
 
 router = APIRouter(prefix="/api/v1", tags=["proxy"])
+
+
+class ProxyStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    capture_enabled: bool = False
+    running: bool = False
+    host: Optional[str] = None
+    port: Optional[int] = None
+    ssl_insecure: Optional[bool] = None
+    upstream: Optional[str] = None
+
+
+class ProxyToggleResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    capture_enabled: bool = False
+
+
+class ProxyStopResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    success: bool = True
+    running: bool = False
 
 
 def _get_session_manager(request: Request):
@@ -19,7 +46,7 @@ def _get_proxy(request: Request):
     return proxy
 
 
-@router.get("/proxy/status")
+@router.get("/proxy/status", response_model=ProxyStatusResponse)
 async def proxy_status(request: Request):
     proxy = _get_proxy(request)
     sm = _get_session_manager(request)
@@ -33,7 +60,7 @@ async def proxy_status(request: Request):
     }
 
 
-@router.put("/proxy/toggle")
+@router.put("/proxy/toggle", response_model=ProxyToggleResponse)
 async def proxy_toggle(request: Request):
     sm = _get_session_manager(request)
     sm.proxy_config.capture_enabled = not sm.proxy_config.capture_enabled
@@ -51,7 +78,7 @@ def _build_proxy_params(sm):
     return db_path, scope_json
 
 
-@router.post("/proxy/start")
+@router.post("/proxy/start", response_model=ProxyStatusResponse)
 async def proxy_start(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)
@@ -60,14 +87,14 @@ async def proxy_start(request: Request):
     return await proxy_status(request)
 
 
-@router.post("/proxy/stop")
+@router.post("/proxy/stop", response_model=ProxyStopResponse)
 async def proxy_stop(request: Request):
     proxy = _get_proxy(request)
     await proxy.stop()
     return {"success": True, "running": False}
 
 
-@router.post("/proxy/restart")
+@router.post("/proxy/restart", response_model=ProxyStatusResponse)
 async def proxy_restart(request: Request):
     sm = _get_session_manager(request)
     proxy = _get_proxy(request)

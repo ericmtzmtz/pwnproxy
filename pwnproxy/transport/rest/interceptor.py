@@ -1,8 +1,41 @@
+from typing import Any, Optional
+
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, ConfigDict
 
 from pwnproxy.shared.models import Flow
 
 router = APIRouter(prefix="/api/v1", tags=["interceptor"])
+
+
+class InterceptorStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = False
+    pending_count: int = 0
+
+
+class PendingFlow(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: Any = None
+    method: Optional[str] = None
+    url: Optional[str] = None
+    status_code: Optional[int] = None
+    timestamp: Any = None
+
+
+class InterceptorActionResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+
+
+class InterceptorActionCountResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    count: int = 0
 
 
 def _get_controller(request: Request):
@@ -12,7 +45,7 @@ def _get_controller(request: Request):
     return controller
 
 
-@router.get("/interceptor/status")
+@router.get("/interceptor/status", response_model=InterceptorStatusResponse)
 async def interceptor_status(request: Request):
     controller = _get_controller(request)
     return {
@@ -21,7 +54,7 @@ async def interceptor_status(request: Request):
     }
 
 
-@router.put("/interceptor/toggle")
+@router.put("/interceptor/toggle", response_model=InterceptorStatusResponse)
 async def interceptor_toggle(request: Request):
     controller = _get_controller(request)
     controller.toggle()
@@ -31,7 +64,7 @@ async def interceptor_toggle(request: Request):
     return {"enabled": controller.enabled, "pending_count": controller.pending_count}
 
 
-@router.get("/interceptor/pending")
+@router.get("/interceptor/pending", response_model=list[PendingFlow])
 async def interceptor_pending(request: Request):
     controller = _get_controller(request)
     flows = []
@@ -46,7 +79,7 @@ async def interceptor_pending(request: Request):
     return flows
 
 
-@router.post("/interceptor/forward/{flow_id}")
+@router.post("/interceptor/forward/{flow_id}", response_model=InterceptorActionResponse)
 async def interceptor_forward(flow_id: str, request: Request):
     controller = _get_controller(request)
     if flow_id not in controller.pending:
@@ -55,7 +88,7 @@ async def interceptor_forward(flow_id: str, request: Request):
     return {"status": "forwarded"}
 
 
-@router.post("/interceptor/drop/{flow_id}")
+@router.post("/interceptor/drop/{flow_id}", response_model=InterceptorActionResponse)
 async def interceptor_drop(flow_id: str, request: Request):
     controller = _get_controller(request)
     if flow_id not in controller.pending:
@@ -64,7 +97,7 @@ async def interceptor_drop(flow_id: str, request: Request):
     return {"status": "dropped"}
 
 
-@router.post("/interceptor/forward-all")
+@router.post("/interceptor/forward-all", response_model=InterceptorActionCountResponse)
 async def interceptor_forward_all(request: Request):
     controller = _get_controller(request)
     count = controller.pending_count
@@ -72,7 +105,7 @@ async def interceptor_forward_all(request: Request):
     return {"status": "forwarded", "count": count}
 
 
-@router.post("/interceptor/drop-all")
+@router.post("/interceptor/drop-all", response_model=InterceptorActionCountResponse)
 async def interceptor_drop_all(request: Request):
     controller = _get_controller(request)
     count = controller.pending_count

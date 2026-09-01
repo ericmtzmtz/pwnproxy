@@ -1,7 +1,8 @@
 from urllib.parse import urlparse
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import delete as sa_delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -9,6 +10,33 @@ from sqlalchemy.orm import sessionmaker
 from pwnproxy.shared.db import FlowRecord
 
 router = APIRouter(prefix="/api/v1", tags=["traffic"])
+
+
+class FlowOut(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: Optional[int] = None
+    method: Optional[str] = None
+    url: Optional[str] = None
+    request_headers: Optional[dict[str, Any]] = None
+    request_body: Optional[str] = None
+    request_body_truncated: Optional[bool] = None
+    status_code: Optional[int] = None
+    response_headers: Optional[dict[str, Any]] = None
+    response_body: Optional[str] = None
+    response_body_truncated: Optional[bool] = None
+    timestamp: Optional[str] = None
+    duration_ms: Optional[float] = None
+    error: Optional[str] = None
+    tls: Optional[bool] = None
+
+
+class OutscopeResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    message: Optional[str] = None
+    out_of_scope: list[str] = Field(default_factory=list)
 
 
 def _flow_to_dict(f: FlowRecord) -> dict:
@@ -31,7 +59,7 @@ def _flow_to_dict(f: FlowRecord) -> dict:
     }
 
 
-@router.get("/flows")
+@router.get("/flows", response_model=list[FlowOut])
 async def list_flows(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
@@ -54,7 +82,7 @@ async def list_flows(
         return [_flow_to_dict(f) for f in result.scalars().all()]
 
 
-@router.get("/flows/{flow_id}")
+@router.get("/flows/{flow_id}", response_model=FlowOut)
 async def get_flow(request: Request, flow_id: int):
     engine = request.app.state.session_manager.get_traffic_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -86,7 +114,7 @@ async def clear_flows(request: Request):
         await session.commit()
 
 
-@router.post("/flows/{flow_id}/outscope", status_code=200)
+@router.post("/flows/{flow_id}/outscope", status_code=200, response_model=OutscopeResponse)
 async def outscope_flow(request: Request, flow_id: int):
     engine = request.app.state.session_manager.get_traffic_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

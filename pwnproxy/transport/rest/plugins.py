@@ -2,10 +2,10 @@ import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 from pwnproxy.plugins.core.loader import PluginLoader
 
@@ -18,7 +18,49 @@ class BurpImportRequest(BaseModel):
     config: str
 
 
-@router.get("/plugins")
+class PluginsListResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    plugins: list[dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class PluginToggleResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    name: Optional[str] = None
+
+
+class ScanLaunchResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    scan_id: Optional[str] = None
+    task_id: Optional[str] = None
+    status: Optional[str] = None
+
+
+class ScanPollResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    url: Optional[str] = None
+    findings_count: int = 0
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    error: Optional[str] = None
+
+
+class BurpImportResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    status: Optional[str] = None
+    imported: int = 0
+    include_count: Optional[int] = None
+    exclude_count: Optional[int] = None
+    detail: Optional[str] = None
+
+
+@router.get("/plugins", response_model=PluginsListResponse)
 async def list_plugins(request: Request):
     loader: Optional[PluginLoader] = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
@@ -26,7 +68,7 @@ async def list_plugins(request: Request):
     return {"plugins": loader.list_active()}
 
 
-@router.post("/plugins/{name}/toggle")
+@router.post("/plugins/{name}/toggle", response_model=PluginToggleResponse)
 async def toggle_plugin(name: str, request: Request):
     loader: Optional[PluginLoader] = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
@@ -50,7 +92,7 @@ async def toggle_plugin(name: str, request: Request):
     return {"status": status, "name": name}
 
 
-@router.post("/scan")
+@router.post("/scan", response_model=ScanLaunchResponse)
 async def launch_scan(
     url: str,
     request: Request,
@@ -97,7 +139,7 @@ async def launch_scan(
     return {"scan_id": task_id, "task_id": task_id, "status": "running"}
 
 
-@router.get("/scan/{scan_id}")
+@router.get("/scan/{scan_id}", response_model=ScanPollResponse)
 async def poll_scan(scan_id: str, request: Request):
     from pwnproxy.transport.rest.tasks import get_task_store
     store = get_task_store(request)
@@ -114,18 +156,20 @@ async def poll_scan(scan_id: str, request: Request):
 
 
 @router.get("/export/{scan_id}")
-async def export_scan(scan_id: str, format: str = "json"):
+async def export_scan(scan_id: str, request: Request, format: str = "json"):
     from pwnproxy.services.findings.engine import ExportEngine
     from pwnproxy.plugins.core.base import Finding
+    from pwnproxy.transport.rest.tasks import get_task_store
 
-    task = _scan_tasks.get(scan_id)
+    store = get_task_store(request)
+    task = await store.get(scan_id)
     if task is None:
         raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found")
-    if task["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Scan is {task['status']}, not completed")
+    if task.get("status") != "completed":
+        raise HTTPException(status_code=400, detail=f"Scan is {task.get('status')}, not completed")
 
     findings = []
-    for d in task["findings"]:
+    for d in (task.get("result") or {}).get("findings", []):
         f = Finding(
             scanner=d["scanner"], url=d["url"], method=d["method"],
             param_name=d.get("param_name", ""), param_location=d.get("param_location", ""),
@@ -135,7 +179,7 @@ async def export_scan(scan_id: str, format: str = "json"):
         )
         findings.append(f)
 
-    engine = ExportEngine(findings, target_url=task["url"])
+    engine = ExportEngine(findings, target_url=(task.get("config") or {}).get("url", ""))
 
     content_type_map = {"json": "application/json", "sarif": "application/json", "html": "text/html", "pdf": "application/pdf"}
     from fastapi.responses import Response
@@ -150,7 +194,7 @@ async def export_scan(scan_id: str, format: str = "json"):
     return Response(content=body, media_type=content_type_map.get(format, "text/plain"))
 
 
-@router.post("/import/burp")
+@router.post("/import/burp", response_model=BurpImportResponse)
 async def import_burp(request: Request, body: BurpImportRequest):
     try:
         data = json.loads(body.config)
