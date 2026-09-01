@@ -112,11 +112,20 @@ class TestLiveBwappXss:
         """Real scanner must flag xss_get.php (low security) on live bWAPP."""
         cookie = await _bwapp_cookie()
         findings = await _scan_xss_get(cookie)
-        assert findings, "XSS scanner found no findings on bWAPP xss_get.php"
+        # The accuracy change separates reflection from execution: a real XSS
+        # requires an exploitable breakout. Non-exploitable reflections must
+        # only ever surface as low/tentative unescaped-reflection, never as a
+        # high/confirmed XSS. bWAPP low security reflects unescaped, so the
+        # exploitable reflected-xss must still be present.
         assert any(
             f.param_name in ("firstname", "lastname") and f.technique == "reflected-xss"
             for f in findings
         ), f"unexpected findings: {[f.param_name for f in findings]}"
+        for f in findings:
+            if f.technique == "unescaped-reflection":
+                assert f.severity == "low" and f.confidence == "tentative", (
+                    f"unescaped-reflection mis-scored: {f.technique}/{f.severity}/{f.confidence}"
+                )
 
     @pytest.mark.asyncio
     async def test_finding_persists_and_triages(self):

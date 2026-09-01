@@ -148,7 +148,21 @@ async def _scan_target(
     all_findings = await loader.run_scan(flow, depth=detection_depth, evasion_level=evasion_level)
     elapsed = time.monotonic() - start
     console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(all_findings)}[/bold] finding(s)")
+    _print_xss_scope_note(all_findings)
     return all_findings
+
+
+def _print_xss_scope_note(findings: list[Finding]) -> None:
+    """Declare the XSS detector's coverage scope instead of implying absence
+    means the surface is XSS-free (task 7.1)."""
+    if any(f.technique == "reflected-xss" for f in findings):
+        return
+    console.print(
+        "[dim]Note: no reflected-XSS reported. The XSS scanner only flags exploitable "
+        "breakouts (unescaped markup / attribute, JS string, URI, comment, SVG); "
+        "absence of a finding does NOT guarantee the surface is XSS-free, only that "
+        "no reflectable breakout was confirmed in the declared contexts.[/dim]"
+    )
 
 
 def _output_findings(findings: list[Finding], fmt: str, output_file: Optional[str]) -> None:

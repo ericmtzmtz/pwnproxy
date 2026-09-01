@@ -32,6 +32,18 @@ class _Handler(BaseHTTPRequestHandler):
         elif parsed.path == "/safe":
             # Negative control: properly escaped.
             body = f"<html><body>Hello, {html_mod.escape(value)}</body></html>"
+        elif parsed.path == "/attr":
+            # Vulnerable: value inside a double-quoted attribute, no escaping.
+            body = f'<html><body><input type="text" name="fn" value="{value}"></body></html>'
+        elif parsed.path == "/attr-safe":
+            # Negative control: escaped attribute value → no breakout.
+            body = f'<html><body><input type="text" name="fn" value="{html_mod.escape(value, quote=True)}"></body></html>'
+        elif parsed.path == "/js":
+            # Vulnerable: value inside a JS string literal.
+            body = f"<html><body><script>var name = \"{value}\";</script></body></html>"
+        elif parsed.path == "/comment":
+            # Vulnerable: value inside an HTML comment.
+            body = f"<html><body><!-- user note: {value} --></body></html>"
         else:
             self._send(404, "not found")
             return

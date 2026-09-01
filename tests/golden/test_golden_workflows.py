@@ -278,11 +278,18 @@ class TestGoldenFinding:
 
     @pytest.mark.asyncio
     async def test_xss_scanner_negative_control(self):
-        """The escaped /safe endpoint must NOT produce a finding."""
+        """The escaped /safe endpoint must NOT produce a reflected-XSS finding.
+
+        The accuracy change separates reflection from execution: escaped-but-
+        reflected input may surface as a low/tentative ``unescaped-reflection``
+        signal, but never as an exploitable ``reflected-xss``.
+        """
         target = self._make_target()
         try:
             findings = await self._scan(target.base_url, "/safe?name=hello")
-            assert findings == [], f"false positive on /safe: {findings}"
+            techniques = [f.technique for f in findings]
+            assert "reflected-xss" not in techniques, f"false XSS on /safe: {techniques}"
+            assert all(t == "unescaped-reflection" for t in techniques), techniques
         finally:
             target.stop()
 

@@ -7,12 +7,59 @@ import httpx
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
+from pwnproxy.plugins.scanners.sqli.payloads import (
+    CANONICAL_BOOLEAN_PAIR,
+    ESCALATION_BOOLEAN_PAIRS,
+)
+from pwnproxy.shared.scan.response_compare import (
+    Fingerprint,
+    is_boolean_differentiable,
+    similarity,
+)
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
+
+BASELINE_STABLE_SIMILARITY = 0.90
+CONSISTENT_ROUND_SIMILARITY = 0.90
+
+
+def _pair_differentiable(true_resp, false_resp) -> bool:
+    if true_resp is None or false_resp is None:
+        return False
+    fp_true = Fingerprint.build(true_resp.status_code, true_resp.text)
+    fp_false = Fingerprint.build(false_resp.status_code, false_resp.text)
+    return is_boolean_differentiable(fp_true, fp_false)
+
+
+def _stable_confirmation(round1_true, round1_false, round2_true, round2_false) -> bool:
+    """Require ALL four 4-round confirmation conditions (see sqli-detection spec)."""
+    if round2_true is None or round2_false is None:
+        return False
+    # 1. first round differentiable
+    if not _pair_differentiable(round1_true, round1_false):
+        return False
+    # 2. TRUE-TRUE consistent
+    if _text_similarity(round1_true, round2_true) < CONSISTENT_ROUND_SIMILARITY:
+        return False
+    # 3. FALSE-FALSE consistent
+    if _text_similarity(round1_false, round2_false) < CONSISTENT_ROUND_SIMILARITY:
+        return False
+    # 4. second round differentiable
+    if not _pair_differentiable(round2_true, round2_false):
+        return False
+    return True
+
+
+def _text_similarity(resp_a, resp_b) -> float:
+    if resp_a is None or resp_b is None:
+        return 0.0
+    fp_a = Fingerprint.build(resp_a.status_code, resp_a.text)
+    fp_b = Fingerprint.build(resp_b.status_code, resp_b.text)
+    return similarity(fp_a, fp_b)
 
 
 class ErrorBasedStage(DetectionStage):
@@ -64,58 +111,95 @@ class BooleanBlindStage(DetectionStage):
     min_depth = DetectionDepth.STANDARD
     capability = "boolean-blind-sqli"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", deadline: Optional[float] = None):
         self._replayer = replayer
         self._evasion = evasion_level
+        self._deadline = deadline
+
+    def set_deadline(self, deadline: Optional[float]) -> None:
+        self._deadline = deadline
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
-        true_payloads = [
-            "' OR 1=1-- ",
-            "' OR '1'='1'-- ",
-            "' OR 1=1#",
-        ]
-        false_payloads = [
-            "' AND 1=0-- ",
-            "' AND '1'='2'-- ",
-            "' AND 1=0#",
-        ]
-
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
         for point in injection_points:
-            clean = await self._replayer.send_clean(point, timeout=10.0)
-            if clean is None:
+            if self._deadline is not None and time.monotonic() > self._deadline:
+                logger.info("BooleanBlindStage: stopping at intra-stage deadline (%d points tested)", len(findings))
+                break
+
+            clean_before = await self._replayer.send_clean(point, timeout=10.0)
+            if clean_before is None:
                 continue
-            clean_len = len(clean.text)
+            baseline_before = Fingerprint.build(clean_before.status_code, clean_before.text)
 
-            for true_p, false_p in zip(true_payloads, false_payloads):
-                true_resp = await self._replayer.replay(point, true_p, timeout=5.0, evasion_level=self._evasion)
-                false_resp = await self._replayer.replay(point, false_p, timeout=5.0, evasion_level=self._evasion)
-                if true_resp is None or false_resp is None:
-                    continue
+            # 1. Canonical pair pre-check (one request per payload).
+            canonical_true, canonical_false = CANONICAL_BOOLEAN_PAIR
+            true1 = await self._replayer.replay(point, canonical_true, timeout=5.0, evasion_level=self._evasion)
+            false1 = await self._replayer.replay(point, canonical_false, timeout=5.0, evasion_level=self._evasion)
 
-                true_len = len(true_resp.text)
-                false_len = len(false_resp.text)
-                diff = abs(true_len - false_len)
+            pair: Optional[tuple[str, str]] = None
+            round1_true = true1
+            round1_false = false1
 
-                if diff > 10:
-                    req = self._replayer.build_payload_request(point, true_p, evasion_level=self._evasion)
-                    findings.append(Finding(
-                        scanner="sqli",
-                        url=point.url,
-                        method=point.method,
-                        param_name=point.name,
-                        param_location=point.location,
-                        technique="boolean-blind",
-                        severity="medium",
-                        confidence="tentative",
-                        payload=true_p,
-                        evidence=f"Response length diff: TRUE={true_len}, FALSE={false_len} (diff={diff})",
-                        request_data=_serialize_request(req),
-                    ))
-                    confirmed.add(_point_key(point))
-                    break
+            if _pair_differentiable(true1, false1):
+                pair = (canonical_true, canonical_false)
+            else:
+                # 2. Escalate to remaining pairs, 2 requests each.
+                for t_p, f_p in ESCALATION_BOOLEAN_PAIRS:
+                    rt = await self._replayer.replay(point, t_p, timeout=5.0, evasion_level=self._evasion)
+                    rf = await self._replayer.replay(point, f_p, timeout=5.0, evasion_level=self._evasion)
+                    if _pair_differentiable(rt, rf):
+                        pair = (t_p, f_p)
+                        round1_true = rt
+                        round1_false = rf
+                        break
+
+            if pair is None:
+                continue
+
+            true_payload, false_payload = pair
+
+            # 3. Four-round bidirectional confirmation: TRUE/FALSE/TRUE/FALSE.
+            round2_true = await self._replayer.replay(point, true_payload, timeout=5.0, evasion_level=self._evasion)
+            round2_false = await self._replayer.replay(point, false_payload, timeout=5.0, evasion_level=self._evasion)
+
+            if not _stable_confirmation(round1_true, round1_false, round2_true, round2_false):
+                continue
+
+            # 4. Clean baseline stability check (before vs after).
+            clean_after = await self._replayer.send_clean(point, timeout=10.0)
+            if clean_after is None:
+                continue
+            baseline_after = Fingerprint.build(clean_after.status_code, clean_after.text)
+
+            stable = similarity(baseline_before, baseline_after) >= BASELINE_STABLE_SIMILARITY
+
+            # boolean-blind 4-round stability is a strong indirect signal
+            # (not content/syntax extraction) → inferred. An unstable clean
+            # baseline degrades the finding to tentative.
+            confidence = "inferred" if stable else "tentative"
+            severity = "high"
+
+            req = self._replayer.build_payload_request(point, true_payload, evasion_level=self._evasion)
+            findings.append(Finding(
+                scanner="sqli",
+                url=point.url,
+                method=point.method,
+                param_name=point.name,
+                param_location=point.location,
+                technique="boolean-blind",
+                severity=severity,
+                confidence=confidence,
+                payload=true_payload,
+                evidence=(
+                    f"Boolean differential stable across 4 rounds "
+                    f"(round1 diff, TRUE-TRUE sim, FALSE-FALSE sim, round2 diff); "
+                    f"baseline {'stable' if stable else 'UNSTABLE'}"
+                ),
+                request_data=_serialize_request(req),
+            ))
+            confirmed.add(_point_key(point))
 
         return StageResult(findings=findings, confirmed_points=confirmed)
 

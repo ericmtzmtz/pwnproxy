@@ -13,6 +13,20 @@ class ReflectionContext(str, Enum):
     UNKNOWN = "unknown"
 
 
+# A reflection in one of these contexts is NOT XSS by itself — it only becomes
+# so if the payload breaks out of the surrounding delimiter/context.
+NON_EXEC_WITHOUT_BREAKOUT = {
+    ReflectionContext.HTML_ATTR,
+    ReflectionContext.JS_STRING,
+    ReflectionContext.URL,
+    ReflectionContext.HTML_COMMENT,
+}
+
+_EVENT_HANDLER_RE = re.compile(r"\bon\w+\s*=", re.I)
+_JS_URI_RE = re.compile(r"^\s*javascript\s*:|^\s*data\s*:", re.I)
+_JS_BREAK_CHARS = ("'", '"', "`")
+
+
 class ContextAnalyzer:
     def analyze(self, body: str, canary: str) -> list[ReflectionContext]:
         if not body or not canary:
@@ -131,3 +145,51 @@ class ContextAnalyzer:
         if re.search(r'>\s*[^<]*$', before) or re.search(r'^[^<]*<', after):
             return ReflectionContext.HTML_BODY
         return None
+
+    def is_exploitable(self, body: str, payload: str) -> tuple[bool, list[ReflectionContext], str]:
+        """Single decision point for whether a reflected payload is exploitable.
+
+        ``body`` is the reflected HTTP response; ``payload`` is the injected
+        value. Returns ``(exploitable, contexts, reason)``.
+
+        A payload is only exploitable when it appears UNESCAPED (the raw
+        payload string is present verbatim — an HTML-escaped double) AND it
+        actually breaks out of, or executes within, its reflection context.
+        Mere reflection is never enough.
+        """
+        if not body or not payload:
+            return (False, [], "no body or payload")
+        if payload not in body:
+            return (False, self.analyze(body, payload), "payload not reflected unescaped")
+
+        contexts = self.analyze(body, payload)
+        for ctx in contexts:
+            if ctx in NON_EXEC_WITHOUT_BREAKOUT:
+                if self._breaks_out(ctx, body, payload):
+                    return (True, [ctx], f"{ctx.value} breakout")
+            elif ctx == ReflectionContext.HTML_BODY:
+                return (True, [ctx], "html_body unescaped markup")
+            elif ctx == ReflectionContext.SVG_NAMESPACE:
+                if self._has_js_uri(payload):
+                    return (True, [ctx], "svg_namespace javascript/data uri")
+        return (False, contexts, "reflection without exploitable breakout")
+
+    @staticmethod
+    def _breaks_out(ctx: ReflectionContext, body: str, payload: str) -> bool:
+        """Context-specific breakout check. The payload is known to be present verbatim."""
+        if ctx == ReflectionContext.HTML_ATTR:
+            return bool(
+                _EVENT_HANDLER_RE.search(payload)
+                or _JS_URI_RE.match(payload)
+            )
+        if ctx == ReflectionContext.JS_STRING:
+            return any(ch in payload for ch in _JS_BREAK_CHARS) or "</script>" in payload.lower()
+        if ctx == ReflectionContext.URL:
+            return bool(_JS_URI_RE.match(payload))
+        if ctx == ReflectionContext.HTML_COMMENT:
+            return "-->" in payload
+        return False
+
+    @staticmethod
+    def _has_js_uri(payload: str) -> bool:
+        return bool(_JS_URI_RE.search(payload))

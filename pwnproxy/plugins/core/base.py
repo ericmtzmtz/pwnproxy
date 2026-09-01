@@ -52,7 +52,16 @@ class Finding:
         param_location: The location of the parameter ("query", "body", "cookie", "header").
         technique: The detection technique used (e.g., "error-based", "boolean-blind").
         severity: The severity of the finding ("low", "medium", "high", "critical").
-        confidence: The confidence level of the finding ("tentative", "confirmed").
+        confidence: The confidence level of the finding. Three levels:
+            - "tentative": a weak signal (e.g. unescaped reflection without a
+              working exploit). Never by itself exploitable; reported only as
+              an aid for review.
+            - "inferred": a deterministic differential between two responses
+              (e.g. boolean-blind TRUE vs FALSE across 4 stable rounds) but no
+              direct code execution observed. Strong but not definitive.
+            - "confirmed": the payload demonstrably took effect (e.g. SQL error
+              surfaced, XSS breakout executed). Definitive; should be treated
+              as exploitable.
         payload: The payload that triggered the finding.
         evidence: Human-readable string describing what was observed (e.g., "Response length diff: ...").
         timestamp: UTC datetime when the finding was detected.

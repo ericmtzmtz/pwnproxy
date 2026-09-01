@@ -80,6 +80,15 @@ class DetectionStage(ABC):
         }
         return depth_order[depth] >= depth_order[self.min_depth]
 
+    def set_deadline(self, deadline: Optional[float]) -> None:
+        """Receive the absolute intra-stage deadline (monotonic seconds).
+
+        ``BudgetChain`` calls this before each stage runs so stages that test
+        many injection points can stop early once the wave budget is spent.
+        The default is a no-op; stages that support it (e.g. BooleanBlindStage)
+        override this to cut their point loop.
+        """
+
 
 class DetectionChain:
     """Orchestrates multiple detection stages in order.
@@ -213,6 +222,10 @@ class BudgetChain(DetectionChain):
     ) -> AsyncGenerator[Finding, None]:
         confirmed_keys: set[tuple] = set()
         start = time.monotonic()
+        # Absolute deadline shared by all stages: start + budget. A stage that
+        # supports an intra-stage deadline (e.g. BooleanBlindStage) stops testing
+        # remaining points once this is exceeded.
+        deadline = start + (self._budget_ms / 1000.0)
         waves_order = [DetectionDepth.FAST, DetectionDepth.STANDARD, DetectionDepth.DEEP]
 
         for wave_depth in waves_order:
@@ -238,6 +251,7 @@ class BudgetChain(DetectionChain):
                 if (time.monotonic() - start) * 1000 >= self._budget_ms:
                     break
                 try:
+                    stage.set_deadline(deadline)
                     result = await stage.execute(flow, remaining)
                     for finding in result.findings:
                         wave_findings += 1
@@ -268,6 +282,6 @@ def chain_from_depth(stages: list[DetectionStage], depth: str = "fast", budget_m
     if isinstance(depth, str):
         depth = DetectionDepth(depth)
     if budget_ms is None:
-        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(DetectionDepth.DEEP, 30000)
+        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(depth, 30000)
     return BudgetChain(stages, depth=depth, max_depth=DetectionDepth.DEEP, budget_ms=budget_ms)
 

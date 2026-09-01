@@ -17,8 +17,8 @@ class XSSScannerPlugin(ScannerPlugin):
         consumes=["flow"],
         produces=["finding"],
     )
-    techniques = ["reflected-xss", "stored-xss", "context-aware-xss"]
-    capabilities = ["cross-site-scripting", "reflected-xss", "stored-xss"]
+    techniques = ["reflected-xss", "stored-xss", "unescaped-reflection"]
+    capabilities = ["cross-site-scripting", "reflected-xss", "stored-xss", "unescaped-reflection"]
 
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")

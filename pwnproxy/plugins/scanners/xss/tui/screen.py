@@ -63,7 +63,7 @@ class XssScannerScreen(Screen[None]):
                 )
                 return
             for f in findings:
-                sev_icon = "🔴" if f.severity == "critical" else ("🟠" if (f.severity == "high" and f.confidence == "confirmed") else ("🟡" if f.confidence == "tentative" else "⚪"))
+                sev_icon = "🔴" if f.severity == "critical" else ("🟠" if (f.severity == "high" and f.confidence == "confirmed") else ("🟡" if f.confidence == "inferred" else "⚪"))
                 table.add_row(
                     sev_icon,
                     f.url[:80],

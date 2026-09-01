@@ -62,7 +62,7 @@ class SqliScannerScreen(Screen[None]):
                 )
                 return
             for f in findings:
-                sev_icon = "🔴" if (f.severity == "high" and f.confidence == "confirmed") else ("🟡" if (f.severity == "medium" or f.confidence == "tentative") else "⚪")
+                sev_icon = "🔴" if (f.severity == "high" and f.confidence == "confirmed") else ("🟠" if (f.severity == "high" and f.confidence == "inferred") else ("🟡" if (f.severity == "medium" or f.confidence == "tentative") else "⚪"))
                 table.add_row(
                     sev_icon,
                     f.url[:80],

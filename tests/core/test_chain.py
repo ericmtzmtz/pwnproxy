@@ -79,6 +79,91 @@ async def test_chain_from_depth_maps_depth(flow, points):
     assert isinstance(chain, BudgetChain)
     assert chain._budget_ms == 5000
 
+
+@pytest.mark.asyncio
+async def test_budget_chain_passes_deadline_to_stage(flow, points):
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.FAST
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = BudgetChain([stage], depth=DetectionDepth.FAST, max_depth=DetectionDepth.FAST, budget_ms=3000)
+    async for _ in chain.run(flow, points):
+        pass
+
+    stage.set_deadline.assert_called_once()
+    deadline = stage.set_deadline.call_args[0][0]
+    assert isinstance(deadline, float)
+    assert deadline > 0.0
+
+
+@pytest.mark.asyncio
+async def test_budget_chain_passes_deadline_before_each_stage(flow, points):
+    fast_stage = MagicMock(spec=DetectionStage)
+    fast_stage.order = 0
+    fast_stage.min_depth = DetectionDepth.FAST
+    fast_stage.should_run.return_value = True
+    fast_stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+    standard_stage = MagicMock(spec=DetectionStage)
+    standard_stage.order = 1
+    standard_stage.min_depth = DetectionDepth.STANDARD
+    standard_stage.should_run.return_value = True
+    standard_stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = BudgetChain([fast_stage, standard_stage], depth=DetectionDepth.FAST, max_depth=DetectionDepth.STANDARD, budget_ms=3000)
+    async for _ in chain.run(flow, points):
+        pass
+
+    fast_stage.set_deadline.assert_called_once()
+    standard_stage.set_deadline.assert_called_once()
+    # Both stages receive the same absolute deadline (start + budget).
+    assert fast_stage.set_deadline.call_args[0][0] == standard_stage.set_deadline.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_chain_from_depth_maps_fast_to_fast_budget():
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.FAST
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = chain_from_depth([stage], depth="fast")
+    assert chain._budget_ms == BudgetChain.WAVE_BUDGET_MS[DetectionDepth.FAST]
+
+
+@pytest.mark.asyncio
+async def test_chain_from_depth_maps_standard_to_standard_budget():
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.STANDARD
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = chain_from_depth([stage], depth="standard")
+    assert chain._budget_ms == BudgetChain.WAVE_BUDGET_MS[DetectionDepth.STANDARD]
+
+
+@pytest.mark.asyncio
+async def test_chain_from_depth_maps_deep_to_deep_budget():
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.DEEP
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = chain_from_depth([stage], depth="deep")
+    assert chain._budget_ms == BudgetChain.WAVE_BUDGET_MS[DetectionDepth.DEEP]
+
+
+@pytest.mark.asyncio
+async def test_chain_from_depth_defaults_to_deep_budget_on_unknown():
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.FAST
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = chain_from_depth([stage], depth="fast")
+    # fast must NOT receive deep budget (regression for the DEEP-hardcoded bug)
+    assert chain._budget_ms != BudgetChain.WAVE_BUDGET_MS[DetectionDepth.DEEP]
+
 @pytest.mark.asyncio
 async def test_budget_chain_depth_limits_waves():
     fast_stage = MagicMock(spec=DetectionStage)
