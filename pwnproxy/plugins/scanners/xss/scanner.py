@@ -6,6 +6,7 @@ from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
 from pwnproxy.shared.scan.stages.xss_stages import (
     ReflectedStage,
     StoredStage,
+    DomStage,
     ContextAwareStage,
 )
 from pwnproxy.shared.scan.replayer import RequestReplayer
@@ -30,6 +31,7 @@ class XSSScanner:
         stages = [
             ReflectedStage(self._replayer, evasion_level=self._evasion),
             StoredStage(self._replayer, evasion_level=self._evasion),
+            DomStage(self._replayer, evasion_level=self._evasion),
             ContextAwareStage(self._replayer, evasion_level=self._evasion),
         ]
         chain = DetectionChain(stages, DetectionDepth(self._depth))
