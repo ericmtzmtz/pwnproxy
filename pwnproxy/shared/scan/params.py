@@ -16,6 +16,22 @@ SKIP_CONTENT_TYPES = {
 
 INJECTABLE_HEADERS = {"referer", "x-forwarded-for", "user-agent"}
 
+# Parameter names that look like they accept a URL/path — SSRF scanner targets
+# only these to avoid noise on generic params (name, id, default, ...).
+URL_LIKE_PARAM_KEYWORDS = {
+    "url", "uri", "path", "dest", "destination", "redirect", "redirect_uri",
+    "redirect_url", "next", "next_url", "callback", "callback_url", "webhook",
+    "return", "return_url", "continue", "file", "load", "target", "page",
+    "host", "image", "img", "src", "domain", "endpoint", "api", "link",
+}
+
+
+def is_url_like_param(name: str) -> bool:
+    """True if a parameter name looks like it carries a URL/path value."""
+    lowered = (name or "").lower()
+    return any(kw in lowered for kw in URL_LIKE_PARAM_KEYWORDS)
+
+
 
 @dataclass
 class InjectionPoint:

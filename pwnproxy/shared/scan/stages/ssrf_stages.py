@@ -26,8 +26,27 @@ def _point_key(point: InjectionPoint) -> tuple:
     return (point.method, point.host + point.path, point.name, point.location)
 
 
+async def _live_callback(server) -> tuple[str, int] | None:
+    """Return (host, port) of the running OOB callback server, or None.
+
+    Used by SSRF stages so probes hit the real OOB listener; fail-closed when
+    the callback server is not running (no server → no SSRF confirmation).
+    """
+    try:
+        if server is not None and server.is_running:
+            return server.host, server.port
+    except Exception:
+        pass
+    return None
+
+
 class SsrfSimpleStage(DetectionStage):
-    """Simple SSRF detection using raw payload probes."""
+    """SSRF detection via OOB callback confirmation.
+
+    Injects a unique callback URL into the parameter and only reports SSRF
+    when the OOB callback server receives a request for that canary — an HTTP
+    response with any status code is NOT, by itself, evidence of SSRF.
+    """
 
     order = 0
     min_depth = DetectionDepth.FAST
@@ -43,27 +62,18 @@ class SsrfSimpleStage(DetectionStage):
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
-        # Use the real callback server's port when it is running, so probes
-        # hit the OOB listener instead of a hardcoded port (which may collide
-        # with the proxy port).
-        probe_host = self._callback_host
-        probe_port = self._callback_port
-        try:
-            from pwnproxy.shared.http_server import get_server
-            server = await get_server()
-            if server.is_running:
-                probe_host = server.host
-                probe_port = server.port
-        except Exception:
-            pass
+        server = await get_server()
+        live = await _live_callback(server)
+        if live is None:
+            logger.debug("SsrfSimpleStage: callback server not running, fail-closed")
+            return StageResult(findings=findings, confirmed_points=confirmed)
+
+        registry = get_registry()
 
         for point in injection_points:
-            # Use a harmless probe URL to see if the server makes a request
-            probe_url = f"http://{probe_host}:{probe_port}/probe/{int(time.time())}"
-            # We'll inject the probe URL as the parameter value
-            # For simplicity, we replace the parameter value with probe_url
-            # but we need to keep original parameter name and location.
-            # We'll create a temporary InjectionPoint with the probe URL as value.
+            canary = registry.create(f"ssrf-simple-{flow.id}-{point.name}")
+            callback_url = server.get_callback_url(canary.token)
+
             from pwnproxy.shared.scan.params import InjectionPoint as IP
             probe_point = IP(
                 flow_id=point.flow_id,
@@ -73,31 +83,38 @@ class SsrfSimpleStage(DetectionStage):
                 path=point.path,
                 name=point.name,
                 location=point.location,
-                value=probe_url,
+                value=callback_url,
                 original_headers=point.original_headers,
                 original_body=point.original_body,
             )
-            resp = await self._replayer.replay(probe_point, probe_url, timeout=10.0, evasion_level=self._evasion)
+            resp = await self._replayer.replay(probe_point, callback_url, timeout=10.0, evasion_level=self._evasion)
             if resp is None:
+                registry.cleanup_expired()
                 continue
-            # Consider any response (even error) as potential SSRF? We'll treat status < 400 as interesting.
-            if resp.status_code < 400:
-                req = self._replayer.build_payload_request(probe_point, probe_url, evasion_level=self._evasion)
+
+            import asyncio
+            await asyncio.sleep(2)
+
+            hit = registry.get(canary.token)
+            if hit and hit.callback_received:
+                req = self._replayer.build_payload_request(probe_point, callback_url, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="ssrf",
                     url=point.url,
                     method=point.method,
                     param_name=point.name,
                     param_location=point.location,
-                    technique="ssrf-error-based",
-                    severity="low",
-                    confidence="tentative",
-                    payload=probe_url,
-                    evidence=f"Received HTTP {resp.status_code} from probe",
+                    technique="ssrf-oob",
+                    severity="high",
+                    confidence="confirmed",
+                    payload=callback_url,
+                    evidence=f"OOB callback received from {hit.callback_ip}",
+                    extra={"oob_token": canary.token},
                     request_data=_serialize_request(req),
                 ))
                 confirmed.add(_point_key(point))
-                break  # only need one finding per point
+
+            registry.cleanup_expired()
 
         return StageResult(findings=findings, confirmed_points=confirmed)
 

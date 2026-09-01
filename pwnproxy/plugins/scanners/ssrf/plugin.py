@@ -6,7 +6,7 @@ from collections.abc import AsyncGenerator
 
 from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
 from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.params import extract as extract_params, is_url_like_param
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 
@@ -14,12 +14,12 @@ from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 class SSRFScannerPlugin(ScannerPlugin):
     metadata = PluginMetadata(
         name="ssrf",
-        version="0.3.0",
+        version="0.4.0",
         author="pwnproxy",
         consumes=["flow"],
         produces=["finding"],
     )
-    techniques = ["ssrf-simple", "ssrf-redirect", "ssrf-oob"]
+    techniques = ["ssrf-oob", "ssrf-redirect"]
     capabilities = ["server-side-request-forgery", "ssrf"]
 
     async def on_load(self) -> None:
@@ -40,6 +40,10 @@ class SSRFScannerPlugin(ScannerPlugin):
         points = extract_params(flow)
         seen = set()
         for point in points:
+            if point.location != "query" and point.location != "body":
+                continue
+            if not is_url_like_param(point.name):
+                continue
             key = (point.host + point.path, point.name, point.location)
             if key in seen:
                 continue

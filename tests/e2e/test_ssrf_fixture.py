@@ -64,6 +64,15 @@ class TestScanE2E:
         target = f"{ssrf_server.base_url}/fetch?url=http://127.0.0.1:18080/probe"
 
         async def run():
+            # SSRF now confirms via OOB callback: start the callback server so
+            # the fixture's server-side fetch of the injected URL produces a
+            # canary hit.
+            import pwnproxy.shared.http_server as http_mod
+            if not http_mod._server or not http_mod._server.is_running:
+                http_mod._server = http_mod.HTTPCallbackServer(host="127.0.0.1", port=0)
+            server = await http_mod.get_server()
+            if not server.is_running:
+                await server.start()
             loader = PluginLoader()
             await loader.load_builtin(SSRFScannerPlugin())
             return await _scan_target(loader, target, timeout=30, method="GET")
@@ -71,5 +80,8 @@ class TestScanE2E:
         findings = asyncio.run(run())
         assert findings, "SSRF scanner produced no findings against the fixture"
         assert any(f.scanner == "ssrf" for f in findings), [
+            (f.scanner, f.technique) for f in findings
+        ]
+        assert any(f.technique == "ssrf-oob" for f in findings), [
             (f.scanner, f.technique) for f in findings
         ]

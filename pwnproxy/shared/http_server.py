@@ -46,6 +46,12 @@ class HTTPCallbackServer:
         await self._runner.setup()
         self._site = web.TCPSite(self._runner, self.host, self.port)
         await self._site.start()
+        # When bound to port 0 (ephemeral), propagate the real port so
+        # get_callback_url() returns a reachable URL.
+        if self.port == 0:
+            for sock in self._site._server.sockets:
+                self.port = sock.getsockname()[1]
+                break
         
         self._running = True
         logger.info("OOB HTTP callback server started on %s:%d", self.host, self.port)
