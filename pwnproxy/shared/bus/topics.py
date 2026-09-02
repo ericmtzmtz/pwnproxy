@@ -45,6 +45,10 @@ BRUTEFORCE_URL = "bruteforce.url"
 SCAN_STARTED = "scan.started"
 SCAN_COMPLETED = "scan.completed"
 
+# Auto-scan (proxy flow path, windowed)
+AUTOSCAN_STARTED = "autoscan.started"
+AUTOSCAN_COMPLETED = "autoscan.completed"
+
 # Findings
 FINDING_CREATED = "finding.created"
 TRIAGE_UPDATED = "triage.updated"
@@ -67,6 +71,8 @@ TOPIC_QOS: dict[str, QoSClass] = {
     BRUTEFORCE_FAILED:     QoSClass.CRITICAL,
     SCAN_STARTED:          QoSClass.CRITICAL,
     SCAN_COMPLETED:        QoSClass.CRITICAL,
+    AUTOSCAN_STARTED:      QoSClass.IMPORTANT,
+    AUTOSCAN_COMPLETED:    QoSClass.IMPORTANT,
 
     # IMPORTANT — coalesce by key (e.g. progress:{job_id}) on congestion
     CRAWL_PROGRESS:        QoSClass.IMPORTANT,

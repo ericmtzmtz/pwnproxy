@@ -285,6 +285,14 @@ def start(
         # Wire PluginLoader with SessionManager and start it
         plugin_loader._session_manager = session_manager
 
+        # Auto-scan batch tracker: windows flows so the UI can see when an
+        # auto-scan batch started/finished (the proxy auto-scan path has no
+        # TaskStore entry).
+        from pwnproxy.plugins.core.autoscan import AutoScanTracker
+        autoscan = AutoScanTracker(hook_bus=hook_bus)
+        autoscan.start()
+        plugin_loader.autoscan = autoscan
+
         # Start the OOB callback server on the configured port so SSRF/OOB
         # scanners probe the real callback listener instead of a hardcoded port.
         try:
@@ -311,6 +319,7 @@ def start(
             plugin_loader=plugin_loader,
             proxy_engine=proxy,
             crawler_process=crawler,
+            autoscan_tracker=autoscan,
             host=host,
             port=api_port,
             proxy_port=proxy_port,

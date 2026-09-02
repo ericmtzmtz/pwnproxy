@@ -45,6 +45,9 @@ class UniversalPluginLoader:
         self._plugins: Dict[str, PwnPlugin] = {}
         self._plugin_tasks: Dict[str, asyncio.Task] = {}
         self._timeout = 0.1  # Short timeout for consumer loop responsiveness
+        # Auto-scan batch tracker (optional; wired in server startup so the
+        # proxy auto-scan path reports windowed started/completed events).
+        self.autoscan = None
 
     async def load(
         self, 
@@ -173,6 +176,11 @@ class UniversalPluginLoader:
 
     async def _handle_flow(self, plugin: PwnPlugin, flow: Flow) -> AsyncGenerator[Any, None]:
         """Handle flow data - either through new on_flow() or legacy scan() method."""
+        if self.autoscan is not None:
+            try:
+                await self.autoscan.report_flow(flow)
+            except Exception:
+                logger.debug("autoscan report_flow failed", exc_info=True)
         if hasattr(plugin, "on_flow"):
             # New-style plugin
             async for result in plugin.on_flow(flow):
@@ -190,10 +198,15 @@ class UniversalPluginLoader:
         """Publish plugin results to appropriate channels."""
         if result is None:
             return
-            
+
         for produce_type in plugin.metadata.produces:
             channel_name = produce_type  # Default mapping
             self.hook_bus.publish(channel_name, result)
+            if self.autoscan is not None and produce_type == "finding":
+                try:
+                    await self.autoscan.report_finding()
+                except Exception:
+                    logger.debug("autoscan report_finding failed", exc_info=True)
 
     async def discover_scanners(self, scanners_path: str | None = None) -> None:
         """Auto-discover ScannerPlugin subclasses from the scanners directory."""

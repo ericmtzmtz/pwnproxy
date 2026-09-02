@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { StatCards } from "./StatCards";
 import { FindingsSection } from "./FindingsSection";
 import { DiscoveredSection } from "./DiscoveredSection";
+import { WorkersStrip } from "@/components/workers/WorkersStrip";
 import { listFlows } from "@/api/traffic/calls";
 import { listFindings } from "@/api/findings/calls";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
@@ -37,6 +38,10 @@ export function Dashboard() {
       <div class="mb-6">
         <h1 class="text-xl font-bold text-neutral-50">Dashboard</h1>
         <p class="mt-0.5 text-sm text-neutral-400">Security metrics overview</p>
+      </div>
+
+      <div class="mb-4">
+        <WorkersStrip />
       </div>
 
       <StatCards

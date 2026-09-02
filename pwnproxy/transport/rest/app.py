@@ -5,7 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from pwnproxy.shared.observability import gen_correlation_id, set_correlation_id
-from pwnproxy.transport.rest import crawler, findings, health, interceptor, intruder, plugins, proxy, repeater, reports, scanners, session, tasks, tokens, traffic
+from pwnproxy.transport.rest import crawler, findings, health, interceptor, intruder, plugins, proxy, repeater, reports, scanners, session, tasks, tokens, traffic, workers
 from pwnproxy.transport.ws.events import router as ws_router
 
 _ORIGINS_ENV = os.environ.get("CORS_ORIGINS", "http://localhost:4321,http://127.0.0.1:4321,http://localhost:4322,http://127.0.0.1:4322")
@@ -51,3 +51,4 @@ app.include_router(reports)
 app.include_router(crawler)
 app.include_router(proxy)
 app.include_router(health)
+app.include_router(workers)

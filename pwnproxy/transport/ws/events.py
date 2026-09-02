@@ -131,6 +131,8 @@ async def ws_events(ws: WebSocket):
     finding_queue = hook_bus.register("finding")
     scan_started_queue = hook_bus.register("scan.started")
     scan_completed_queue = hook_bus.register("scan.completed")
+    autoscan_started_queue = hook_bus.register("autoscan.started")
+    autoscan_completed_queue = hook_bus.register("autoscan.completed")
     triage_queue = hook_bus.register("triage.updated")
     crawler_queue = hook_bus.register("crawler.url")
     crawl_started_queue = hook_bus.register("crawl.started")
@@ -149,6 +151,8 @@ async def ws_events(ws: WebSocket):
             finding_task = asyncio.create_task(finding_queue.get())
             started_task = asyncio.create_task(scan_started_queue.get())
             completed_task = asyncio.create_task(scan_completed_queue.get())
+            autoscan_started_task = asyncio.create_task(autoscan_started_queue.get())
+            autoscan_completed_task = asyncio.create_task(autoscan_completed_queue.get())
             triage_task = asyncio.create_task(triage_queue.get())
             crawler_task = asyncio.create_task(crawler_queue.get())
             crawl_started_task = asyncio.create_task(crawl_started_queue.get())
@@ -161,7 +165,8 @@ async def ws_events(ws: WebSocket):
             bruteforce_failed_task = asyncio.create_task(bruteforce_failed_queue.get())
 
             done, pending = await asyncio.wait(
-                [flow_task, finding_task, started_task, completed_task, triage_task,
+                [flow_task, finding_task, started_task, completed_task,
+                 autoscan_started_task, autoscan_completed_task, triage_task,
                  crawler_task, crawl_started_task, crawl_progress_task,
                  crawl_completed_task, crawl_failed_task,
                  bruteforce_started_task, bruteforce_progress_task,
@@ -194,6 +199,12 @@ async def ws_events(ws: WebSocket):
                 elif task is completed_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "scan.completed", **result}, default=str)
+                elif task is autoscan_started_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "autoscan.started", **result}, default=str)
+                elif task is autoscan_completed_task:
+                    if isinstance(result, dict):
+                        payload = json.dumps({"type": "autoscan.completed", **result}, default=str)
                 elif task is triage_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "triage.updated", **result}, default=str)

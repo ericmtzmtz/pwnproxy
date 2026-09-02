@@ -62,6 +62,7 @@ async def start_api_server(
     plugin_loader=None,
     proxy_engine=None,
     crawler_process=None,
+    autoscan_tracker=None,
     host: str = "127.0.0.1",
     port: int = 8000,
     proxy_port: int = 8080,
@@ -85,6 +86,7 @@ async def start_api_server(
     app.state.proxy_engine = proxy_engine or (session_manager.get_proxy_engine() if session_manager else None)
     app.state.crawler_process = crawler_process
     app.state.task_store = session_manager.task_store if session_manager else None
+    app.state.autoscan_tracker = autoscan_tracker
     app.state.proxy_port = proxy_port
 
     llm_ledger = UsageLedger(default_ledger_engine())
