@@ -46,6 +46,15 @@ def score_finding(row: dict, config: Optional[TriageConfig] = None) -> Heuristic
     if confidence == "tentative":
         score += w.get("tentative_confidence", 0.0)
         reasons.append("scanner_noise")
+    elif confidence == "confirmed":
+        # Scanner already proved the payload took effect (SQL error surfaced,
+        # XSS breakout executed). Strong bonus + a floor so it can never fall
+        # into uncertain/auto_false regardless of generic evidence weights.
+        score += w.get("confirmed_confidence", 0.0)
+        reasons.append("confirmed_scanner")
+    elif confidence == "inferred":
+        score += w.get("inferred_confidence", 0.0)
+        reasons.append("inferred_scanner")
     elif confidence in ("confident", "certain", "firm"):
         score += w.get("confident_confidence", 0.0)
         reasons.append("confident_scanner")
@@ -55,6 +64,9 @@ def score_finding(row: dict, config: Optional[TriageConfig] = None) -> Heuristic
         reasons.append("request_context")
 
     final = round(min(1.0, max(0.0, score)), 3)
+    if confidence == "confirmed" and final < cfg.auto_true:
+        final = cfg.auto_true
+        reasons.append("confirmed_floor")
     # Dedup preserving order (payload_in_evidence and detailed_evidence share the tag).
     reasons = list(dict.fromkeys(reasons))
     logger.debug("triage heuristic finding=%s score=%.3f reasons=%s", row.get("id"), final, reasons)

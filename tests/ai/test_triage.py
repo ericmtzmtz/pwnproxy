@@ -57,6 +57,31 @@ class TestHeuristic:
         assert "strong_evidence" in res.reasons
         assert "request_context" in res.reasons
 
+    def test_confirmed_with_no_evidence_hits_auto_true_floor(self):
+        """A scanner-confirmed finding must never land in the gray zone / auto_false."""
+        res = score_finding({"id": 1, "evidence": "", "payload": "", "confidence": "confirmed"})
+        assert res.score >= 0.7
+        assert "confirmed_scanner" in res.reasons
+        assert "confirmed_floor" in res.reasons
+
+    def test_confirmed_with_evidence_scores_high(self):
+        res = score_finding({
+            "evidence": "SQL syntax error near ' OR 1=1", "payload": "' OR 1=1",
+            "confidence": "confirmed", "request_data": {"r": 1},
+        })
+        assert res.score >= 0.7
+        assert "confirmed_scanner" in res.reasons
+
+    def test_inferred_scores_mid(self):
+        res = score_finding({"id": 1, "evidence": "z", "confidence": "inferred"})
+        assert 0.3 <= res.score < 0.7
+        assert "inferred_scanner" in res.reasons
+
+    def test_inferred_with_detailed_evidence_hits_auto_true(self):
+        res = score_finding({"id": 1, "evidence": "z" * 130, "confidence": "inferred"})
+        assert res.score >= 0.7
+        assert "inferred_scanner" in res.reasons
+
     def test_gray_zone_example(self):
         row = {
             "evidence": "x" * 130 + " <svg>", "payload": "<svg>",
@@ -101,15 +126,15 @@ class TestPipeline:
         asyncio.run(_run())
 
     def test_gray_zone_goes_to_judge_in_legacy_mode(self):
-        """legacy_gray opt-in: gray-zone confirmed/inferred findings reach the judge."""
+        """legacy_gray opt-in: gray-zone inferred findings reach the judge."""
         async def _run():
             _, st = await _make_storage()
             bus = FakeHookBus()
             fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.85, reason="scanner_noise"))
             cfg = TriageConfig(mode="legacy_gray")
             pipe = TriagePipeline(lambda: st, hook_bus=bus, judge=LLMJudge(fake), config=cfg)
-            # gray-zone (0.3 < score < 0.7): detailed evidence, inferred, no payload in evidence
-            fid = await st.save(_finding(evidence="z" * 130, confidence="inferred"))
+            # gray-zone (0.3 < score < 0.7): short evidence + inferred
+            fid = await st.save(_finding(evidence="z", confidence="inferred"))
             await pipe.handle(await st.get(fid))
             provisional = await st.get(fid)
             assert provisional["triage_verdict"] == "uncertain"
@@ -144,13 +169,13 @@ class TestPipeline:
         asyncio.run(_run())
 
     def test_heuristic_mode_never_calls_llm(self):
-        """Default mode=heuristic: confirmed findings in gray zone stay uncertain, no LLM."""
+        """Default mode=heuristic: gray-zone inferred findings stay uncertain, no LLM."""
         async def _run():
             _, st = await _make_storage()
             fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.8, reason="x"))
             pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=TriageConfig(mode="heuristic"))
-            # confirmed but gray-zone (short evidence): would previously go to judge
-            fid = await st.save(_finding(evidence="z", confidence="confirmed"))
+            # inferred but gray-zone (short evidence): would previously go to judge
+            fid = await st.save(_finding(evidence="z", confidence="inferred"))
             await pipe.handle(await st.get(fid))
             pipe.start()
             await pipe.queue.join()
@@ -177,7 +202,7 @@ class TestPipeline:
             for i in range(3):
                 f = _finding(
                     url=f"http://t/{i}?id=1", param_name="id",
-                    evidence="z" * 130, confidence="inferred",
+                    evidence="z", confidence="inferred",
                     extra={"scan_id": "scan-1"},
                 )
                 fid = await st.save(f)
@@ -195,7 +220,7 @@ class TestPipeline:
             _, st = await _make_storage()
             fake = FakeLLMClient().push(JudgeVerdict(verdict="true_positive", confidence=0.9, reason="x"))
             pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=TriageConfig(mode="off"))
-            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            fid = await st.save(_finding(evidence="z", confidence="inferred"))
             await pipe.handle(await st.get(fid))
             final = await st.get(fid)
             assert final["triage_verdict"] == "uncertain"
@@ -204,13 +229,13 @@ class TestPipeline:
         asyncio.run(_run())
 
     def test_enrich_blocks_low_confidence_fp_on_confirmed(self):
-        """enrich must not downgrade a confirmed finding to FP unless the judge is confident."""
+        """enrich must not downgrade an inferred finding to FP unless the judge is confident."""
         async def _run():
             _, st = await _make_storage()
             fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.6, reason="maybe"))
             cfg = TriageConfig(mode="enrich", enrich_fp_threshold=0.85)
             pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
-            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            fid = await st.save(_finding(evidence="z", confidence="inferred"))
             await pipe.handle(await st.get(fid))
             pipe.start()
             await pipe.queue.join()
@@ -227,7 +252,7 @@ class TestPipeline:
             fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.95, reason="clear fp"))
             cfg = TriageConfig(mode="enrich", enrich_fp_threshold=0.85)
             pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
-            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            fid = await st.save(_finding(evidence="z", confidence="inferred"))
             await pipe.handle(await st.get(fid))
             pipe.start()
             await pipe.queue.join()

@@ -9,6 +9,8 @@ from pydantic import BaseModel, Field
 DEFAULT_WEIGHTS: dict[str, float] = {
     "no_evidence": -0.45,
     "tentative_confidence": -0.20,
+    "inferred_confidence": 0.10,
+    "confirmed_confidence": 0.20,
     "confident_confidence": 0.15,
     "detailed_evidence": 0.10,
     "payload_in_evidence": 0.15,

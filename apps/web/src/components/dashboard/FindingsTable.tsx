@@ -45,18 +45,39 @@ const triageBadge: Record<string, string> = {
   uncertain: "bg-yellow-900/40 text-yellow-400",
 };
 
+const confidenceBadge: Record<string, string> = {
+  confirmed: "bg-red-900/50 text-red-300",
+  inferred: "bg-blue-900/50 text-blue-300",
+  tentative: "bg-neutral-800 text-neutral-400",
+};
+
 function TriageCell({ f }: { f: Finding }) {
   if (!f.triage_verdict) {
-    return <span class="text-[11px] text-neutral-600">pending</span>;
+    return (
+      <span class="inline-flex items-center gap-1.5 text-[11px] text-neutral-600">
+        <span class={`rounded px-1 py-0.5 font-semibold ${confidenceBadge[f.confidence] ?? "bg-neutral-800 text-neutral-400"}`}>
+          {f.confidence}
+        </span>
+        pending
+      </span>
+    );
   }
   const score = typeof f.triage_score === "number" ? f.triage_score.toFixed(2) : "";
   return (
-    <span
-      class={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${triageBadge[f.triage_verdict] ?? "bg-neutral-800 text-neutral-400"}`}
-      title={f.triage_reason ?? ""}
-    >
-      {f.triage_verdict === "true_positive" ? "TP" : f.triage_verdict === "false_positive" ? "FP" : "?"}
-      {score && <span class="font-mono opacity-70">{score}</span>}
+    <span class="inline-flex items-center gap-1.5">
+      <span
+        class={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ${triageBadge[f.triage_verdict] ?? "bg-neutral-800 text-neutral-400"}`}
+        title={f.triage_reason ?? ""}
+      >
+        {f.triage_verdict === "true_positive" ? "TP" : f.triage_verdict === "false_positive" ? "FP" : "?"}
+        {score && <span class="font-mono opacity-70">{score}</span>}
+      </span>
+      <span
+        class={`rounded px-1 py-0.5 text-[10px] font-semibold ${confidenceBadge[f.confidence] ?? "bg-neutral-800 text-neutral-400"}`}
+        title="Scanner confidence"
+      >
+        {f.confidence}
+      </span>
     </span>
   );
 }
