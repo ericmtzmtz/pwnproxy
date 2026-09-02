@@ -78,6 +78,20 @@ class ErrorBasedStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            # Baseline check: if the clean response already carries a DBMS error
+            # signature (e.g. the session/state is poisoned by another request),
+            # the error is NOT induced by this parameter — skip the point.
+            clean = await self._replayer.send_clean(point, timeout=10.0)
+            if clean is None:
+                logger.debug("ErrorBasedStage: baseline request failed for %s — skipping", point.key)
+                continue
+            if _check_error_signatures(clean.text, self._signatures) is not None:
+                logger.info(
+                    "ErrorBasedStage: baseline already has SQL error at %s — skipping (pre-existing error)",
+                    point.key,
+                )
+                continue
+
             for payload in self._error_payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0, evasion_level=self._evasion)
                 if resp is None:

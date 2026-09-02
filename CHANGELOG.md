@@ -7,6 +7,10 @@ Versions are not yet tagged; this file tracks work since the hardening cycle.
 
 ## Unreleased (0.2.0-dev)
 
+### SQLi Error-Based Baseline
+
+- **Baseline check en `ErrorBasedStage`**: antes de probar payloads en un punto, se envía una request limpia; si la respuesta ya contiene una firma de error SQL (sesión/estado envenenado, ej. `session-input.php` guardando `1'`), el punto se omite — el error NO lo induce el parámetro. Elimina los falsos positivos `error-based confirmed` en Referer/User-Agent por sesión corrompida.
+
 ### Triage LLM Budget
 
 - **Triage LLM: tentative nunca enqueue**: `skip_llm_if_confidence` (default `["tentative"]`) es un gate duro — los findings tentative se deciden solo por heurística y jamás consumen presupuesto LLM (cierra el rate-limit causado por la avalancha de SSRF FPs).
