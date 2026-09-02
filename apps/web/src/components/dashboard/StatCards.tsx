@@ -22,7 +22,7 @@ export function StatCards({
   scopeCount,
 }: StatCardsProps) {
   return (
-    <div class="grid grid-cols-4 gap-4">
+    <div class="grid md:grid-cols-4 grid-cols-2 gap-4">
       <div class="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
         <p class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Proxy Traffic</p>
         <p class="mt-1 text-2xl font-bold text-neutral-50">{flowsCount}</p>
