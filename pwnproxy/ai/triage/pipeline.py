@@ -31,6 +31,9 @@ class TriagePipeline:
         self.config = config or load_triage_config()
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=self.config.queue_maxsize)
         self._worker_task: Optional[asyncio.Task] = None
+        # Per-scan LLM call budget (scan_id -> count). Findings without a
+        # scan_id share the "default" bucket.
+        self._llm_calls: dict[str, int] = {}
 
     # -- lifecycle -----------------------------------------------------------
 
@@ -55,15 +58,24 @@ class TriagePipeline:
         try:
             result = score_finding(row, self.config)
             finding_id = row["id"]
+            confidence = str(row.get("confidence") or "").lower()
+
+            # Gate A: hard gate — skip_llm_if_confidence levels NEVER reach the
+            # judge, regardless of heuristic score. Heuristic alone decides.
+            llm_eligible = (
+                self.judge is not None
+                and confidence not in self.config.skip_llm_if_confidence
+            )
+
             if result.score >= self.config.auto_true:
                 await self._apply(finding_id, "true_positive", "heuristic", result)
             elif result.score <= self.config.auto_false:
                 await self._apply(finding_id, "false_positive", "heuristic", result)
             else:
-                # Gray zone: provisional uncertain while the judge takes a look.
+                # Gray zone (0.3 < score < 0.7): provisional uncertain.
                 await self._apply(finding_id, "uncertain", "heuristic", result)
-                if self.judge is not None:
-                    self._enqueue(finding_id, row, result.features)
+                if llm_eligible and self._should_llm(confidence):
+                    self._enqueue(finding_id, row, result.features, confidence)
         except Exception:
             logger.exception("triage pipeline failed for finding %s", row.get("id"))
 
@@ -71,26 +83,66 @@ class TriagePipeline:
         """Persist a human verdict; used by the REST feedback endpoint."""
         return await self._set(finding_id, verdict, "human", None, reason or "human_review")
 
+    def _should_llm(self, confidence: str) -> bool:
+        """Decide whether a gray-zone finding may reach the LLM judge."""
+        mode = self.config.mode
+        if mode == "off" or mode == "heuristic":
+            return False
+        if mode == "legacy_gray":
+            return True
+        if mode == "enrich":
+            # Enrich only already-strong findings; never arbitrate the gray zone.
+            return confidence in ("confirmed", "inferred")
+        return False
+
+    def _scan_key(self, row: dict) -> str:
+        extra = row.get("extra") or {}
+        if isinstance(extra, dict) and extra.get("scan_id"):
+            return str(extra["scan_id"])
+        return "default"
+
+    def _budget_available(self, scan_key: str) -> bool:
+        if self.config.max_llm_per_scan <= 0:
+            return False
+        return self._llm_calls.get(scan_key, 0) < self.config.max_llm_per_scan
+
     # -- internals -------------------------------------------------------------
 
-    def _enqueue(self, finding_id: int, row: dict, features: dict) -> None:
+    def _enqueue(self, finding_id: int, row: dict, features: dict, confidence: str) -> None:
+        scan_key = self._scan_key(row)
+        if not self._budget_available(scan_key):
+            logger.info("triage: LLM budget exhausted for scan %s; finding %s stays uncertain",
+                        scan_key, finding_id)
+            return
+        # Reserve the LLM slot up-front so the budget is honored even when
+        # many gray-zone findings arrive before the worker drains the queue.
+        self._llm_calls[scan_key] = self._llm_calls.get(scan_key, 0) + 1
         snapshot = {k: row.get(k) for k in (
             "id", "scanner", "url", "method", "param_name", "param_location",
             "technique", "severity", "confidence", "payload", "evidence",
         )}
         try:
-            self.queue.put_nowait((finding_id, snapshot, features))
+            self.queue.put_nowait((finding_id, snapshot, features, scan_key))
         except asyncio.QueueFull:
             logger.warning("triage queue full; finding %s stays uncertain", finding_id)
+            # release the reserved slot
+            self._llm_calls[scan_key] = max(0, self._llm_calls.get(scan_key, 0) - 1)
 
     async def _worker(self) -> None:
         while True:
-            finding_id, snapshot, features = await self.queue.get()
+            finding_id, snapshot, features, scan_key = await self.queue.get()
             try:
                 verdict = await self.judge.evaluate(snapshot, features)
+                verdict_str, reason = verdict.verdict, verdict.reason
+                if self.config.mode == "enrich" and self._enrich_blocks_fp(snapshot, verdict):
+                    # Enrichment must not casually downgrade a finding the
+                    # scanner already marked confirmed/inferred to a false
+                    # positive unless the judge is highly confident.
+                    verdict_str = "uncertain"
+                    reason = f"enrich fp blocked (judge confidence {verdict.confidence:.2f})"
                 await self._set(
-                    finding_id, verdict.verdict, "llm",
-                    verdict.confidence, verdict.reason,
+                    finding_id, verdict_str, "llm",
+                    verdict.confidence, reason,
                     features=features,
                 )
             except Exception as e:
@@ -98,6 +150,15 @@ class TriagePipeline:
                 logger.warning("triage judge unavailable for finding %s: %s", finding_id, e)
             finally:
                 self.queue.task_done()
+
+    def _enrich_blocks_fp(self, snapshot: dict, verdict) -> bool:
+        """True when enrich mode must NOT apply a judge false_positive verdict."""
+        if verdict.verdict != "false_positive":
+            return False
+        confidence = str(snapshot.get("confidence") or "").lower()
+        if confidence not in ("confirmed", "inferred"):
+            return False
+        return verdict.confidence < self.config.enrich_fp_threshold
 
     async def _apply(self, finding_id: int, verdict: str, method: str, result: HeuristicResult) -> None:
         reason = ";".join(result.reasons) or "default"

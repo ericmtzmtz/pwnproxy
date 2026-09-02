@@ -108,6 +108,10 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
         if sm is not None:
             storage = FindingStorage(sm.get_scanner_engine())
             for f in findings:
+                # Tag the originating scan so the triage LLM budget is per-scan.
+                extra = dict(f.extra or {})
+                extra["scan_id"] = task_id
+                f.extra = extra
                 await storage.save(f)
             logger.info("Persisted %d finding(s) from scan %s", len(findings), task_id)
     except Exception as e:

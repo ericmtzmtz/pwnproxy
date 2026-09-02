@@ -100,13 +100,16 @@ class TestPipeline:
 
         asyncio.run(_run())
 
-    def test_gray_zone_goes_to_judge(self):
+    def test_gray_zone_goes_to_judge_in_legacy_mode(self):
+        """legacy_gray opt-in: gray-zone confirmed/inferred findings reach the judge."""
         async def _run():
             _, st = await _make_storage()
             bus = FakeHookBus()
             fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.85, reason="scanner_noise"))
-            pipe = TriagePipeline(lambda: st, hook_bus=bus, judge=LLMJudge(fake), config=TriageConfig())
-            fid = await st.save(_finding(evidence="z" * 130 + " <svg>", payload="<svg>"))
+            cfg = TriageConfig(mode="legacy_gray")
+            pipe = TriagePipeline(lambda: st, hook_bus=bus, judge=LLMJudge(fake), config=cfg)
+            # gray-zone (0.3 < score < 0.7): detailed evidence, inferred, no payload in evidence
+            fid = await st.save(_finding(evidence="z" * 130, confidence="inferred"))
             await pipe.handle(await st.get(fid))
             provisional = await st.get(fid)
             assert provisional["triage_verdict"] == "uncertain"
@@ -117,6 +120,139 @@ class TestPipeline:
             assert final["triage_verdict"] == "false_positive"
             assert final["triage_method"] == "llm"
             assert len(fake.structured_calls) == 1
+
+        asyncio.run(_run())
+
+    def test_tentative_never_reaches_judge(self):
+        """Gate A: tentative findings never reach the LLM, even in gray zone."""
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="true_positive", confidence=0.9, reason="x"))
+            cfg = TriageConfig(mode="legacy_gray")  # even legacy respects the gate
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
+            # gray-zone tentative: detailed evidence but tentative confidence
+            fid = await st.save(_finding(evidence="z" * 130, confidence="tentative"))
+            await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            final = await st.get(fid)
+            assert final["triage_verdict"] == "uncertain"
+            assert final["triage_method"] == "heuristic"
+            assert fake.structured_calls == []
+
+        asyncio.run(_run())
+
+    def test_heuristic_mode_never_calls_llm(self):
+        """Default mode=heuristic: confirmed findings in gray zone stay uncertain, no LLM."""
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.8, reason="x"))
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=TriageConfig(mode="heuristic"))
+            # confirmed but gray-zone (short evidence): would previously go to judge
+            fid = await st.save(_finding(evidence="z", confidence="confirmed"))
+            await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            final = await st.get(fid)
+            assert final["triage_verdict"] == "uncertain"
+            assert final["triage_method"] == "heuristic"
+            assert fake.structured_calls == []
+
+        asyncio.run(_run())
+
+    def test_max_llm_per_scan_budget(self):
+        """Hard cap: only max_llm_per_scan judge calls per scan_id."""
+        async def _run():
+            _, st = await _make_storage()
+            fake = (
+                FakeLLMClient()
+                .push(JudgeVerdict(verdict="true_positive", confidence=0.8, reason="x"))
+                .push(JudgeVerdict(verdict="true_positive", confidence=0.8, reason="x"))
+                .push(JudgeVerdict(verdict="true_positive", confidence=0.8, reason="x"))
+            )
+            cfg = TriageConfig(mode="legacy_gray", max_llm_per_scan=2)
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
+            for i in range(3):
+                f = _finding(
+                    url=f"http://t/{i}?id=1", param_name="id",
+                    evidence="z" * 130, confidence="inferred",
+                    extra={"scan_id": "scan-1"},
+                )
+                fid = await st.save(f)
+                await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            # only 2 of the 3 gray-zone findings reached the judge
+            assert len(fake.structured_calls) == 2
+
+        asyncio.run(_run())
+
+    def test_off_mode_no_llm(self):
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="true_positive", confidence=0.9, reason="x"))
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=TriageConfig(mode="off"))
+            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            await pipe.handle(await st.get(fid))
+            final = await st.get(fid)
+            assert final["triage_verdict"] == "uncertain"
+            assert fake.structured_calls == []
+
+        asyncio.run(_run())
+
+    def test_enrich_blocks_low_confidence_fp_on_confirmed(self):
+        """enrich must not downgrade a confirmed finding to FP unless the judge is confident."""
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.6, reason="maybe"))
+            cfg = TriageConfig(mode="enrich", enrich_fp_threshold=0.85)
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
+            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            final = await st.get(fid)
+            assert final["triage_verdict"] == "uncertain"
+            assert final["triage_method"] == "llm"
+
+        asyncio.run(_run())
+
+    def test_enrich_applies_high_confidence_fp_on_confirmed(self):
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.95, reason="clear fp"))
+            cfg = TriageConfig(mode="enrich", enrich_fp_threshold=0.85)
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
+            fid = await st.save(_finding(evidence="z" * 130, confidence="confirmed"))
+            await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            final = await st.get(fid)
+            assert final["triage_verdict"] == "false_positive"
+
+        asyncio.run(_run())
+
+    def test_enrich_does_not_block_fp_on_tentative(self):
+        """The enrich FP guard only protects confirmed/inferred, not tentative."""
+        async def _run():
+            _, st = await _make_storage()
+            fake = FakeLLMClient().push(JudgeVerdict(verdict="false_positive", confidence=0.5, reason="x"))
+            cfg = TriageConfig(mode="enrich", enrich_fp_threshold=0.85)
+            pipe = TriagePipeline(lambda: st, judge=LLMJudge(fake), config=cfg)
+            fid = await st.save(_finding(evidence="z" * 130, confidence="tentative"))
+            await pipe.handle(await st.get(fid))
+            pipe.start()
+            await pipe.queue.join()
+            await pipe.stop()
+            # tentative never reached the judge at all (gate A), so no FP write
+            final = await st.get(fid)
+            assert final["triage_method"] == "heuristic"
+            assert fake.structured_calls == []
 
         asyncio.run(_run())
 

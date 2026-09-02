@@ -7,6 +7,13 @@ Versions are not yet tagged; this file tracks work since the hardening cycle.
 
 ## Unreleased (0.2.0-dev)
 
+### Triage LLM Budget
+
+- **Triage LLM: tentative nunca enqueue**: `skip_llm_if_confidence` (default `["tentative"]`) es un gate duro — los findings tentative se deciden solo por heurística y jamás consumen presupuesto LLM (cierra el rate-limit causado por la avalancha de SSRF FPs).
+- **Modos**: `off` | `heuristic` (default, sin LLM) | `enrich` (LLM como enriquecimiento sobre confirmed/inferred, con `enrich_fp_threshold` para no tumbar a FP a la ligera) | `legacy_gray` (comportamiento viejo, opt-in).
+- **Presupuesto por scan**: `max_llm_per_scan` (20) contado por `scan_id` (el scan tagea `extra.scan_id`); findings sin scan_id comparten el bucket "default".
+- **`config.example.toml`**: sección `[triage]` documentada.
+
 ### DOM XSS Detection
 
 #### Added

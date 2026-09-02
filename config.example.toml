@@ -1,0 +1,43 @@
+# pwnproxy configuration example.
+#
+# Copy to ~/.pwnproxy/config.toml (or set the PWNPROXY_TRIAGE_* env vars).
+# Sections not present fall back to built-in defaults.
+
+[triage]
+enabled = true
+# How the LLM judge is used:
+#   "off"         — never call the LLM (heuristic only).
+#   "heuristic"   — (default) heuristic only; tentative findings never reach
+#                   the judge; confirmed/inferred in the gray zone stay
+#                   uncertain without LLM.
+#   "enrich"      — LLM as optional enrichment over already-strong findings
+#                   (confirmed/inferred), never to arbitrate the gray zone.
+#   "legacy_gray" — old behavior: gray-zone findings go to the judge, bounded
+#                   by max_llm_per_scan (opt-in).
+mode = "heuristic"
+
+# Heuristic decision bands. A finding scoring >= auto_true is auto true
+# positive; <= auto_false is auto false positive; between them it lands in the
+# gray zone (uncertain) and only reaches the LLM per `mode`.
+auto_true = 0.7
+auto_false = 0.3
+
+# Hard cap on LLM judge calls per scan (per scan_id). Guards cost after noisy
+# scans flood the gray zone.
+max_llm_per_scan = 20
+
+# Confidence levels that never reach the LLM judge (hard gate).
+skip_llm_if_confidence = ["tentative"]
+
+# In "enrich" mode, a judge false_positive over a confirmed/inferred finding
+# is only applied when the judge's confidence meets this threshold.
+enrich_fp_threshold = 0.85
+
+# Optional: override the default weights of the heuristic scorer.
+# [triage.weights]
+# no_evidence = -0.45
+# tentative_confidence = -0.20
+# confident_confidence = 0.15
+# detailed_evidence = 0.10
+# payload_in_evidence = 0.15
+# request_context = 0.05
