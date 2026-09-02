@@ -91,6 +91,13 @@ class ErrorBasedStage(DetectionStage):
                     point.key,
                 )
                 continue
+            # A 5xx baseline means we cannot attribute a 5xx to the payload either.
+            if clean.status_code >= 400:
+                logger.info("ErrorBasedStage: baseline status %s at %s — skipping", clean.status_code, point.key)
+                continue
+
+            # Track payloads that induce a 5xx (muted error, no signature in body).
+            five_xx_payloads: list[str] = []
 
             for payload in self._error_payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0, evasion_level=self._evasion)
@@ -116,6 +123,37 @@ class ErrorBasedStage(DetectionStage):
                     ))
                     confirmed.add(_point_key(point))
                     break
+                if resp.status_code >= 500:
+                    five_xx_payloads.append(payload.value)
+
+            # No textual signature matched → fall back to the status differential.
+            # A 5xx induced by an error payload (muted SQL error, e.g. bWAPP low)
+            # over a 2xx baseline is a deterministic signal.
+            if five_xx_payloads:
+                if len(five_xx_payloads) >= 2:
+                    confidence, severity = "inferred", "high"
+                else:
+                    confidence, severity = "tentative", "medium"
+                trigger = five_xx_payloads[0]
+                req = self._replayer.build_payload_request(point, trigger, evasion_level=self._evasion)
+                findings.append(Finding(
+                    scanner="sqli",
+                    url=point.url,
+                    method=point.method,
+                    param_name=point.name,
+                    param_location=point.location,
+                    technique="error-based",
+                    severity=severity,
+                    confidence=confidence,
+                    payload=trigger,
+                    evidence=(
+                        f"HTTP 5xx induced by error payload(s) over {clean.status_code} baseline "
+                        f"(no error signature in body); triggers: {five_xx_payloads}"
+                    ),
+                    extra={"dbms": "unknown", "status_differential": True},
+                    request_data=_serialize_request(req),
+                ))
+                confirmed.add(_point_key(point))
 
         return StageResult(findings=findings, confirmed_points=confirmed)
 
