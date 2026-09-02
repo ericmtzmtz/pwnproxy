@@ -5,6 +5,14 @@ import { createTab } from "@/api/repeater/calls";
 import type { Finding } from "@/api/findings/types";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
 
+declare global {
+  namespace JSX {
+    interface IntrinsicElements {
+      [elemName: string]: any;
+    }
+  }
+}
+
 interface FindingsTableProps {
   findings: Finding[];
   onDeleted?: (id: number) => void;
