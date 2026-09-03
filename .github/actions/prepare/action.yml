@@ -1,0 +1,23 @@
+name: "Prepare Python + Poetry"
+description: "Checkout, set up Python, install Poetry (persistent in PATH via pipx) and project deps."
+inputs:
+  python-version:
+    description: "Python version to install"
+    required: false
+    default: "3.12"
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v5
+    - uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: "poetry"
+    - name: Install Poetry
+      shell: bash
+      run: |
+        pipx install poetry
+        poetry --version
+    - name: Install project dependencies
+      shell: bash
+      run: poetry install --no-interaction

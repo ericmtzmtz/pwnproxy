@@ -24,21 +24,13 @@ defaults:
     shell: bash
 
 jobs:
-  # Shared setup: reusable by every test job. Each job installs deps itself so
-  # failures are isolated (no fragile artifacts between jobs).
+  # Each test job uses the shared `prepare` composite action (checkout + Python
+  # + Poetry via pipx so the binary stays on PATH across steps + poetry install).
   suite:
     name: "Suite (unit + api + core)"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "poetry"
-      - name: Install deps
-        run: |
-          pip install poetry
-          poetry install --no-interaction
+      - uses: ./.github/actions/prepare
       - name: Run test suite (excl. live, golden, perf)
         run: poetry run pytest -m "not live and not golden and not perf" -q
 
@@ -46,15 +38,7 @@ jobs:
     name: "Golden E2E workflows"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "poetry"
-      - name: Install deps
-        run: |
-          pip install poetry
-          poetry install --no-interaction
+      - uses: ./.github/actions/prepare
       - name: Run golden workflows
         run: poetry run pytest -m "golden and not live" -q
 
@@ -66,15 +50,7 @@ jobs:
     # regression. Flip to false once the baseline is stable on this image.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "poetry"
-      - name: Install deps
-        run: |
-          pip install poetry
-          poetry install --no-interaction
+      - uses: ./.github/actions/prepare
       - name: Run perf-check against versioned baseline
         run: poetry run pytest tests/perf -m "perf and not live" --perf-check -q
       - name: Upload perf result
@@ -90,15 +66,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_flaky_check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "poetry"
-      - name: Install deps
-        run: |
-          pip install poetry
-          poetry install --no-interaction
+      - uses: ./.github/actions/prepare
       - name: Run suite 3x (any failure fails the job)
         run: |
           for i in 1 2 3; do
@@ -112,15 +80,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_perf_record
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "poetry"
-      - name: Install deps
-        run: |
-          pip install poetry
-          poetry install --no-interaction
+      - uses: ./.github/actions/prepare
       - name: Record baseline on this Linux runner
         run: poetry run pytest tests/perf -m "perf and not live" --perf-record -q
       - name: Upload baseline.json for human merge
