@@ -20,7 +20,17 @@
 | Max severity | {{ summary.max_severity or "none" }} |
 | Affected hosts | {{ summary.affected_hosts | join(", ") if summary.affected_hosts else "-" }} |
 
+**Confidence breakdown:** {% for level in ["confirmed", "inferred", "tentative", "other"] %}{% set n = summary.by_confidence.get(level, 0) %}**{{ level }}**: {{ n }}{{ ", " if not loop.last }}{% endfor %}
+
 Severity distribution: {% for sev, count in summary.by_severity.items() %}**{{ sev }}**: {{ count }}{{ ", " if not loop.last }}{% endfor %}
+{% if summary.by_host | length > 1 %}
+
+**Issues by host:**
+
+| Host | Issues | Confirmed | Inferred | Tentative |
+| --- | --- | --- | --- | --- |
+{% for host, agg in summary.by_host.items() %}| `{{ host }}` | {{ agg.groups }} | {{ agg.by_confidence.get("confirmed", 0) }} | {{ agg.by_confidence.get("inferred", 0) }} | {{ agg.by_confidence.get("tentative", 0) }} |
+{% endfor %}{% endif %}
 {% for sev in severity_order %}{% set sev_sections = sections_by_severity.get(sev, []) %}{% if sev_sections %}
 
 ## {{ sev | capitalize }} Severity Findings

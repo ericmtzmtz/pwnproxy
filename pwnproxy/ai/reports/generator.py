@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from pwnproxy.ai.llm.client import LLMClient
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest
 from pwnproxy.ai.reports import analyzer
+from pwnproxy.ai.reports.redact import redact_request_data, redact_secrets
 from pwnproxy.ai.reports.render import render_html, render_markdown, render_pdf
 
 logger = logging.getLogger(__name__)
@@ -93,10 +94,11 @@ class ReportGenerator:
         narratives: list[GroupNarrative] = []
         writable = groups[:MAX_NARRATIVE_GROUPS]
         for i, group in enumerate(writable):
+            metadata = self._metadata_block(group)
             request = LLMRequest(
                 messages=[
                     LLMMessage(role="system", content=system),
-                    LLMMessage(role="user", content=json.dumps(group["facts"], ensure_ascii=False)),
+                    LLMMessage(role="user", content=metadata + "\n\n" + json.dumps(group["facts"], ensure_ascii=False)),
                 ],
             )
             narrative, _resp = await self._llm.generate_structured(request, GroupNarrative)
@@ -114,6 +116,19 @@ class ReportGenerator:
                 remediation_steps=[facts.get("remediation")] if facts.get("remediation") else [],
             ))
         return narratives
+
+    @staticmethod
+    def _metadata_block(group: dict) -> str:
+        """Authoritative scanner metadata, independent of whatever the LLM put in facts."""
+        technique = group.get("technique") or group.get("facts", {}).get("vector") or "unknown"
+        confidence = str(group.get("confidence") or "inferred").lower()
+        severity = (group.get("severity") or "info").lower()
+        return (
+            "group metadata (authoritative, from the scanner — not from the facts JSON below):\n"
+            f"- technique: {technique}\n"
+            f"- confidence: {confidence}  (one of: confirmed, inferred, tentative)\n"
+            f"- severity: {severity}"
+        )
 
     async def _write_exec_summary(self, groups: list[dict], aggregates: dict, notify: ProgressFn) -> str:
         highlights: list[str] = []
@@ -183,6 +198,7 @@ class ReportGenerator:
         sections = []
         for group, narrative in zip(groups, narratives):
             request_data = group.get("request_data")
+            request_data_red = redact_request_data(request_data)
             sections.append({
                 "url": group.get("url"),
                 "method": group.get("method"),
@@ -193,11 +209,11 @@ class ReportGenerator:
                 "severity": (group.get("severity") or "info").lower(),
                 "scanner": group.get("scanner"),
                 "occurrences": group.get("occurrences", 1),
-                "payloads": group.get("payloads", []),
+                "payloads": [redact_secrets(str(p)) for p in group.get("payloads", [])],
                 "flagged": bool(group.get("flagged")),
-                "evidence": (group.get("evidence") or "")[:4000],
+                "evidence": redact_secrets((group.get("evidence") or ""))[:4000],
                 "request_data_json": (
-                    json.dumps(request_data, indent=2, default=str)[:4000] if request_data else ""
+                    json.dumps(request_data_red, indent=2, default=str)[:4000] if request_data_red else ""
                 ),
                 "narrative": narrative,
             })

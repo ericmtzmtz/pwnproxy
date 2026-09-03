@@ -6,3 +6,4 @@ STRICT GROUNDING RULES:
 - description: 1 sentence in business terms describing the weakness.
 - impact_paragraph: business consequence only as far as facts.impact supports; avoid technical jargon.
 - remediation_steps: 2-3 high-level actions a client can assign to their team.
+- CONFIDENCE HEDGING: the group metadata states confidence. If it is "inferred" or "tentative", phrase the title and impact as a risk or possibility ("may expose", "could allow", "appears to affect") rather than a confirmed breach. If it is "confirmed", state it plainly.

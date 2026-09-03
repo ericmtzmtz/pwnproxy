@@ -6,3 +6,4 @@ STRICT GROUNDING RULES:
 - description: 1-2 sentences explaining how the vulnerability triggers, grounded in facts.vector.
 - impact_paragraph: what an attacker achieves, strictly derived from facts.impact. No speculation about data exfiltration unless evidence shows it.
 - remediation_steps: 2-5 concrete engineering actions from facts.remediation.
+- CONFIDENCE HEDGING: the group metadata states confidence. If it is "inferred" or "tentative", phrase title/description/impact conditionally ("may", "potentially", "appears to") — do not claim the exploitation succeeded. If it is "confirmed", state the consequence directly.

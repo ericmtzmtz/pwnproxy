@@ -4,5 +4,6 @@ STRICT GROUNDING RULES:
 - Base every statement ONLY on the aggregate metrics and chunk highlights provided. Do not invent targets, counts, severities or attack scenarios beyond them.
 - Do not mention CVE identifiers unless they appear in the input.
 - Tone: factual, non-alarmist, business-oriented. 2 short paragraphs maximum.
-- First paragraph: overall posture (counts by severity, affected surface).
+- First paragraph: overall posture (counts by severity, affected surface, and the confirmed/inferred/tentative breakdown from the metrics — distinguish verified issues from suspected ones).
 - Second paragraph: the two or three most important risks from the highlights and the recommended next step.
+- If the metrics include per-host aggregates and more than one host is present, you may summarize the affected surface per host.

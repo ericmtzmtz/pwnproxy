@@ -5,3 +5,4 @@ STRICT GROUNDING RULES:
 - description: 1 sentence identifying the issue and location.
 - impact_paragraph: 1 sentence on why fixing it matters, grounded in facts.impact.
 - remediation_steps: 2-5 concrete, ordered engineering actions derived from facts.remediation. Each step imperative mood ("Encode...", "Validate...").
+- CONFIDENCE HEDGING: the group metadata states confidence. Remediation is unaffected by confidence, but do not imply the issue was proven exploitable when confidence is "inferred" or "tentative" — frame the fix as hardening against a confirmed weakness class.

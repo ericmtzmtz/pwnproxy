@@ -79,6 +79,19 @@ def _severity_rank(severity: Optional[str]) -> int:
     return SEVERITY_ORDER.get((severity or "").lower(), len(SEVERITY_ORDER))
 
 
+CONFIDENCE_LEVELS = ("confirmed", "inferred", "tentative")
+
+
+def _confidence_bucket(group: dict) -> str:
+    """Normalize a group's confidence to confirmed/inferred/tentative/other."""
+    conf = str(group.get("confidence") or "").lower()
+    if conf in CONFIDENCE_LEVELS:
+        return conf
+    if conf:
+        return "other"
+    return "other"
+
+
 def risk_aggregates(groups: list[dict], raw_count: int) -> dict:
     """Aggregate posture metrics for the executive summary."""
     by_severity = Counter((g.get("severity") or "info").lower() for g in groups)
@@ -91,6 +104,32 @@ def risk_aggregates(groups: list[dict], raw_count: int) -> dict:
         if by_severity.get(sev):
             max_severity = sev
             break
+
+    by_confidence: dict[str, int] = {level: 0 for level in CONFIDENCE_LEVELS}
+    by_confidence["other"] = 0
+    for g in groups:
+        by_confidence[_confidence_bucket(g)] += 1
+
+    by_host: dict[str, dict] = {}
+    for g in groups:
+        host = urlparse(g.get("url") or "").netloc
+        if not host:
+            continue
+        bucket = by_host.setdefault(
+            host, {"groups": 0, "by_severity": Counter(), "by_confidence": Counter()}
+        )
+        bucket["groups"] += 1
+        bucket["by_severity"][(g.get("severity") or "info").lower()] += 1
+        bucket["by_confidence"][_confidence_bucket(g)] += 1
+    by_host = {
+        host: {
+            "groups": agg["groups"],
+            "by_severity": {sev: agg["by_severity"][sev] for sev in SEVERITY_ORDER if agg["by_severity"].get(sev)},
+            "by_confidence": {level: agg["by_confidence"].get(level, 0) for level in CONFIDENCE_LEVELS},
+        }
+        for host, agg in sorted(by_host.items())
+    }
+
     return {
         "raw_findings": raw_count,
         "deduplicated_groups": len(groups),
@@ -98,6 +137,8 @@ def risk_aggregates(groups: list[dict], raw_count: int) -> dict:
         "affected_hosts": sorted(hosts),
         "scanners": dict(scanners),
         "confirmed": confirmed,
+        "by_confidence": by_confidence,
+        "by_host": by_host,
         "max_severity": max_severity,
     }
 
