@@ -332,7 +332,23 @@ class TestPdfOptional:
             pytest.skip("weasyprint installed; graceful-failure path not exercised")
         except ImportError:
             pass
+        except OSError:
+            pytest.skip("weasyprint installed (native libs missing); not-installed path not exercised")
         with pytest.raises(RuntimeError, match=r"pwnproxy\[reports-pdf\]"):
+            render_pdf("<html><body>x</body></html>", tmp_path / "out.pdf")
+
+    def test_weasyprint_native_libs_missing_gives_actionable_error(self, tmp_path):
+        """Installed but GTK/Pango DLLs absent (Windows) → OSError at import must
+        surface a GTK-specific actionable message, not a generic ImportError one."""
+        try:
+            import weasyprint  # noqa: F401
+
+            pytest.skip("weasyprint native libs load; graceful-failure path not exercised")
+        except OSError:
+            pass
+        except ImportError:
+            pytest.skip("weasyprint not installed; native-lib path not exercised")
+        with pytest.raises(RuntimeError, match=r"GTK3 Runtime|native libraries"):
             render_pdf("<html><body>x</body></html>", tmp_path / "out.pdf")
 
 

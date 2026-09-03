@@ -47,5 +47,16 @@ def render_pdf(html_text: str, out_path: Path) -> Path:
             "MD and HTML formats still work. Install the optional extra with: "
             "pip install 'pwnproxy[reports-pdf]'"
         ) from e
+    except OSError as e:
+        # WeasyPrint is installed but its native GTK/Pango DLLs are missing
+        # (common on Windows; pip does not ship them). Distinguish from a
+        # plain "not installed" so the user gets an actionable message.
+        raise RuntimeError(
+            "weasyprint is installed but cannot load its native libraries "
+            "(GTK/Pango runtime). MD and HTML formats still work. On Windows, "
+            "install the GTK3 Runtime Environment (see "
+            "https://doc.courtbouillon.org/weasyprint/stable/first_steps.html) "
+            "and restart pwnproxy."
+        ) from e
     HTML(string=html_text).write_pdf(str(out_path))
     return out_path
