@@ -24,12 +24,14 @@ defaults:
     shell: bash
 
 jobs:
-  # Each test job uses the shared `prepare` composite action (checkout + Python
-  # + Poetry via pipx so the binary stays on PATH across steps + poetry install).
+  # Local actions (uses: ./...) are resolved from the workspace, so every job
+  # checks out FIRST, then applies the shared `prepare` composite (python +
+  # poetry via pipx + poetry install).
   suite:
     name: "Suite (unit + api + core)"
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/prepare
       - name: Run test suite (excl. live, golden, perf)
         run: poetry run pytest -m "not live and not golden and not perf" -q
@@ -38,6 +40,7 @@ jobs:
     name: "Golden E2E workflows"
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/prepare
       - name: Run golden workflows
         run: poetry run pytest -m "golden and not live" -q
@@ -50,6 +53,7 @@ jobs:
     # regression. Flip to false once the baseline is stable on this image.
     continue-on-error: true
     steps:
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/prepare
       - name: Run perf-check against versioned baseline
         run: poetry run pytest tests/perf -m "perf and not live" --perf-check -q
@@ -66,6 +70,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_flaky_check
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/prepare
       - name: Run suite 3x (any failure fails the job)
         run: |
@@ -80,6 +85,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch' && inputs.run_perf_record
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v5
       - uses: ./.github/actions/prepare
       - name: Record baseline on this Linux runner
         run: poetry run pytest tests/perf -m "perf and not live" --perf-record -q

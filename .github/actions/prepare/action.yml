@@ -1,5 +1,5 @@
 name: "Prepare Python + Poetry"
-description: "Checkout, set up Python, install Poetry (persistent in PATH via pipx) and project deps."
+description: "Set up Python, install Poetry (persistent in PATH via pipx) and project deps. Requires actions/checkout to have run first."
 inputs:
   python-version:
     description: "Python version to install"
@@ -8,13 +8,11 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - uses: actions/checkout@v5
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-        # Note: no `cache: poetry` here — setup-python's poetry cache tries to
-        # invoke `poetry` (not installed yet on the runner) and fails. Install
-        # poetry first, then rely on pipx's own dependency resolution.
+        # No `cache: poetry` — setup-python's poetry cache tries to invoke
+        # `poetry` (not installed yet) and fails. Install poetry first.
     - name: Install Poetry
       shell: bash
       run: |
