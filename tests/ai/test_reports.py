@@ -36,15 +36,16 @@ def _dispose_engines():
     pytest-asyncio closes the test's event loop the worker wakes up on a closed
     loop and emits "Event loop is closed" teardown noise in CI (many threads).
     """
+    import sys
+    _mod = sys.modules[__name__]
+    _orig = _mod.create_task_engine
     created: list = []
 
     def _tracked_create(*args, **kwargs):
-        engine = create_task_engine(*args, **kwargs)
+        engine = _orig(*args, **kwargs)
         created.append(engine)
         return engine
 
-    import tests.ai.test_reports as _mod
-    _orig = _mod.create_task_engine
     _mod.create_task_engine = _tracked_create
     try:
         yield
