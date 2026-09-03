@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_flaky_check:
+        description: "Run the zero-flaky check (suite N=3 times)"
+        type: boolean
+        default: false
+      run_perf_record:
+        description: "Record a new perf baseline on this Linux runner (uploaded as artifact)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # Shared setup: reusable by every test job. Each job installs deps itself so
+  # failures are isolated (no fragile artifacts between jobs).
+  suite:
+    name: "Suite (unit + api + core)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "poetry"
+      - name: Install deps
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Run test suite (excl. live, golden, perf)
+        run: poetry run pytest -m "not live and not golden and not perf" -q
+
+  goldens:
+    name: "Golden E2E workflows"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "poetry"
+      - name: Install deps
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Run golden workflows
+        run: poetry run pytest -m "golden and not live" -q
+
+  perf-check:
+    name: "Perf baseline check"
+    runs-on: ubuntu-latest
+    # Escape hatch for noisy shared runners: report the result as an artifact
+    # instead of blocking PRs when the variance is environmental, not a real
+    # regression. Flip to false once the baseline is stable on this image.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "poetry"
+      - name: Install deps
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Run perf-check against versioned baseline
+        run: poetry run pytest tests/perf -m "perf and not live" --perf-check -q
+      - name: Upload perf result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-check-output
+          path: tests/perf/
+          if-no-files-found: ignore
+
+  flaky-check:
+    name: "Zero-flaky check (manual, N=3)"
+    if: github.event_name == 'workflow_dispatch' && inputs.run_flaky_check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "poetry"
+      - name: Install deps
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Run suite 3x (any failure fails the job)
+        run: |
+          for i in 1 2 3; do
+            echo "=== run $i/3 ==="
+            poetry run pytest -m "not live" -q --maxfail=1 || exit 1
+            sleep 5
+          done
+
+  perf-record:
+    name: "Record perf baseline (manual)"
+    if: github.event_name == 'workflow_dispatch' && inputs.run_perf_record
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "poetry"
+      - name: Install deps
+        run: |
+          pip install poetry
+          poetry install --no-interaction
+      - name: Record baseline on this Linux runner
+        run: poetry run pytest tests/perf -m "perf and not live" --perf-record -q
+      - name: Upload baseline.json for human merge
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-baseline
+          path: tests/perf/baseline.json

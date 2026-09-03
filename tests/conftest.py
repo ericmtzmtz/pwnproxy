@@ -23,3 +23,30 @@ def pytest_addoption(parser):
         default=False,
         help="Compare crawl duration/max_rss against tests/perf/baseline.json (x3 tolerance)",
     )
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    """Report tests marked @pytest.mark.flaky that ran.
+
+    Flaky tests are NOT deselected (see the CI policy: mark → root-cause →
+    fix → unmark). This summary makes them visible so a known-intermittent
+    test cannot be silently "green" forever.
+    """
+    flaky_runs = [
+        rep
+        for rep in terminalreporter.stats.get("passed", [])
+        if "flaky" in rep.keywords or (rep.nodeid and "flaky" in str(rep.keywords))
+    ]
+    flaky_fail = [
+        rep
+        for rep in terminalreporter.stats.get("failed", [])
+        if "flaky" in rep.keywords
+    ]
+    if flaky_runs or flaky_fail:
+        terminalreporter.write_sep("-", "flaky marker report", green=True)
+        if flaky_runs:
+            terminalreporter.write_line(f"  flaky tests passed : {len(flaky_runs)}")
+        if flaky_fail:
+            terminalreporter.write_line(
+                f"  flaky tests FAILED  : {len(flaky_fail)} — root-cause required before unmarking"
+            )
