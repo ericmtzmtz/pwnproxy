@@ -15,6 +15,22 @@ class Out(BaseModel):
     answer: int
 
 
+class Sub(BaseModel):
+    depth: int = Field(description="depth level")
+
+
+class Probe(BaseModel):
+    title: str = Field(description="A title")
+    severity: str = Field(description="One of: critical, high, medium, low, info")
+    confidence: float = Field(ge=0.0, le=1.0, description="confidence between 0.0 and 1.0")
+    verdict: Literal["true_positive", "false_positive", "uncertain"]
+    items: list[str] = Field(description="some strings")
+    maybe: Optional[int] = None
+    sub: Sub = Field(description="nested")
+    weird: dict = Field(description="anything")
+    long: str = Field(description="x" * 300)
+
+
 def _client_with(outcomes: list) -> tuple:
     p = RecordingProvider(outcomes=outcomes)
     p.name = "fake-provider"
@@ -99,22 +115,8 @@ class TestSchemaInjection:
 class TestSchemaRenderer:
     """The _schema_prompt renderer covers common pydantic shapes."""
 
-    class Sub(BaseModel):
-        depth: int = Field(description="depth level")
-
-    class Probe(BaseModel):
-        title: str = Field(description="A title")
-        severity: str = Field(description="One of: critical, high, medium, low, info")
-        confidence: float = Field(ge=0.0, le=1.0, description="confidence between 0.0 and 1.0")
-        verdict: Literal["true_positive", "false_positive", "uncertain"]
-        items: list[str] = Field(description="some strings")
-        maybe: Optional[int] = None
-        sub: Sub = Field(description="nested")
-        weird: dict = Field(description="anything")
-        long: str = Field(description="x" * 300)
-
     def test_render_all_type_shapes(self):
-        out = _schema_prompt(self.Probe)
+        out = _schema_prompt(Probe)
         assert '"title" (string)' in out
         assert '"verdict" (one of:' in out
         assert '"items" (list of string)' in out
@@ -125,7 +127,7 @@ class TestSchemaRenderer:
         assert ">= 0.0" in out and "<= 1.0" in out
 
     def test_long_description_truncated(self):
-        out = _schema_prompt(self.Probe)
+        out = _schema_prompt(Probe)
         assert ("x" * 300) not in out  # full untruncated blob absent
         assert ("x" * 200) in out  # truncated prefix present
 
