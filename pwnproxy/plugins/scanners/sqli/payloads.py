@@ -88,3 +88,25 @@ def get_error_payloads() -> list[Payload]:
 
 def get_time_payloads() -> list[Payload]:
     return TIME_PAYLOADS
+
+
+# Negative-control payloads used by the status differential to check whether a
+# 5xx response is attributable to SQL at all. Two classes:
+#   - raw garbage      -> refutes "app that 5xxs on any malformed/odd input"
+#   - inert SQL-like   -> shares the suspicious shape a WAF matches on (quotes,
+#                         operators, comments) but is NOT executable SQL, so a
+#                         WAF that blocks by pattern fires on it too.
+# If a control also induces 5xx, the point's 5xx is not attributable to an SQL
+# injection and no error-based finding is emitted.
+CONTROL_PAYLOADS: list[Payload] = [
+    # raw garbage (never valid anywhere)
+    Payload("\x00\x01\x02\x03", "control"),
+    Payload("A" * 512, "control"),
+    # inert SQL-like: quote + operators but no valid statement
+    Payload("x' OR z=z-- ", "control"),
+    Payload("'zzzzzzzz", "control"),
+]
+
+
+def get_control_payloads() -> list[Payload]:
+    return CONTROL_PAYLOADS

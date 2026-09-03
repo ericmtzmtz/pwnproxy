@@ -10,6 +10,7 @@ from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageRes
 from pwnproxy.plugins.scanners.sqli.payloads import (
     CANONICAL_BOOLEAN_PAIR,
     ESCALATION_BOOLEAN_PAIRS,
+    get_control_payloads,
 )
 from pwnproxy.shared.scan.response_compare import (
     Fingerprint,
@@ -19,6 +20,7 @@ from pwnproxy.shared.scan.response_compare import (
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
+from pwnproxy.shared.scan.waf import is_rate_limit_status, looks_like_block_page
 from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
@@ -67,11 +69,52 @@ class ErrorBasedStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "error-based-sqli"
 
-    def __init__(self, replayer: RequestReplayer, signatures: dict[str, list[re.Pattern]], error_payloads: list, evasion_level: str = "none"):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        signatures: dict[str, list[re.Pattern]],
+        error_payloads: list,
+        evasion_level: str = "none",
+        aggressive_status: bool = False,
+    ):
         self._replayer = replayer
         self._signatures = signatures
         self._error_payloads = error_payloads
         self._evasion = evasion_level
+        # Opt-in: treat >=2 bare 5xx payloads as inferred/high (pre-WAF ladder).
+        # Off by default: bare status differential is tentative/medium because a
+        # WAF/proxy/error-handler can produce the same 5xx without any SQL.
+        self._aggressive_status = aggressive_status
+
+    async def _control_passes(self, point: InjectionPoint) -> bool:
+        """False when a non-SQL control also induces a 5xx.
+
+        If raw garbage OR inert SQL-like input makes the point 5xx, the status
+        change is not attributable to SQL injection (WAF by pattern / fragile
+        app error handler) and no error-based finding should be emitted.
+        """
+        for control in get_control_payloads():
+            resp = await self._replayer.replay(
+                point, control.value, timeout=3.0, evasion_level=self._evasion
+            )
+            if resp is not None and resp.status_code >= 500:
+                logger.info(
+                    "ErrorBasedStage: control %r also 5xx (%s) at %s — status change not attributable to SQL",
+                    control.value, resp.status_code, point.key,
+                )
+                return False
+        return True
+
+    @staticmethod
+    def _any_block_page(responses: list) -> bool:
+        """True when a captured 5xx response looks like a WAF/proxy block page."""
+        for resp in responses:
+            if resp is None:
+                continue
+            headers = dict(resp.headers) if getattr(resp, "headers", None) is not None else {}
+            if looks_like_block_page(resp.status_code, resp.text, headers):
+                return True
+        return False
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
         findings: list[Finding] = []
@@ -97,11 +140,16 @@ class ErrorBasedStage(DetectionStage):
                 continue
 
             # Track payloads that induce a 5xx (muted error, no signature in body).
-            five_xx_payloads: list[str] = []
+            five_xx: list[tuple[str, object]] = []  # (payload_value, response)
+            rate_limited = 0
 
             for payload in self._error_payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0, evasion_level=self._evasion)
                 if resp is None:
+                    continue
+                # Intermediary rate limit (429/503) is NOT a SQL error signal.
+                if is_rate_limit_status(resp.status_code):
+                    rate_limited += 1
                     continue
                 result = _check_error_signatures(resp.text, self._signatures)
                 if result is not None:
@@ -124,36 +172,57 @@ class ErrorBasedStage(DetectionStage):
                     confirmed.add(_point_key(point))
                     break
                 if resp.status_code >= 500:
-                    five_xx_payloads.append(payload.value)
+                    five_xx.append((payload.value, resp))
+
+            # Abort the point's status differential when the target starts
+            # rate-limiting us: the 5xx/503s that follow are bot defense, not SQL.
+            if rate_limited >= max(1, len(self._error_payloads) // 2):
+                logger.info("ErrorBasedStage: mostly rate-limited at %s — aborting differential", point.key)
+                continue
 
             # No textual signature matched → fall back to the status differential.
             # A 5xx induced by an error payload (muted SQL error, e.g. bWAPP low)
-            # over a 2xx baseline is a deterministic signal.
-            if five_xx_payloads:
-                if len(five_xx_payloads) >= 2:
-                    confidence, severity = "inferred", "high"
-                else:
-                    confidence, severity = "tentative", "medium"
-                trigger = five_xx_payloads[0]
-                req = self._replayer.build_payload_request(point, trigger, evasion_level=self._evasion)
-                findings.append(Finding(
-                    scanner="sqli",
-                    url=point.url,
-                    method=point.method,
-                    param_name=point.name,
-                    param_location=point.location,
-                    technique="error-based",
-                    severity=severity,
-                    confidence=confidence,
-                    payload=trigger,
-                    evidence=(
-                        f"HTTP 5xx induced by error payload(s) over {clean.status_code} baseline "
-                        f"(no error signature in body); triggers: {five_xx_payloads}"
-                    ),
-                    extra={"dbms": "unknown", "status_differential": True},
-                    request_data=_serialize_request(req),
-                ))
-                confirmed.add(_point_key(point))
+            # over a 2xx baseline is a signal — but only if the 5xx is actually
+            # attributable to SQL and not to a WAF/proxy/fragile error handler.
+            if not five_xx:
+                continue
+
+            if self._any_block_page([resp for _pv, resp in five_xx]):
+                logger.info("ErrorBasedStage: 5xx at %s looks like a WAF block page — not emitting", point.key)
+                continue
+            if not await self._control_passes(point):
+                continue
+
+            five_xx_payloads = [pv for pv, _resp in five_xx]
+            if self._aggressive_status and len(five_xx_payloads) >= 2:
+                confidence, severity = "inferred", "high"
+            else:
+                confidence, severity = "tentative", "medium"
+            trigger = five_xx_payloads[0]
+            req = self._replayer.build_payload_request(point, trigger, evasion_level=self._evasion)
+            n_triggers = len(five_xx_payloads)
+            extra: dict = {"dbms": "unknown", "status_differential": True, "control_passed": True}
+            if n_triggers < len(self._error_payloads):
+                extra["partial_triggers"] = True
+            findings.append(Finding(
+                scanner="sqli",
+                url=point.url,
+                method=point.method,
+                param_name=point.name,
+                param_location=point.location,
+                technique="error-based",
+                severity=severity,
+                confidence=confidence,
+                payload=trigger,
+                evidence=(
+                    f"HTTP 5xx induced by {n_triggers} SQL error payload(s) over {clean.status_code} "
+                    f"baseline; no DBMS error signature in body; non-SQL control passed; "
+                    f"no WAF block signature detected"
+                ),
+                extra=extra,
+                request_data=_serialize_request(req),
+            ))
+            confirmed.add(_point_key(point))
 
         return StageResult(findings=findings, confirmed_points=confirmed)
 

@@ -30,9 +30,13 @@ class SQLiScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        aggressive_status = bool(self.context.config.get("aggressive_status", False))
         self._replayer = RequestReplayer()
         chain = chain_from_depth([
-            ErrorBasedStage(self._replayer, ERROR_SIGNATURES, get_error_payloads(), evasion_level),
+            ErrorBasedStage(
+                self._replayer, ERROR_SIGNATURES, get_error_payloads(), evasion_level,
+                aggressive_status=aggressive_status,
+            ),
             BooleanBlindStage(self._replayer, evasion_level),
             TimeBlindStage(self._replayer, TIME_PAYLOADS, evasion_level),
             OOBStage(self._replayer, evasion_level),

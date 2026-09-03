@@ -57,8 +57,9 @@ def _flow():
 
 
 @pytest.mark.asyncio
-async def test_two_error_payloads_induce_5xx_inferred():
-    """bWAPP-style: ' and ' UNION SELECT 1,2,3-- induce 500 -> error-based inferred high."""
+async def test_two_error_payloads_induce_5xx_tentative_default():
+    """bWAPP-style: ' and ' UNION SELECT 1,2,3-- induce 500 -> conservative default
+    is tentative/medium (a WAF could produce the same 5xx without SQL)."""
     replayer = ScriptedReplayer(clean_status=200, payload_map={
         "'": (500, "<html>bWAPP - SQL Injection</html>"),
         "' UNION SELECT 1,2,3-- ": (500, "<html>bWAPP</html>"),
@@ -68,10 +69,26 @@ async def test_two_error_payloads_induce_5xx_inferred():
     assert len(result.findings) == 1
     f = result.findings[0]
     assert f.technique == "error-based"
+    assert f.confidence == "tentative"
+    assert f.severity == "medium"
+    assert f.payload == "'"
+    assert "HTTP 5xx" in f.evidence
+    assert "control passed" in f.evidence
+
+
+@pytest.mark.asyncio
+async def test_two_error_payloads_induce_5xx_inferred_in_aggressive_mode():
+    """Aggressive status-differential opt-in restores the old inferred/high ladder."""
+    replayer = ScriptedReplayer(clean_status=200, payload_map={
+        "'": (500, "<html>bWAPP - SQL Injection</html>"),
+        "' UNION SELECT 1,2,3-- ": (500, "<html>bWAPP</html>"),
+    })
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), aggressive_status=True)
+    result = await stage.execute(_flow(), [_point()])
+    assert len(result.findings) == 1
+    f = result.findings[0]
     assert f.confidence == "inferred"
     assert f.severity == "high"
-    assert f.payload == "'"
-    assert "5xx" in f.evidence or "HTTP 5xx" in f.evidence
 
 
 @pytest.mark.asyncio
