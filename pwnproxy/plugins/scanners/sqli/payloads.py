@@ -63,13 +63,14 @@ TIME_PAYLOADS: list[Payload] = [
 CANONICAL_BOOLEAN_PAIR: tuple[str, str] = ("' OR 1=1-- ", "' OR 1=2-- ")
 
 # Escalation pairs, tested (2 requests each) only when the canonical pair
-# is ambiguous. Each is a (TRUE, FALSE) payload pair.
+# is ambiguous. Each is a (TRUE, FALSE) payload pair. The numeric no-quote
+# pairs start with a digit ("1 OR ...") so full-value replacement in a numeric
+# context yields "id = 1 OR 1=1--" (valid SQL) rather than "id = OR 1=1--"
+# (syntax error).
 BOOLEAN_PAIRS: list[tuple[str, str]] = [
     CANONICAL_BOOLEAN_PAIR,
     # numeric, no quote
-    (" OR 1=1-- ", " OR 1=2-- "),
-    # no-quote with `#`
-    (" OR 1=1#", " OR 1=2#"),
+    ("1 OR 1=1-- ", "1 OR 1=2-- "),
     # parenthesis close
     ("') OR 1=1-- ", "') OR 1=2-- "),
     # AND true/false variant
@@ -92,19 +93,25 @@ def get_time_payloads() -> list[Payload]:
 
 # Negative-control payloads used by the status differential to check whether a
 # 5xx response is attributable to SQL at all. Two classes:
-#   - raw garbage      -> refutes "app that 5xxs on any malformed/odd input"
-#   - inert SQL-like   -> shares the suspicious shape a WAF matches on (quotes,
-#                         operators, comments) but is NOT executable SQL, so a
-#                         WAF that blocks by pattern fires on it too.
+#   - raw garbage       -> refutes "app that 5xxs on any malformed/odd input"
+#   - valid-SQL lookalike -> shares the shape a WAF matches on (operators,
+#                            comments) but parses as VALID SQL in BOTH string
+#                            and numeric contexts, so on a genuinely injectable
+#                            point (no WAF) it returns 2xx and the control
+#                            passes, while a WAF that blocks by pattern fires
+#                            on it and the control fails.
+# IMPORTANT: these MUST be valid SQL — a control that raises a real SQL error
+# on an injectable backend suppresses the true positive (verified with SQLite:
+# leading-digit form works in string and numeric contexts).
 # If a control also induces 5xx, the point's 5xx is not attributable to an SQL
 # injection and no error-based finding is emitted.
 CONTROL_PAYLOADS: list[Payload] = [
     # raw garbage (never valid anywhere)
     Payload("\x00\x01\x02\x03", "control"),
     Payload("A" * 512, "control"),
-    # inert SQL-like: quote + operators but no valid statement
-    Payload("x' OR z=z-- ", "control"),
-    Payload("'zzzzzzzz", "control"),
+    # valid-SQL lookalikes: parse in string AND numeric contexts
+    Payload("1 OR 1=1-- ", "control"),
+    Payload("1=1-- ", "control"),
 ]
 
 

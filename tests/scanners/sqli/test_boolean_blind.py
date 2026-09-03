@@ -101,7 +101,7 @@ def test_canonical_pair_only_when_differentiable():
     assert r.calls.count(CANONICAL_TRUE) == 2
     assert r.calls.count(CANONICAL_FALSE) == 2
     # no escalation pairs tested when canonical differentiates
-    for esc_true in [" OR 1=1-- ", " OR 1=1#", "') OR 1=1-- ", "' AND 1=1-- ", "' OR '1'='1'-- "]:
+    for esc_true in ["1 OR 1=1-- ", "') OR 1=1-- ", "' AND 1=1-- ", "' OR '1'='1'-- "]:
         assert esc_true not in r.calls
 
 
@@ -128,8 +128,8 @@ def test_escalation_when_canonical_ambiguous():
     r = FakeBooleanReplayer(canonical_differentiable=False, escalation_differentiable=True)
     result = _run(r)
     assert len(result.findings) == 1
-    # first escalation TRUE pair selected: " OR 1=1-- "
-    assert result.findings[0].payload == " OR 1=1-- "
+    # first escalation TRUE pair selected: "1 OR 1=1-- "
+    assert result.findings[0].payload == "1 OR 1=1-- "
 
 
 @pytest.mark.asyncio
