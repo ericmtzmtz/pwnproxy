@@ -3,6 +3,7 @@
   <img src="https://img.shields.io/badge/license-AGPLv3-blue.svg" alt="AGPL v3">
   <img src="https://img.shields.io/badge/tests-passing-brightgreen.svg" alt="Tests passing">
   <img src="https://img.shields.io/badge/MCP-native-purple.svg" alt="MCP Native">
+[![CI](https://github.com/ericmtzmtz/pwnproxy/actions/workflows/ci.yml/badge.svg)](https://github.com/ericmtzmtz/pwnproxy/actions/workflows/ci.yml)
 </p>
 
 <h1 align="center">pwnproxy</h1>
