@@ -38,6 +38,10 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
 <script>
   import { listFindings } from "@/api/findings/calls";
 
+  function esc(v: unknown): string {
+    return String(v ?? "-").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
   const findingsDiv = document.getElementById("findings-content") as HTMLDivElement;
   const filters = document.querySelectorAll(".scanner-filter") as NodeListOf<HTMLButtonElement>;
 
@@ -94,12 +98,12 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
               ${items.map((f: any) => {
                 const sevColor: Record<string, string> = { critical: "text-red-400", high: "text-orange-400", medium: "text-yellow-400", low: "text-blue-400", info: "text-neutral-400" };
                 return `<tr class="bg-neutral-950 hover:bg-neutral-900/50">
-                  <td class="px-2 py-1.5 font-mono uppercase text-neutral-300">${f.scanner ?? "-"}</td>
-                  <td class="px-2 py-1.5 font-semibold ${sevColor[f.severity] ?? "text-neutral-400"}">${f.severity ?? "-"}</td>
-                  <td class="max-w-[250px] truncate px-2 py-1.5 text-neutral-400" title="${f.url}">${f.url ?? "-"}</td>
-                  <td class="px-2 py-1.5 font-mono text-neutral-300">${f.param_name ?? "-"}</td>
-                  <td class="px-2 py-1.5 text-neutral-400">${f.technique ?? "-"}</td>
-                  <td class="max-w-[150px] truncate px-2 py-1.5 font-mono text-neutral-400" title="${f.payload}">${f.payload ?? "-"}</td>
+                  <td class="px-2 py-1.5 font-mono uppercase text-neutral-300">${esc(f.scanner)}</td>
+                  <td class="px-2 py-1.5 font-semibold ${sevColor[f.severity] ?? "text-neutral-400"}">${esc(f.severity)}</td>
+                  <td class="max-w-[250px] truncate px-2 py-1.5 text-neutral-400" title="${esc(f.url)}">${esc(f.url)}</td>
+                  <td class="px-2 py-1.5 font-mono text-neutral-300">${esc(f.param_name)}</td>
+                  <td class="px-2 py-1.5 text-neutral-400">${esc(f.technique)}</td>
+                  <td class="max-w-[150px] truncate px-2 py-1.5 font-mono text-neutral-400" title="${esc(f.payload)}">${esc(f.payload)}</td>
                 </tr>`;
               }).join("")}
             </tbody>
@@ -109,7 +113,7 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
       findingsDiv.innerHTML = `
         <div class="rounded-md border border-red-800 bg-red-900/20 p-3">
           <p class="text-sm font-medium text-danger-500">Error loading findings</p>
-          <p class="mt-1 text-xs text-neutral-400">${err.message}</p>
+          <p class="mt-1 text-xs text-neutral-400">${esc(err.message)}</p>
         </div>`;
     }
   }
