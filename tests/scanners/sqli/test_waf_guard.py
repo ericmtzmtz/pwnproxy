@@ -106,6 +106,42 @@ async def test_mostly_rate_limited_aborts_point():
 
 
 @pytest.mark.asyncio
+async def test_bad_gateway_502_not_counted_as_trigger():
+    """A dead/half-open proxy answering 502 for every SQL payload must NOT be
+    treated as an error-payload induced 5xx (proxy failed, not the query)."""
+    replayer = GuardReplayer(rate_status=502)
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    result = await stage.execute(_flow(), [_point()])
+    assert result.findings == []
+
+
+@pytest.mark.asyncio
+async def test_mixed_502_and_sql_500_only_counts_real_triggers():
+    """Some 502s among genuine 500s: only the true 500s count toward the ladder.
+    With just one real 500 the finding is tentative; the 502s don't push it up."""
+    class MixedReplayer(GuardReplayer):
+        def __init__(self):
+            super().__init__(sql_status=500, control_status=200)
+            self._calls = 0
+
+        async def replay(self, point, payload, timeout=3.0, evasion_level="none"):
+            self._calls += 1
+            sql_payloads = {p.value for p in get_error_payloads()}
+            if payload in sql_payloads:
+                # every third SQL payload is a 502 (intermittent proxy failure)
+                if self._calls % 3 == 0:
+                    return self._mk(502, "<html>bad gateway</html>")
+            return await super().replay(point, payload, timeout=timeout, evasion_level=evasion_level)
+
+    replayer = MixedReplayer()
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    result = await stage.execute(_flow(), [_point()])
+    assert len(result.findings) == 1
+    assert result.findings[0].confidence == "tentative"
+    assert result.findings[0].extra["partial_triggers"] is True
+
+
+@pytest.mark.asyncio
 async def test_clean_5xx_over_control_emits_tentative():
     """Real muted-SQL signal: SQL 5xx, control 200, no WAF -> tentative/medium."""
     replayer = GuardReplayer(sql_status=500, control_status=200)

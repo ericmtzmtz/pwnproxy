@@ -20,7 +20,7 @@ from pwnproxy.shared.scan.response_compare import (
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
-from pwnproxy.shared.scan.waf import is_rate_limit_status, looks_like_block_page
+from pwnproxy.shared.scan.waf import is_intermediary_status, looks_like_block_page
 from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
@@ -141,15 +141,17 @@ class ErrorBasedStage(DetectionStage):
 
             # Track payloads that induce a 5xx (muted error, no signature in body).
             five_xx: list[tuple[str, object]] = []  # (payload_value, response)
-            rate_limited = 0
+            intermediary_count = 0
 
             for payload in self._error_payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=3.0, evasion_level=self._evasion)
                 if resp is None:
                     continue
-                # Intermediary rate limit (429/503) is NOT a SQL error signal.
-                if is_rate_limit_status(resp.status_code):
-                    rate_limited += 1
+                # Intermediary responses (429/503 rate limit, 502 bad gateway)
+                # are NOT SQL error signals — a dead/half-open proxy or bot
+                # defense must never count as an error-payload trigger.
+                if is_intermediary_status(resp.status_code):
+                    intermediary_count += 1
                     continue
                 result = _check_error_signatures(resp.text, self._signatures)
                 if result is not None:
@@ -174,10 +176,14 @@ class ErrorBasedStage(DetectionStage):
                 if resp.status_code >= 500:
                     five_xx.append((payload.value, resp))
 
-            # Abort the point's status differential when the target starts
-            # rate-limiting us: the 5xx/503s that follow are bot defense, not SQL.
-            if rate_limited >= max(1, len(self._error_payloads) // 2):
-                logger.info("ErrorBasedStage: mostly rate-limited at %s — aborting differential", point.key)
+            # Abort the point's status differential when an intermediary
+            # (rate limit or dead proxy) answers most of the payloads: the
+            # responses that follow are not SQL and the signal is unusable.
+            if intermediary_count >= max(1, len(self._error_payloads) // 2):
+                logger.info(
+                    "ErrorBasedStage: mostly intermediary responses (%d/%d) at %s — aborting differential",
+                    intermediary_count, len(self._error_payloads), point.key,
+                )
                 continue
 
             # No textual signature matched → fall back to the status differential.

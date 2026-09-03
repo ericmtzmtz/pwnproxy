@@ -45,9 +45,14 @@ BLOCK_HEADER_PATTERNS: dict[str, re.Pattern] = {
 }
 
 # Statuses that indicate an intermediary rate limit / bot defense rather than a
-# vulnerability signal. A 502 (bad gateway) is treated separately: it is not a
-# block page but is also not attributable to the payload.
+# vulnerability signal.
 RATE_LIMIT_STATUSES = {429, 503}
+
+# Intermediary failures that must NEVER be treated as "payload induced":
+# 429/503 rate limiting and 502 bad gateway (a dead/half-open proxy mid-scan
+# returns 502 for anything — counting it as a SQL error trigger would pollute
+# the status differential).
+INTERMEDIARY_STATUSES = RATE_LIMIT_STATUSES | {502}
 
 # Body bytes inspected for block markers; block pages are short.
 _BODY_SCAN_LIMIT = 2048
@@ -56,6 +61,15 @@ _BODY_SCAN_LIMIT = 2048
 def is_rate_limit_status(status: Optional[int]) -> bool:
     """True for intermediary rate-limit / bot-defense statuses (429, 503)."""
     return status in RATE_LIMIT_STATUSES
+
+
+def is_intermediary_status(status: Optional[int]) -> bool:
+    """True for statuses attributable to an intermediary, not the payload.
+
+    Covers 429/503 (rate limit / bot defense) and 502 (bad gateway). A scanner
+    must not count any of these as an injection-induced error signal.
+    """
+    return status in INTERMEDIARY_STATUSES
 
 
 def looks_like_block_page(

@@ -9,7 +9,10 @@ Versions are not yet tagged; this file tracks work since the hardening cycle.
 
 ### SQLi Status Differential
 
-- **Detección de errores SQL mudos**: si un payload de error induce HTTP 5xx sobre un baseline 2xx (sin firma en el body — el error va a stderr, ej. bWAPP low `sqli_1.php`), el scanner emite `error-based` con `confidence="inferred"` (2 payloads 5xx) o `tentative` (1 payload). Complementa la firma textual (que sigue dando `confirmed`).
+- **Detección de errores SQL mudos**: si un payload de error induce HTTP 5xx sobre un baseline 2xx (sin firma en el body — el error va a stderr, ej. bWAPP low `sqli_1.php`), el scanner emite `error-based`. Complementa la firma textual (que sigue dando `confirmed`).
+- **Ladder conservador por defecto**: el 5xx sin firma se emite como `tentative/medium` (2+ payloads o 1 solo), porque un WAF/proxy/error-handler puede producir la misma firma HTTP sin SQL. `inferred/high` solo con `aggressive_status=True` (opt-in, ej. labs conocidos).
+- **Guard anti-WAF**: antes de emitir por status differential, el stage (a) excluye 429/503 (rate-limit/bot-defense — antes `>=500` los contaba como triggers) y aborta el punto si >50% del barrido es rate-limit; (b) descarta si las respuestas 5xx parecen block page de WAF (denylist body+headers, `waf.py`); y (c) corre controles no-SQL (basura + SQL-like inerte) — si un control también 5xx, el cambio de status no es atribuible a SQL y no se emite finding.
+- **Evidence cauta**: el finding del differential indica "control passed / no WAF block signature" y número de triggers, sin afirmar DBMS ni extracción de datos.
 
 ### SQLi Error-Based Baseline
 

@@ -1,5 +1,6 @@
 """Unit tests for WAF/proxy block detection helpers (pwnproxy/shared/scan/waf.py)."""
 from pwnproxy.shared.scan.waf import (
+    is_intermediary_status,
     is_rate_limit_status,
     looks_like_block_page,
 )
@@ -40,5 +41,26 @@ class TestIsRateLimitStatus:
     def test_500_not_rate_limit(self):
         assert is_rate_limit_status(500) is False
 
+    def test_502_not_rate_limit(self):
+        # 502 is a gateway failure, not a rate limit — but it IS an intermediary.
+        assert is_rate_limit_status(502) is False
+
     def test_none_not_rate_limit(self):
         assert is_rate_limit_status(None) is False
+
+
+class TestIsIntermediaryStatus:
+    def test_429_502_503_are_intermediary(self):
+        assert is_intermediary_status(429) is True
+        assert is_intermediary_status(502) is True
+        assert is_intermediary_status(503) is True
+
+    def test_500_not_intermediary(self):
+        # A plain 500 is attributable to the origin/backend — could be SQL.
+        assert is_intermediary_status(500) is False
+
+    def test_404_not_intermediary(self):
+        assert is_intermediary_status(404) is False
+
+    def test_none_not_intermediary(self):
+        assert is_intermediary_status(None) is False
