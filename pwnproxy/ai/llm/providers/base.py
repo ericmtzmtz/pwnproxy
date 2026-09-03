@@ -5,7 +5,7 @@ from typing import ClassVar, Optional
 
 import httpx
 
-from pwnproxy.ai.llm.errors import LLMTimeout, LLMUnavailable
+from pwnproxy.ai.llm.errors import LLMRateLimited, LLMTimeout, LLMUnavailable
 from pwnproxy.ai.llm.models import LLMRequest, LLMResponse
 
 
@@ -44,7 +44,18 @@ class Provider(ABC):
         except httpx.TimeoutException as e:
             raise LLMTimeout(self.name) from e
         except httpx.HTTPStatusError as e:
-            raise LLMUnavailable(self.name, f"HTTP {e.response.status_code} from {self.name}") from e
+            status = e.response.status_code
+            if status == 429 or status >= 500:
+                # Transient — retryable at the client level with backoff.
+                retry_after = 0.0
+                raw = e.response.headers.get("retry-after")
+                if raw:
+                    try:
+                        retry_after = float(raw)
+                    except (TypeError, ValueError):
+                        retry_after = 0.0
+                raise LLMRateLimited(self.name, f"HTTP {status} from {self.name}", retry_after) from e
+            raise LLMUnavailable(self.name, f"HTTP {status} from {self.name}") from e
         except httpx.HTTPError as e:
             raise LLMUnavailable(self.name, f"{type(e).__name__}: {e}") from e
         except ValueError as e:

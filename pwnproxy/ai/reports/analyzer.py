@@ -5,6 +5,7 @@ every fact must be traceable to fields present in the source finding.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections import Counter
@@ -196,3 +197,7 @@ async def extract_group_facts(
         done += 1
         if progress:
             await progress(done, len(groups))
+        # Pace sequential LLM calls to avoid saturating rate-limited proxies
+        # (e.g. FreeLLM/openai-compatible endpoints that return 429 on bursts).
+        if done < len(groups):
+            await asyncio.sleep(0.5)

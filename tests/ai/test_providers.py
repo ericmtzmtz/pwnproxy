@@ -3,7 +3,7 @@ import json
 import httpx
 import pytest
 
-from pwnproxy.ai.llm.errors import LLMTimeout, LLMUnavailable
+from pwnproxy.ai.llm.errors import LLMRateLimited, LLMTimeout, LLMUnavailable
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest
 from pwnproxy.ai.llm.providers.anthropic import AnthropicProvider
 from pwnproxy.ai.llm.providers.ollama import OllamaProvider
@@ -87,8 +87,24 @@ class TestOpenAIProvider:
         assert seen["payload"]["response_format"] == {"type": "json_object"}
 
     @pytest.mark.asyncio
-    async def test_500_maps_to_unavailable(self):
+    async def test_500_maps_to_rate_limited(self):
+        # 5xx is transient (retryable at the client) → LLMRateLimited, not a hard unavailable.
         async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(500))) as http:
+            with pytest.raises(LLMRateLimited):
+                await OpenAIProvider(api_key="k").generate(_req(), http)
+
+    @pytest.mark.asyncio
+    async def test_429_maps_to_rate_limited_with_retry_after(self):
+        async def handler(req):
+            return httpx.Response(429, headers={"retry-after": "3"})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            with pytest.raises(LLMRateLimited) as ei:
+                await OpenAIProvider(api_key="k").generate(_req(), http)
+            assert ei.value.retry_after_s == 3.0
+
+    @pytest.mark.asyncio
+    async def test_400_maps_to_unavailable(self):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(lambda r: httpx.Response(400))) as http:
             with pytest.raises(LLMUnavailable):
                 await OpenAIProvider(api_key="k").generate(_req(), http)
 

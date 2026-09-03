@@ -21,6 +21,15 @@ class LLMUnavailable(LLMError):
         super().__init__(message or f"provider '{provider}' unavailable")
 
 
+class LLMRateLimited(LLMError):
+    """A provider returned HTTP 429 (rate limit) — transient, retryable."""
+
+    def __init__(self, provider: str, message: str = "", retry_after_s: float = 0.0):
+        self.provider = provider
+        self.retry_after_s = retry_after_s
+        super().__init__(message or f"provider '{provider}' rate limited")
+
+
 class LLMSchemaError(LLMError):
     """Structured output could not be validated against the requested schema."""
 

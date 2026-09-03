@@ -4,7 +4,7 @@ import asyncio
 import pytest
 
 from pwnproxy.ai.llm.client import CircuitBreaker, UnifiedLLMClient
-from pwnproxy.ai.llm.errors import LLMTimeout, LLMUnavailable
+from pwnproxy.ai.llm.errors import LLMRateLimited, LLMTimeout, LLMUnavailable
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest
 from pwnproxy.ai.llm.testing import RecordingProvider
 
@@ -114,4 +114,44 @@ class TestCircuitIntegration:
         resp = await client.generate(_req())
         assert resp.text == "recovered"
         assert len(providers["p1"].requests) == 2
+
+
+class TestRateLimitRetry:
+    @pytest.mark.asyncio
+    async def test_rate_limited_retries_same_provider_then_succeeds(self):
+        """429 is transient: the client retries the SAME provider (backoff), not p2."""
+        p1 = RecordingProvider(outcomes=[
+            LLMRateLimited("p1", "429", retry_after_s=0.01),
+            LLMRateLimited("p1", "429", retry_after_s=0.01),
+            "ok-after-retry",
+        ])
+        p1.name = "p1"
+        p2 = RecordingProvider(outcomes=["from-p2"])
+        p2.name = "p2"
+        client = UnifiedLLMClient(
+            providers={"p1": p1, "p2": p2}, chain=["p1", "p2"],
+            rate_limit_retries=2,
+        )
+        resp = await client.generate(_req())
+        assert resp.text == "ok-after-retry"
+        assert len(p1.requests) == 3  # 2 rate-limited retries + 1 success
+        assert len(p2.requests) == 0  # never fell through to p2
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_exhausted_falls_through(self):
+        p1 = RecordingProvider(outcomes=[
+            LLMRateLimited("p1", "429", retry_after_s=0.01),
+            LLMRateLimited("p1", "429", retry_after_s=0.01),
+            LLMRateLimited("p1", "429", retry_after_s=0.01),
+        ])
+        p1.name = "p1"
+        p2 = RecordingProvider(outcomes=["from-p2"])
+        p2.name = "p2"
+        client = UnifiedLLMClient(
+            providers={"p1": p1, "p2": p2}, chain=["p1", "p2"],
+            rate_limit_retries=2,
+        )
+        resp = await client.generate(_req())
+        assert resp.text == "from-p2"
+        assert len(p1.requests) == 3  # exhausted retries then fell through
 
