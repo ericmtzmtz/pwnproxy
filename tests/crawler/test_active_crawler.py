@@ -361,7 +361,13 @@ class TestWorkerCrawlE2E:
 
     @pytest.mark.asyncio
     async def test_crawl_stop(self):
-        """Send crawl.stop after crawl.start, verify job is stopped."""
+        """Send crawl.stop after crawl.start, verify job is stopped.
+
+        The seed is a local server whose handler sleeps, so the crawl stays in
+        RUNNING (fetch in progress) when crawl.stop is sent — deterministic on
+        any platform, unlike a dead port that fails instantly with
+        ConnectionRefused and completes before the stop arrives.
+        """
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
             from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
 
@@ -399,9 +405,24 @@ class TestWorkerCrawlE2E:
             await results_bridge.start()
             await asyncio.sleep(0.3)
 
-            # Start a slow crawl (we'll stop it quickly)
+            # Start a crawl against a LOCAL server whose handler sleeps, so the
+            # fetch stays in progress (RUNNING) until we stop it.
+            from aiohttp import web
+
+            async def _slow_handler(_request):
+                await asyncio.sleep(30)  # long enough to keep the crawl busy
+                return web.Response(text="<html><body>done</body></html>", content_type="text/html")
+
+            slow_app = web.Application()
+            slow_app.router.add_get("/", _slow_handler)
+            slow_runner = web.AppRunner(slow_app)
+            await slow_runner.setup()
+            slow_site = web.TCPSite(slow_runner, "127.0.0.1", 0)
+            await slow_site.start()
+            slow_port = slow_site._server.sockets[0].getsockname()[1]
+
             crawl_config = {
-                "seeds": ["http://127.0.0.1:99999/"],  # will fail to connect
+                "seeds": [f"http://127.0.0.1:{slow_port}/"],
                 "depth": 1,
                 "rate_limit": 1,
                 "concurrency": 1,
@@ -440,6 +461,7 @@ class TestWorkerCrawlE2E:
             await proc.wait()
             await results_bridge.stop()
             await feed_server.stop()
+            await slow_runner.cleanup()
 
 
 # ── 8.5 API: start 200/422/409, stop, status ───────────────────────────
