@@ -28,6 +28,35 @@ from pwnproxy.shared.task_model import create_task_engine, init_task_db
 reports_rest = importlib.import_module("pwnproxy.transport.rest.reports")
 
 
+@pytest.fixture(autouse=True)
+def _dispose_engines():
+    """Dispose every aiosqlite engine a test creates via create_task_engine.
+
+    Engines left alive keep their ``_connection_worker_thread`` running; when
+    pytest-asyncio closes the test's event loop the worker wakes up on a closed
+    loop and emits "Event loop is closed" teardown noise in CI (many threads).
+    """
+    created: list = []
+
+    def _tracked_create(*args, **kwargs):
+        engine = create_task_engine(*args, **kwargs)
+        created.append(engine)
+        return engine
+
+    import tests.ai.test_reports as _mod
+    _orig = _mod.create_task_engine
+    _mod.create_task_engine = _tracked_create
+    try:
+        yield
+    finally:
+        _mod.create_task_engine = _orig
+        for engine in created:
+            try:
+                asyncio.run(engine.dispose())
+            except Exception:
+                pass
+
+
 def _finding(url="http://target.local/search", technique="sqli-union", param="q",
              severity="high", payload="' OR 1=1--", evidence="error: syntax near UNION"):
     return {
