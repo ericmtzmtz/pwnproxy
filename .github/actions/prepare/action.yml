@@ -12,7 +12,9 @@ runs:
     - uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-        cache: "poetry"
+        # Note: no `cache: poetry` here — setup-python's poetry cache tries to
+        # invoke `poetry` (not installed yet on the runner) and fails. Install
+        # poetry first, then rely on pipx's own dependency resolution.
     - name: Install Poetry
       shell: bash
       run: |
