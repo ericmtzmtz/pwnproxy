@@ -117,6 +117,18 @@ class QoSClassifiedQueue:
                     return topic, data
             raise
 
+    def get_nowait(self) -> tuple[str, dict]:
+        """Non-blocking variant of :meth:`get` — ready retries first, then the
+        main queue. Raises ``asyncio.QueueEmpty`` when nothing is available."""
+        if self._retry_buffer:
+            now = time.monotonic()
+            ready = [r for r in self._retry_buffer if r[2] <= now]
+            if ready:
+                topic, data, _, _ = ready.pop(0)
+                self._retry_buffer = [r for r in self._retry_buffer if r[2] > now]
+                return topic, data
+        return self._queue.get_nowait()
+
     def _enqueue_drop(self, topic: str, data: dict) -> bool:
         """BEST_EFFORT: drop if full."""
         try:

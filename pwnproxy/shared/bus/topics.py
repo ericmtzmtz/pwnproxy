@@ -85,4 +85,22 @@ TOPIC_QOS: dict[str, QoSClass] = {
     BRUTEFORCE_URL:        QoSClass.BEST_EFFORT,
 }
 
+# Internal HookBus channel names (plugin consumers register + publish by these
+# literal strings, see plugins/core/loader.py `_publish_results` and the WS
+# event relays). Most overlap the canonical topics above; the proxy raw-flow /
+# finding channels are only reachable via these names, so map them explicitly
+# instead of letting them fall to DEFAULT_QOS (BEST_EFFORT).
+HOOKBUS_QOS: dict[str, QoSClass] = {
+    **TOPIC_QOS,
+    # Plugin produce/consume channels
+    "finding":             QoSClass.CRITICAL,   # plugin finding results → storage/WS
+    "error":               QoSClass.CRITICAL,   # error events must not be dropped
+    # Proxy raw-flow channels (high volume, verbose)
+    "flow":                QoSClass.BEST_EFFORT,
+    "flow_stored":         QoSClass.IMPORTANT,  # persisted-flow notification (UI live)
+    "done":                QoSClass.BEST_EFFORT,
+    "request":             QoSClass.BEST_EFFORT,
+    "response":            QoSClass.BEST_EFFORT,
+}
+
 DEFAULT_QOS = QoSClass.BEST_EFFORT

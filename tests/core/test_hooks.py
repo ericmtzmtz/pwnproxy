@@ -2,7 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import patch
 
-from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.hooks import HookBus, _HookChannelQueue
 
 
 class TestHookBus:
@@ -122,30 +122,93 @@ class TestHookBus:
 
     @pytest.mark.asyncio
     async def test_queue_overflow_handling(self):
-        """Test that queue overflow is handled gracefully."""
-        bus = HookBus(maxsize=2)  # Very small queue
-        queue = bus.register("test_channel")
-        
-        # Fill the queue
-        queue.put_nowait("item1")
-        queue.put_nowait("item2")
-        
-        # This should trigger overflow handling - drops oldest, adds newest
-        bus.publish("test_channel", "overflow_item")
-        
-        # Queue should now contain: ["item2", "overflow_item"]
-        # Get first item (should be the second original item)
+        """Test that queue overflow is handled gracefully.
+
+        QoS semantics replaced the old drop-oldest policy: a BEST_EFFORT
+        channel that is full drops the INCOMING event (put_nowait returns
+        False) and keeps the buffered ones. CRITICAL events are never dropped
+        (they retry in-memory)."""
+        from pwnproxy.shared.bus.qos import QoSClassifiedQueue
+        from pwnproxy.shared.bus.topics import QoSClass
+
+        bus = HookBus()
+        qq = QoSClassifiedQueue(QoSClass.BEST_EFFORT, maxsize=2)
+        queue = _HookChannelQueue("best.channel", qq)
+        bus._subscribers["best.channel"] = [queue]
+        bus._subscriber_counts["best.channel"] = 1
+
+        # Fill the queue to capacity
+        assert queue.put_nowait("item1") is True
+        assert queue.put_nowait("item2") is True
+
+        # BEST_EFFORT on full → drop the incoming event, keep buffered ones.
+        assert queue.put_nowait("overflow_item") is False
+
         data1 = await queue.get()
-        assert data1 == "item2"
-        
-        # Get second item (should be the overflow item)
+        assert data1 == "item1"
         data2 = await queue.get()
-        assert data2 == "overflow_item"
-        
-        # Verify the queue has space for new items
-        queue.put_nowait("new_item")
-        data3 = await queue.get()
-        assert data3 == "new_item"
+        assert data2 == "item2"
+        # The overflow item was dropped, so the queue is now empty.
+        assert queue.qsize == 0
+
+    @pytest.mark.asyncio
+    async def test_critical_event_not_dropped_on_full(self):
+        """CRITICAL (e.g. finding) on a full queue retries in-memory, never drops."""
+        from pwnproxy.shared.bus.qos import QoSClassifiedQueue
+        from pwnproxy.shared.bus.topics import QoSClass
+
+        bus = HookBus()
+        qq = QoSClassifiedQueue(QoSClass.CRITICAL, maxsize=1)
+        queue = _HookChannelQueue("finding", qq)
+        bus._subscribers["finding"] = [queue]
+        bus._subscriber_counts["finding"] = 1
+
+        queue.put_nowait("first")
+        # Queue full → CRITICAL buffers for retry, producer sees success.
+        assert queue.put_nowait("finding-event") is True
+        assert queue.dropped == 0
+
+        data1 = await queue.get()
+        assert data1 == "first"
+        data2 = await queue.get()
+        assert data2 == "finding-event"
+
+    @pytest.mark.asyncio
+    async def test_pending_buffer_is_bounded(self):
+        """Publishing floods to a channel with no subscriber keeps only the newest."""
+        from pwnproxy.shared.hooks import _PENDING_CAP
+
+        bus = HookBus()
+        # Flood well past the cap with no subscriber registered.
+        total = _PENDING_CAP + 50
+        for i in range(total):
+            bus.publish("nobody.home", f"msg-{i}")
+        pending = bus._pending["nobody.home"]
+        assert len(pending) == _PENDING_CAP
+        # Oldest 50 messages dropped; the newest survive for the first subscriber.
+        assert pending[0] == f"msg-{total - _PENDING_CAP}"
+        assert pending[-1] == f"msg-{total - 1}"
+
+    @pytest.mark.asyncio
+    async def test_best_effort_channel_drops_incoming_on_full(self):
+        """BEST_EFFORT HookBus channel (e.g. raw flow) drops under pressure but
+        the producer's publish() never raises."""
+        from pwnproxy.shared.bus.qos import QoSClassifiedQueue
+        from pwnproxy.shared.bus.topics import QoSClass
+
+        bus = HookBus()
+        qq = QoSClassifiedQueue(QoSClass.BEST_EFFORT, maxsize=1)
+        queue = _HookChannelQueue("flow", qq)
+        bus._subscribers["flow"] = [queue]
+        bus._subscriber_counts["flow"] = 1
+
+        queue.put_nowait("first")
+        # publish() is fire-and-forget; the incoming item is dropped on full.
+        bus.publish("flow", {"id": 1})  # must not raise
+        assert queue.dropped == 1
+
+        data = await queue.get()
+        assert data == "first"
 
     @pytest.mark.asyncio
     async def test_hookbus_no_longer_filters_scope(self):

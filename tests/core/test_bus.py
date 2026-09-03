@@ -95,6 +95,69 @@ async def test_subscriber_count(bus):
 
 
 @pytest.mark.asyncio
+async def test_publish_does_not_block_slow_consumer(bus):
+    """A slow consumer must not stall the producer: publish() is non-blocking."""
+    slow_topic = "crawl.progress"  # IMPORTANT in TOPIC_QOS
+    received = []
+
+    async def slow_collect():
+        async for e in bus.subscribe(slow_topic):
+            received.append(e.data)
+            await asyncio.sleep(0.01)
+
+    task = asyncio.create_task(slow_collect())
+    await asyncio.sleep(0.05)
+
+    # Publishing many events rapidly must return quickly (no await on full queue).
+    import time
+    start = time.monotonic()
+    for i in range(30):
+        await bus.publish(slow_topic, {"job_id": "j1", "pct": i})
+    elapsed = time.monotonic() - start
+    assert elapsed < 2.0, f"publish blocked too long: {elapsed:.2f}s"
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # The slow consumer may not have drained everything, but publish succeeded.
+    assert len(received) <= 30
+
+
+@pytest.mark.asyncio
+async def test_best_effort_topic_drops_under_pressure_without_blocking(bus):
+    """A BEST_EFFORT topic with a consumer that never drains drops incoming
+    events instead of growing the queue or blocking the producer."""
+    topic = "crawler.url"  # BEST_EFFORT in TOPIC_QOS
+
+    async def never_drains():
+        async for _e in bus.subscribe(topic):
+            await asyncio.sleep(10)
+
+    task = asyncio.create_task(never_drains())
+    await asyncio.sleep(0.05)
+
+    # The subscriber's queue has BEST_EFFORT capacity (64); flood well past it.
+    queues = bus._subscribers.get(topic, [])
+    assert queues, "subscriber queue should exist"
+    capacity = queues[0]._maxsize
+
+    for i in range(capacity * 3):
+        await bus.publish(topic, {"url": f"http://x/{i}"})
+        await asyncio.sleep(0)
+
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    # BEST_EFFORT dropped most of the flood rather than blocking/growing.
+    assert queues[0].dropped > 0
+
+
+@pytest.mark.asyncio
 async def test_envelope_json_roundtrip():
     """Envelope.to_json() and Envelope.from_json() should roundtrip."""
     e1 = Envelope(topic="test", data=[1, 2, 3], source="pytest")

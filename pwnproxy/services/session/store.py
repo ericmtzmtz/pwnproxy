@@ -8,11 +8,60 @@ from typing import Any, Optional
 from sqlalchemy import select, delete as sa_delete, func
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from pwnproxy.shared.contracts.job import (
+    JobState,
+    TERMINAL_STATES,
+    _LEGAL_TRANSITIONS,
+)
 from pwnproxy.shared.task_model import TaskRecord, init_task_db
 
 logger = logging.getLogger(__name__)
 
 STALE_TIMEOUT = timedelta(minutes=5)
+
+# TaskRecord.status → canonical JobState. "pending" is the ORM default and an
+# alias of CREATED (the task has not started). "queued" is what create() writes.
+_TASK_TO_JOBSTATE = {
+    "pending": JobState.CREATED,
+    "queued": JobState.CREATED,
+    "running": JobState.RUNNING,
+    "completed": JobState.COMPLETED,
+    "failed": JobState.FAILED,
+    "cancelled": JobState.CANCELLED,
+}
+
+
+def _canonical_task_state(status: str) -> JobState:
+    return _TASK_TO_JOBSTATE.get((status or "pending").lower(), JobState.CREATED)
+
+
+def _task_transition_legal(current: str, new: str) -> bool:
+    """True when a TaskStore status change maps to a legal JobState move.
+
+    The machine is the single source of truth; the task's string statuses are
+    its legacy projection. STARTING/STOPPING are implicit bridges that never
+    appear as persisted task statuses, so e.g. ``queued → running`` resolves
+    CREATED → (STARTING) → RUNNING and ``running → cancelled`` resolves
+    RUNNING → (STOPPING) → CANCELLED. Terminal statuses accept no outgoing
+    transitions.
+    """
+    cur = _canonical_task_state(current)
+    new_s = _canonical_task_state(new)
+    if cur == new_s:
+        return True  # no-op / idempotent progress update
+    if new_s in _LEGAL_TRANSITIONS[cur]:
+        return True
+    # Implicit bridge: CREATED may reach RUNNING/FAILED through STARTING.
+    if cur == JobState.CREATED and new_s in (JobState.RUNNING, JobState.FAILED):
+        return True
+    # Implicit bridge: RUNNING may reach CANCELLED through STOPPING.
+    if cur == JobState.RUNNING and new_s == JobState.CANCELLED:
+        return True
+    return False
+
+
+def _task_is_terminal(status: str) -> bool:
+    return _canonical_task_state(status) in TERMINAL_STATES
 
 
 class TaskStore:
@@ -43,7 +92,7 @@ class TaskStore:
             session=session_name,
             type=task_type,
             config=json.dumps(config),
-            status="running",
+            status="queued",  # CREATED-equivalent; first update("running") is the legal move to RUNNING
             created_at=datetime.now(timezone.utc).isoformat(),
         )
         async with self._session_factory() as s:
@@ -65,7 +114,17 @@ class TaskStore:
             if record is None:
                 return
             if status is not None:
-                record.status = status
+                new_status = status.lower()
+                if not _task_transition_legal(record.status, new_status):
+                    # Fail-safe: never silently rewrite history; keep prior state.
+                    logger.warning(
+                        "TaskStore: illegal status transition %s -> %s for task %s (ignored; keeping %s)",
+                        record.status, new_status, task_id, record.status,
+                    )
+                    return
+                record.status = new_status
+                if _task_is_terminal(new_status):
+                    record.completed_at = datetime.now(timezone.utc).isoformat()
             if progress is not None:
                 record.progress = progress
             if total is not None:
@@ -74,8 +133,6 @@ class TaskStore:
                 record.result = json.dumps(result)
             if error is not None:
                 record.error = error
-            if status in ("completed", "failed", "cancelled"):
-                record.completed_at = datetime.now(timezone.utc).isoformat()
             await s.commit()
 
     async def get(self, task_id: str) -> Optional[dict[str, Any]]:
@@ -83,7 +140,7 @@ class TaskStore:
             record = await s.get(TaskRecord, task_id)
             if record is None:
                 return None
-            if record.status == "running":
+            if record.status in ("running", "queued") and not _task_is_terminal(record.status):
                 created = datetime.fromisoformat(record.created_at) if record.created_at else datetime.now(timezone.utc)
                 if datetime.now(timezone.utc) - created > STALE_TIMEOUT and record.id not in self._running_tasks:
                     record.status = "failed"
@@ -109,7 +166,7 @@ class TaskStore:
             now = datetime.now(timezone.utc)
             stale_tasks = []
             for r in rows:
-                if r.status == "running":
+                if r.status in ("running", "queued") and not _task_is_terminal(r.status):
                     created = datetime.fromisoformat(r.created_at) if r.created_at else now
                     if now - created > STALE_TIMEOUT and r.id not in self._running_tasks:
                         r.status = "failed"
@@ -135,6 +192,14 @@ class TaskStore:
             record = await s.get(TaskRecord, task_id)
             if record is None:
                 return False
+            if not _task_transition_legal(record.status, "cancelled"):
+                # A terminal task cannot be cancelled (completed/failed/cancelled
+                # are immutable). Fail-safe: keep the terminal state.
+                logger.warning(
+                    "TaskStore: cancel ignored for task %s in terminal state %s",
+                    task_id, record.status,
+                )
+                return True
             record.status = "cancelled"
             record.completed_at = datetime.now(timezone.utc).isoformat()
             await s.commit()
