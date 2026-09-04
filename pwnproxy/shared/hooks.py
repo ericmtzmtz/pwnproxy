@@ -95,6 +95,22 @@ class HookBus:
             self._subscriber_counts[channel_name] = 0
 
     def register(self, channel_name: str) -> _HookChannelQueue:
+        """Subscribe the caller to a channel, returning its private queue.
+
+        Design decision (why per channel x subscriber, not one queue per
+        channel): HookBus is fan-out — every subscriber of a channel must
+        receive every event published to it. A single shared queue per channel
+        would make subscribers race each other for events: the first consumer
+        to dequeue would steal an event the others never see, silently
+        breaking fan-out and every one of the ~20 consumers that relies on
+        ``await queue.get() -> data``. Giving each ``register`` its own
+        ``QoSClassifiedQueue`` (classified by the channel's QoS mapping) keeps
+        fan-out intact at the cost of one bounded queue per subscriber, which
+        is the accepted trade-off. The discarded alternative — one QoS queue
+        per channel plus re-broadcast to subscribers — was rejected as it
+        duplicated buffering state and reintroduced the same races between the
+        re-broadcast step and the subscribers.
+        """
         self.register_channel(channel_name)
         qos = HOOKBUS_QOS.get(channel_name, DEFAULT_QOS)
         queue = _HookChannelQueue(channel_name, QoSClassifiedQueue(qos))
