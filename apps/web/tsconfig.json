@@ -6,7 +6,8 @@
     "paths": {
       "@/*": ["src/*"]
     },
-    "jsx": "preserve"
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["src/**/*.ts", "src/**/*.astro"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.astro"]
 }

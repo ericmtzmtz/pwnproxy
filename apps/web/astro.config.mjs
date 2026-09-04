@@ -4,6 +4,14 @@ import preact from "@astrojs/preact";
 
 export default defineConfig({
   vite: {
+    resolve: {
+      alias: {
+        react: "preact/compat",
+        "react-dom": "preact/compat",
+        "react/jsx-runtime": "preact/jsx-runtime",
+        "react/jsx-dev-runtime": "preact/jsx-dev-runtime",
+      },
+    },
     plugins: [
       {
         name: "fix-preact-virtual-module",
@@ -20,6 +28,7 @@ export default defineConfig({
     ],
     optimizeDeps: {
       exclude: ["@astrojs/preact"],
+      include: ["preact", "preact/hooks", "preact/jsx-runtime", "preact/compat"],
     },
   },
   integrations: [preact({ include: ["**/*.tsx", "**/*.ts"] })],
