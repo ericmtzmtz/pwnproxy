@@ -1,6 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { getFlow, deleteFlow, outscopeFlow } from "@/api/traffic/calls";
 import { createTab } from "@/api/repeater/calls";
+import { buildScanTargetQuery } from "@/utils/scanTarget";
 import type { FlowRecord } from "@/api/traffic/types";
 
 interface FlowRequestData {
@@ -131,6 +132,16 @@ export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailPr
     }
   };
 
+  const handleSendToScanner = () => {
+    if (!flow) return;
+    window.location.href = buildScanTargetQuery({
+      method: flow.method,
+      url: flow.url,
+      headers: flow.request_headers || {},
+      body: flow.request_body,
+    });
+  };
+
   if (loading) return <p class="text-xs text-neutral-500">Loading…</p>;
   if (error) return <p class="text-xs text-red-400">Error: {error}</p>;
   if (!flow) return null;
@@ -169,6 +180,16 @@ export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailPr
             class="rounded bg-neutral-800 px-2 py-0.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 disabled:opacity-50"
           >
             {sendingToRepeater ? "..." : "Repeater"}
+          </button>
+          <button
+            onClick={(e: MouseEvent) => {
+              e.stopPropagation();
+              handleSendToScanner();
+            }}
+            class="rounded bg-neutral-800 px-2 py-0.5 text-[11px] font-medium text-neutral-300 hover:bg-neutral-700 disabled:opacity-50"
+            title="Send to Scanner"
+          >
+            Scanner
           </button>
           <button
             onClick={async (e: MouseEvent) => {

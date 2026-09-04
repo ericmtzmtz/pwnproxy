@@ -101,6 +101,9 @@ async def launch_scan(
     evasion_level: str = "none",
     cookies: str = "",
     headers: str = "",
+    method: str = "GET",
+    body: str = "",
+    content_type: str = "",
 ):
     mgr = getattr(request.app.state, "session_manager", None)
     store = mgr.task_store if mgr and mgr.task_store else getattr(request.app.state, "task_store", None)
@@ -113,7 +116,12 @@ async def launch_scan(
         "scanners": scanners,
         "detection_depth": detection_depth,
         "evasion_level": evasion_level,
+        "method": method,
     }
+    if body:
+        config["body"] = body
+    if content_type:
+        config["content_type"] = content_type
     if cookies:
         config["cookies"] = cookies
     if headers:

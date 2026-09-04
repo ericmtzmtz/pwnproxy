@@ -26,6 +26,13 @@ export interface LaunchResponse {
   status: string;
 }
 
+export interface ScanLaunchOptions {
+  method?: string;
+  body?: string;
+  content_type?: string;
+  cookies?: string;
+}
+
 export interface BurpImportResponse {
   status: string;
   imported: number;

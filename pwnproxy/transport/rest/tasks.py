@@ -91,6 +91,8 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     url = config.get("url", "")
     detection_depth = config.get("detection_depth", "fast")
     evasion_level = config.get("evasion_level", "none")
+    method = config.get("method", "GET")
+    body = config.get("body") or None
     extra_headers: dict[str, str] = {}
     cookies = config.get("cookies")
     if cookies:
@@ -98,7 +100,21 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     raw_headers = config.get("headers")
     if raw_headers and isinstance(raw_headers, dict):
         extra_headers.update(raw_headers)
-    findings = await _scan_target(loader, url, 60, detection_depth=detection_depth, evasion_level=evasion_level, extra_headers=extra_headers or None)
+    content_type = config.get("content_type")
+    if content_type:
+        extra_headers["Content-Type"] = content_type
+    if body and method.upper() in ("GET", "HEAD"):
+        # Paridad con el CLI: un cuerpo no tiene sentido en GET/HEAD.
+        logger.warning("Scan %s: body ignored for method %s", task_id, method.upper())
+        body = None
+    findings = await _scan_target(
+        loader, url, 60,
+        detection_depth=detection_depth,
+        evasion_level=evasion_level,
+        extra_headers=extra_headers or None,
+        method=method,
+        body=body,
+    )
 
     # Persist findings to the active session so they show up in /findings
     # and the web UI (not just in the task result).

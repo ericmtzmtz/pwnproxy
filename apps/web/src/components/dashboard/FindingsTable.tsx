@@ -2,6 +2,7 @@ import { Fragment } from "preact";
 import { useEffect, useState } from "preact/hooks";
 import { deleteFinding, deleteFindings, triageFeedback } from "@/api/findings/calls";
 import { createTab } from "@/api/repeater/calls";
+import { buildScanTargetQuery } from "@/utils/scanTarget";
 import type { Finding } from "@/api/findings/types";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
 
@@ -312,6 +313,22 @@ export function FindingsTable({ findings, onDeleted }: FindingsTableProps) {
                             class="cursor-pointer rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-700 disabled:opacity-50"
                           >
                             {isBusy ? "..." : "Send to Repeater"}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.location.href = buildScanTargetQuery({
+                                method: f.method,
+                                url: f.url,
+                                headers: {},
+                                body: null,
+                                request_data: f.request_data ?? null,
+                              });
+                            }}
+                            class="cursor-pointer rounded bg-neutral-800 px-2.5 py-1 text-xs font-medium text-neutral-300 transition-colors hover:bg-neutral-700"
+                            title="Send to Scanner"
+                          >
+                            Send to Scanner
                           </button>
                           <button
                             disabled={isBusy}

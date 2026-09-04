@@ -29,9 +29,32 @@ const WS_HOST = import.meta.env.PUBLIC_API_BASE
   ? new URL(import.meta.env.PUBLIC_API_BASE).host
   : "127.0.0.1:8000";
 
+const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "OPTIONS", "DELETE", "HEAD"];
+
+function readScanParams() {
+  if (typeof window === "undefined") {
+    return { url: "", method: "GET", body: "", content_type: "", cookies: "", scanners: "" };
+  }
+  const p = new URLSearchParams(location.search);
+  const method = (p.get("method") ?? "GET").toUpperCase();
+  return {
+    url: p.get("url") ?? "",
+    method: HTTP_METHODS.includes(method) ? method : "GET",
+    body: p.get("body") ?? "",
+    content_type: p.get("content_type") ?? "",
+    cookies: p.get("cookies") ?? "",
+    scanners: SCANNER_NAMES.includes(p.get("scanners") ?? "") ? p.get("scanners") ?? "" : "",
+  };
+}
+
 export function ScannersPage() {
-  const [targetUrl, setTargetUrl] = useState("https://httpbin.org/get");
-  const [selectedScanner, setSelectedScanner] = useState("");
+  const init = useRef(readScanParams());
+  const [targetUrl, setTargetUrl] = useState(init.current.url || "https://httpbin.org/get");
+  const [method, setMethod] = useState(init.current.method);
+  const [body, setBody] = useState(init.current.body);
+  const [contentType, setContentType] = useState(init.current.content_type);
+  const [cookies, setCookies] = useState(init.current.cookies);
+  const [selectedScanner, setSelectedScanner] = useState(init.current.scanners);
   const [scanning, setScanning] = useState(false);
   const [disabledPlugins, setDisabledPlugins] = useState<Set<string>>(new Set());
   const [history, setHistory] = useState<TaskStatus[]>([]);
@@ -136,10 +159,16 @@ export function ScannersPage() {
     if (!url) return;
     setScanning(true);
     try {
-      const { scan_id } = await launchScan(url, selectedScanner);
+      const opts: { method?: string; body?: string; content_type?: string; cookies?: string } = { method };
+      if (cookies) opts.cookies = cookies;
+      const bodyCapable = !["GET", "HEAD"].includes(method);
+      if (bodyCapable && body) opts.body = body;
+      if (bodyCapable && contentType) opts.content_type = contentType;
+      const { scan_id } = await launchScan(url, selectedScanner, opts);
       const placeholder = {
         id: scan_id, status: "running", type: "scan",
-        progress: 0, total: 0, config: { url, scanners: selectedScanner || "All" },
+        progress: 0, total: 0,
+        config: { url, scanners: selectedScanner || "All", method },
         result: null, error: null,
         created_at: new Date().toISOString(), completed_at: null,
       } as TaskStatus;
@@ -191,47 +220,86 @@ export function ScannersPage() {
 
       <div class="rounded-lg border border-neutral-800 bg-neutral-950 p-4">
         <h3 class="mb-3 text-sm font-semibold text-neutral-200">New Scan</h3>
-        <form onSubmit={handleSubmit} class="flex items-end gap-3">
-          <div class="flex-1">
-            <label for="target-url" class="mb-1 block text-xs font-medium text-neutral-400">Target URL</label>
-            <input
-              id="target-url"
-              type="url"
-              value={targetUrl}
-              onInput={(e) => setTargetUrl((e.target as HTMLInputElement).value)}
-              placeholder="https://example.com"
-              class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-            />
-          </div>
-          <div>
-            <label for="scanner-select" class="mb-1 block text-xs font-medium text-neutral-400">Scanners</label>
-            <select
-              id="scanner-select"
-              value={selectedScanner}
-              onChange={(e) => setSelectedScanner((e.target as HTMLSelectElement).value)}
-              class="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+        <form onSubmit={handleSubmit}>
+          <div class="flex items-end gap-3">
+            <div class="flex-1">
+              <label for="target-url" class="mb-1 block text-xs font-medium text-neutral-400">Target URL</label>
+              <input
+                id="target-url"
+                type="url"
+                value={targetUrl}
+                onInput={(e) => setTargetUrl((e.target as HTMLInputElement).value)}
+                placeholder="https://example.com"
+                class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label for="method-select" class="mb-1 block text-xs font-medium text-neutral-400">Method</label>
+              <select
+                id="method-select"
+                value={method}
+                onChange={(e) => setMethod((e.target as HTMLSelectElement).value)}
+                class="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                {HTTP_METHODS.map((m) => <option value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label for="scanner-select" class="mb-1 block text-xs font-medium text-neutral-400">Scanners</label>
+              <select
+                id="scanner-select"
+                value={selectedScanner}
+                onChange={(e) => setSelectedScanner((e.target as HTMLSelectElement).value)}
+                class="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+              >
+                <option value="">All scanners</option>
+                {SCANNER_NAMES.map((n) => (
+                  <option value={n} disabled={disabledPlugins.has(n)}>{n.toUpperCase()} only</option>
+                ))}
+              </select>
+            </div>
+            <button
+              type="submit"
+              disabled={scanning}
+              class="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-400"
             >
-              <option value="">All scanners</option>
-              {SCANNER_NAMES.map((n) => (
-                <option value={n} disabled={disabledPlugins.has(n)}>{n.toUpperCase()} only</option>
-              ))}
-            </select>
+              {scanning ? (
+                <svg class="spinner h-4 w-4 border-2 border-white border-t-transparent" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              )}
+              {scanning ? "Scanning..." : "Scan"}
+            </button>
           </div>
-          <button
-            type="submit"
-            disabled={scanning}
-            class="inline-flex items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-500 disabled:cursor-not-allowed disabled:bg-primary-800 disabled:text-primary-400"
-          >
-            {scanning ? (
-              <svg class="spinner h-4 w-4 border-2 border-white border-t-transparent" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            )}
-            {scanning ? "Scanning..." : "Scan"}
-          </button>
+          {!["GET", "HEAD"].includes(method) && (
+            <div class="mt-3 grid grid-cols-2 gap-3">
+              <div>
+                <label for="scan-content-type" class="mb-1 block text-xs font-medium text-neutral-400">Content-Type</label>
+                <input
+                  id="scan-content-type"
+                  type="text"
+                  value={contentType}
+                  onInput={(e) => setContentType((e.target as HTMLInputElement).value)}
+                  placeholder="application/json"
+                  class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 placeholder-neutral-500 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+              <div class="col-span-2">
+                <label for="scan-body" class="mb-1 block text-xs font-medium text-neutral-400">Request body</label>
+                <textarea
+                  id="scan-body"
+                  value={body}
+                  onInput={(e) => setBody((e.target as HTMLTextAreaElement).value)}
+                  rows={4}
+                  placeholder='{"key": "value"}'
+                  class="w-full resize-y rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 font-mono text-xs text-neutral-100 placeholder-neutral-500 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
+                />
+              </div>
+            </div>
+          )}
         </form>
       </div>
 

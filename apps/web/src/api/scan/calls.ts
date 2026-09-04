@@ -1,9 +1,13 @@
 import { API_BASE } from "@/core";
-import type { LaunchResponse, ScanTask, BurpImportResponse } from "./types";
+import type { LaunchResponse, ScanTask, BurpImportResponse, ScanLaunchOptions } from "./types";
 
-export async function launchScan(url: string, scanners = ""): Promise<LaunchResponse> {
+export async function launchScan(url: string, scanners = "", opts?: ScanLaunchOptions): Promise<LaunchResponse> {
   const params = new URLSearchParams({ url });
   if (scanners) params.set("scanners", scanners);
+  if (opts?.method) params.set("method", opts.method);
+  if (opts?.body) params.set("body", opts.body);
+  if (opts?.content_type) params.set("content_type", opts.content_type);
+  if (opts?.cookies) params.set("cookies", opts.cookies);
   const res = await fetch(`${API_BASE}/scan?${params}`, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
