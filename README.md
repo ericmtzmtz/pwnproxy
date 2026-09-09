@@ -8,6 +8,10 @@
   </a>
 </p>
 
+<p align="center">
+  <sub>CI: <code>suite</code> · <code>goldens</code> · <code>perf-check</code> — baseline <code>281.9ms</code> / 19 pages (<code>tests/perf/baseline.json</code>) — <a href="https://github.com/ericmtzmtz/pwnproxy/actions/workflows/ci.yml"><code>.github/workflows/ci.yml</code></a></sub>
+</p>
+
 <h1 align="center">pwnproxy</h1>
 
 <p align="center">
@@ -125,7 +129,9 @@ Exit codes:
 | 1 | Scan completed, findings found |
 | 2 | Error |
 
-pwnproxy is currently installed from source using Poetry. PyPI packaging is planned for a future release.
+pwnproxy is currently installed from source using Poetry (`0.1.0` pre-release; `0.2.0-dev` in `CHANGELOG.md`). PyPI packaging is planned for a future release.
+
+Configuration lives in `~/.pwnproxy/config.toml` — see `config.example.toml` for `[triage]` / `[llm]` / `max_llm_per_scan` and scope settings. Core testing (proxy, scanners, storage) works without an LLM API key; triage runs on heuristics by default.
 
 ## Features
 
@@ -146,11 +152,13 @@ Built-in scanners currently include:
 
 | Scanner | Detection |
 |---|---|
-| SQLi | Error-based and time-based blind detection |
-| XSS | Reflected and stored XSS with context analysis |
+| SQLi | Error-based (signatures + muted 5xx with negative controls / anti-WAF guards), boolean-blind (multi-round + baseline), time-based, OOB |
+| XSS | Reflected/stored with context-aware exploitability (reflection ≠ XSS); static DOM sink signals (`dom-xss`, inferred) |
 | LFI | Content signatures, traversal, and PHP wrappers |
 | XXE | Error-based, XInclude, JSON mutation, and OOB workflows |
-| SSRF | Parameter analysis, redirect detection, and callback validation |
+| SSRF | OOB/callback confirmation only (fail-closed; no speculative error-based SSRF) |
+
+Findings use three confidence levels — **tentative**, **inferred**, and **confirmed** — so weak signals are not treated as exploits. LLM triage is opt-in; by default the pipeline stays on heuristics and **never sends `tentative` findings to the LLM judge**.
 
 Scanners consume captured flows and can also be executed directly in headless mode.
 
@@ -486,6 +494,8 @@ poetry run pytest
 - shared contracts between subsystems
 - deterministic tests and reproducible workflows
 
+Maturity signals: 17 golden E2E workflows (`tests/golden`), versioned perf baseline (`tests/perf/baseline.json`, `281.9ms` / 19 pages), and `correlation_id` observability.
+
 See the contribution documentation for architecture and development details.
 
 ## Roadmap
@@ -500,43 +510,19 @@ See the contribution documentation for architecture and development details.
 - Scope validation hardening
 - Scanner validation fixtures
 - Scanner request reproduction data
+- Architecture hardening: state ownership, JobState machine, shared contracts, golden E2E workflows
+- Event-bus backpressure / QoS (per-subscriber queues)
+- Operational observability (`correlation_id`) and extended LLM usage telemetry
+- CI: suite, goldens, versioned perf baseline (`281.9ms` / 19 pages, `tests/perf/baseline.json`)
 
-### Current priority: HARDENING
-
-Before adding major new features, the current development cycle focuses on architectural stability and consistency.
-
-**P0 — Architecture invariants**
-
-- Single ownership model for shared state
-- Formal JobState lifecycle
-- Shared canonical contracts
-- Deterministic golden E2E workflows
-
-**P1 — Operational resilience**
-
-- Event backpressure and QoS
-- Operational observability
-- Extended LLM telemetry
-- Minimal crawler worker decomposition
-- Review of oversized service objects
-
-**P2 — Release discipline**
-
-- Ownership documentation
-- Performance baselines
-- Changelog
-- Upgrade guide
-- Migration compatibility
-
-### Post-hardening
+### Next (post-hardening)
 
 - WebSocket rooms
 - Comments on flows
 - Extended report templates
-- AI-assisted finding descriptions
-- Self-describing plugin metadata
-
-The goal is to strengthen the platform before continuing to expand its surface area.
+- AI-assisted finding descriptions / payload assistance
+- Marketplace surface (PyPI / git-sourced plugins)
+- Self-describing plugin metadata (ongoing polish)
 
 ## Documentation
 
