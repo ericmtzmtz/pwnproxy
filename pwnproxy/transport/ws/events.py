@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Set
+from typing import Any, Dict, List, Set, Optional
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import text
