@@ -138,6 +138,11 @@ def start(
             """Forward crawler events: persist crawler.flow to traffic.db,
             forward everything else to hook_bus for WS delivery."""
             try:
+                # Tag session for room filtering (additive, writer owns session)
+                if isinstance(data, dict) and "session_id" not in data:
+                    sid = session_manager.active_name
+                    if sid:
+                        data["session_id"] = sid
                 if topic == "crawler.flow" and isinstance(data, dict):
                     # Persist the crawled flow to traffic.db (2nd writer pattern).
                     from pwnproxy.services.crawler.republish import persist_crawl_flow
@@ -156,12 +161,25 @@ def start(
 
             if topic in ("proxy.flow", "proxy.done"):
                 flow = Flow.from_dict(data)
+                # Tag flow with current session for WS rooms
+                if not flow.session_id:
+                    sid = session_manager.active_name
+                    if sid:
+                        flow.session_id = sid
                 channel = topic.split(".", 1)[1]
                 hook_bus.publish(channel, flow)
                 asyncio.create_task(bus.publish(channel, flow))
             elif topic == "proxy.flow_stored":
+                if isinstance(data, dict) and "session_id" not in data:
+                    sid = session_manager.active_name
+                    if sid:
+                        data["session_id"] = sid
                 hook_bus.publish("flow_stored", data)
             else:
+                if isinstance(data, dict) and "session_id" not in data:
+                    sid = session_manager.active_name
+                    if sid:
+                        data["session_id"] = sid
                 channel = topic.removeprefix("proxy.") if topic.startswith("proxy.") else topic
                 hook_bus.publish(channel, data)
                 asyncio.create_task(bus.publish(channel, data))

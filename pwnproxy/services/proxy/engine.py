@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True, flow_filter=None):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True, flow_filter=None, session_name_fn: Optional[Callable[[], Optional[str]]] = None):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog
@@ -28,6 +28,7 @@ class ProxyEngine:
         self._capture_enabled = False
         # Shared scope filter applied to relay + storage addons (hot-swappable).
         self.flow_filter = flow_filter
+        self._session_name_fn = session_name_fn
 
     @property
     def capture_enabled(self) -> bool:
@@ -68,12 +69,13 @@ class ProxyEngine:
         from pwnproxy.services.proxy.addons.storage import StorageAddon
 
         # Register addons
-        self._master.addons.add(HookRelayAddon(self.hook_bus, flow_filter=self.flow_filter))
+        self._master.addons.add(HookRelayAddon(self.hook_bus, flow_filter=self.flow_filter, session_name_fn=self._session_name_fn))
         if self.db_engine:
             self._master.addons.add(StorageAddon(
                 self.db_engine,
                 hook_bus=self.hook_bus,
                 flow_filter=self.flow_filter,
+                session_name_fn=self._session_name_fn,
             ))
         for addon in self._extra_addons:
             self._master.addons.add(addon)

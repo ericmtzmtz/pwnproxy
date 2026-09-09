@@ -122,6 +122,8 @@ async def launch_scan(
         config["body"] = body
     if content_type:
         config["content_type"] = content_type
+    if session_name:
+        config["session_name"] = session_name
     if cookies:
         config["cookies"] = cookies
     if headers:
@@ -142,6 +144,7 @@ async def launch_scan(
             "task_id": task_id,
             "scanners": scanners,
             "target": url,
+            "session_id": session_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
     return {"scan_id": task_id, "task_id": task_id, "status": "running"}

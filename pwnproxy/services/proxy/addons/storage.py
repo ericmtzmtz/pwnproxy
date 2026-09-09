@@ -22,13 +22,14 @@ class StorageAddon:
     so scanners automatically process every captured flow.
     """
 
-    def __init__(self, db_engine: AsyncEngine, hook_bus=None, flow_filter=None):
+    def __init__(self, db_engine: AsyncEngine, hook_bus=None, flow_filter=None, session_name_fn=None):
         self.db_engine = db_engine
         
         self.hook_bus = hook_bus
         # Optional FlowFilter gates persistence + flow_stored/done emission.
         # When None (default), all flows are stored (legacy behavior).
         self._flow_filter = flow_filter
+        self._session_name_fn = session_name_fn
         
         self._auto_scan = _AUTO_SCAN
         self.session_factory = sessionmaker(
@@ -76,14 +77,23 @@ class StorageAddon:
                 db_id = record.id
 
             if self.hook_bus:
-                self.hook_bus.publish("flow_stored", {
+                sid = None
+                if self._session_name_fn:
+                    try:
+                        sid = self._session_name_fn()
+                    except Exception:
+                        sid = None
+                flow_stored_payload: dict = {
                     "id": db_id,
                     "method": flow.method,
                     "url": flow.url,
                     "status_code": flow.status_code,
-                })
+                }
+                if sid:
+                    flow_stored_payload["session_id"] = sid
+                self.hook_bus.publish("flow_stored", flow_stored_payload)
                 if self._auto_scan:
-                    self.hook_bus.publish("done", {
+                    done_payload: dict = {
                         "id": str(db_id),
                         "method": flow.method,
                         "url": flow.url,
@@ -95,6 +105,9 @@ class StorageAddon:
                         "duration_ms": flow.duration_ms,
                         "tls": flow.tls,
                         "error": flow.error,
-                    })
+                    }
+                    if sid:
+                        done_payload["session_id"] = sid
+                    self.hook_bus.publish("done", done_payload)
         except Exception as e:
             logger.error(f"Failed to store flow {flow.id}: {e}", exc_info=True)

@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pwnproxy"
-version = "0.1.0"
+version = "0.2.0-dev"
 description = "Local-first security testing engine with CLI, TUI, API, WebSocket, and MCP"
 authors = ["Eric Martinez"]
 license = "AGPL-3.0-or-later"

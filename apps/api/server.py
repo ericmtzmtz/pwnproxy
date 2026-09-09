@@ -112,6 +112,25 @@ async def start_api_server(
     FindingStorage.on_saved = triage_pipeline.handle
     triage_pipeline.start()
 
+    # RoomDispatcher: fan global HookBus events into per-session/job rooms
+    from pwnproxy.transport.ws.events import room_dispatcher
+    room_dispatcher._hook_bus = hook_bus
+    app.state.room_dispatcher = room_dispatcher
+    # Fire-and-forget: runs for app lifetime, subscribes to HookBus channels
+    dispatcher_task = asyncio.create_task(room_dispatcher.start())
+    app.state.room_dispatcher_task = dispatcher_task
+
+    @app.on_event("shutdown")
+    async def _stop_room_dispatcher():
+        try:
+            await room_dispatcher.stop()
+        except Exception:
+            pass
+        try:
+            dispatcher_task.cancel()
+        except Exception:
+            pass
+
     config = uvicorn.Config(
         app,
         host=host,

@@ -83,13 +83,18 @@ async def triage_feedback(finding_id: int, payload: TriageFeedback, request: Req
         hook_bus = request.app.state.hook_bus
         if hook_bus:
             try:
-                hook_bus.publish("triage.updated", {
+                triage_payload: dict = {
                     "finding_id": finding_id,
                     "verdict": payload.verdict,
                     "method": "human",
                     "score": updated.get("triage_score"),
                     "reason": updated.get("triage_reason"),
-                })
+                }
+                sm = getattr(request.app.state, "session_manager", None)
+                sid = getattr(sm, "active_name", None) if sm else None
+                if sid:
+                    triage_payload["session_id"] = sid
+                hook_bus.publish("triage.updated", triage_payload)
             except Exception:
                 logger.debug("could not publish triage.updated", exc_info=True)
     return {"ok": True, "finding": updated}

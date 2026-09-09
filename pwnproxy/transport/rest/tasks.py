@@ -107,14 +107,28 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
         # Paridad con el CLI: un cuerpo no tiene sentido en GET/HEAD.
         logger.warning("Scan %s: body ignored for method %s", task_id, method.upper())
         body = None
-    findings = await _scan_target(
-        loader, url, 60,
-        detection_depth=detection_depth,
-        evasion_level=evasion_level,
-        extra_headers=extra_headers or None,
-        method=method,
-        body=body,
-    )
+    # Tag findings with the scan's session (for WS rooms, prefer task session over global active)
+    scan_session = config.get("session_name")
+    if scan_session:
+        try:
+            loader._current_scan_session = scan_session
+        except Exception:
+            pass
+    try:
+        findings = await _scan_target(
+            loader, url, 60,
+            detection_depth=detection_depth,
+            evasion_level=evasion_level,
+            extra_headers=extra_headers or None,
+            method=method,
+            body=body,
+        )
+    finally:
+        try:
+            if hasattr(loader, "_current_scan_session"):
+                delattr(loader, "_current_scan_session")
+        except Exception:
+            pass
 
     # Persist findings to the active session so they show up in /findings
     # and the web UI (not just in the task result).
@@ -153,10 +167,13 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
             except (ValueError, TypeError):
                 logger.warning(f"Could not calculate duration for task {task_id}")
 
+        mgr = getattr(request.app.state, "session_manager", None)
+        session_name = config.get("session_name") or (mgr.active_name if mgr else "")
         hook_bus.publish("scan.completed", {
             "task_id": task_id,
             "findings_count": len(result_data) if result_data else 0,
             "duration_ms": duration_ms,
+            "session_id": session_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
