@@ -199,9 +199,22 @@ class UniversalPluginLoader:
         if result is None:
             return
 
+        # Tag finding/triage events with session_id where known (for WS rooms)
+        # Prefer the scan job's session (for headless scans with explicit session_name)
+        # over the global active_name, to handle concurrent sessions correctly.
+        tagged = result
+        if isinstance(result, dict) and "session_id" not in result:
+            sid = getattr(self, "_current_scan_session", None)
+            if not sid:
+                sm = getattr(self, "_session_manager", None)
+                if sm and getattr(sm, "active_name", None):
+                    sid = sm.active_name
+            if sid:
+                tagged = {**result, "session_id": sid}
+
         for produce_type in plugin.metadata.produces:
             channel_name = produce_type  # Default mapping
-            self.hook_bus.publish(channel_name, result)
+            self.hook_bus.publish(channel_name, tagged)
             if self.autoscan is not None and produce_type == "finding":
                 try:
                     await self.autoscan.report_finding()

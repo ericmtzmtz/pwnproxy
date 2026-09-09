@@ -21,9 +21,10 @@ class Flow:
     tls: bool = False
     request_body_truncated: bool = False
     response_body_truncated: bool = False
+    session_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        d: dict[str, Any] = {
             "id": self.id,
             "method": self.method,
             "url": self.url,
@@ -38,6 +39,9 @@ class Flow:
             "error": self.error,
             "tls": self.tls,
         }
+        if self.session_id is not None:
+            d["session_id"] = self.session_id
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "Flow":
@@ -55,6 +59,7 @@ class Flow:
             duration_ms=d.get("duration_ms"),
             error=d.get("error"),
             tls=d.get("tls", False),
+            session_id=d.get("session_id"),
         )
 
     @classmethod

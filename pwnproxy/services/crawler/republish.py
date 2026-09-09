@@ -58,14 +58,17 @@ async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> Optional[i
         logger.debug("could not persist crawl flow: %s", exc)
         return None
 
-    hook_bus.publish("flow_stored", {
+    flow_stored_payload: dict[str, Any] = {
         "id": db_id,
         "method": data.get("method", "GET"),
         "url": data.get("url", ""),
         "status_code": data.get("status_code"),
-    })
+    }
+    if data.get("session_id"):
+        flow_stored_payload["session_id"] = data["session_id"]
+    hook_bus.publish("flow_stored", flow_stored_payload)
     if data.get("_scan_while_crawl"):
-        hook_bus.publish("done", {
+        done_payload: dict[str, Any] = {
             "id": str(db_id),
             "method": data.get("method", "GET"),
             "url": data.get("url", ""),
@@ -77,5 +80,8 @@ async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> Optional[i
             "duration_ms": data.get("duration_ms"),
             "tls": data.get("tls", False),
             "error": data.get("error"),
-        })
+        }
+        if data.get("session_id"):
+            done_payload["session_id"] = data["session_id"]
+        hook_bus.publish("done", done_payload)
     return db_id

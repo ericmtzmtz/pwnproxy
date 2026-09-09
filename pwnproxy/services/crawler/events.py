@@ -30,35 +30,49 @@ logger = logging.getLogger(__name__)
 class EventPublisher:
     """Wraps ``TcpBridgeServer.publish`` with topic constants for the crawler."""
 
-    def __init__(self, bridge: "TcpBridgeServer") -> None:
+    def __init__(self, bridge: "TcpBridgeServer", session_name_fn=None) -> None:
         self._bridge = bridge
+        self._session_name_fn = session_name_fn
+
+    def _sid(self) -> dict:
+        if self._session_name_fn:
+            try:
+                sid = self._session_name_fn()
+                if sid:
+                    return {"session_id": sid}
+            except Exception:
+                pass
+        return {}
 
     async def crawl_started(self, job_id: int | None) -> None:
-        await self._bridge.publish(CRAWL_STARTED, {"job_id": job_id})
+        await self._bridge.publish(CRAWL_STARTED, {"job_id": job_id, **self._sid()})
 
     async def crawl_progress(self, job_id: int | None, stats: dict) -> None:
-        await self._bridge.publish(CRAWL_PROGRESS, {"job_id": job_id, **stats})
+        await self._bridge.publish(CRAWL_PROGRESS, {"job_id": job_id, **stats, **self._sid()})
 
     async def crawl_completed(self, job_id: int | None, stats: dict) -> None:
-        await self._bridge.publish(CRAWL_COMPLETED, {"job_id": job_id, **stats})
+        await self._bridge.publish(CRAWL_COMPLETED, {"job_id": job_id, **stats, **self._sid()})
 
     async def crawl_failed(self, job_id: int | None, error: str) -> None:
-        await self._bridge.publish(CRAWL_FAILED, {"job_id": job_id, "error": error})
+        await self._bridge.publish(CRAWL_FAILED, {"job_id": job_id, "error": error, **self._sid()})
 
     async def crawl_flow(self, flow_dict: dict) -> None:
+        # Tag flow with session if not already present
+        if "session_id" not in flow_dict:
+            flow_dict = {**flow_dict, **self._sid()}
         await self._bridge.publish("crawler.flow", flow_dict)
 
     async def bruteforce_started(self, job_id: int | None) -> None:
-        await self._bridge.publish(BRUTEFORCE_STARTED, {"job_id": job_id})
+        await self._bridge.publish(BRUTEFORCE_STARTED, {"job_id": job_id, **self._sid()})
 
     async def bruteforce_progress(self, job_id: int | None, stats: dict) -> None:
-        await self._bridge.publish(BRUTEFORCE_PROGRESS, {"job_id": job_id, **stats})
+        await self._bridge.publish(BRUTEFORCE_PROGRESS, {"job_id": job_id, **stats, **self._sid()})
 
     async def bruteforce_completed(self, job_id: int | None, stats: dict) -> None:
-        await self._bridge.publish(BRUTEFORCE_COMPLETED, {"job_id": job_id, **stats})
+        await self._bridge.publish(BRUTEFORCE_COMPLETED, {"job_id": job_id, **stats, **self._sid()})
 
     async def bruteforce_failed(self, job_id: int | None, error: str) -> None:
-        await self._bridge.publish(BRUTEFORCE_FAILED, {"job_id": job_id, "error": error})
+        await self._bridge.publish(BRUTEFORCE_FAILED, {"job_id": job_id, "error": error, **self._sid()})
 
     async def discovered_url(self, record: dict) -> None:
         await self._bridge.publish(CRAWLER_URL, {
