@@ -8,14 +8,12 @@ Implements the ``XMLMutableReplayer`` protocol for runtime type safety.
 
 import logging
 import re
-from typing import Optional
 
 import httpx
 
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.protocols import XMLMutableReplayer
-from pwnproxy.shared.scan.utils import build_request
 
 logger = logging.getLogger(__name__)
 
@@ -47,16 +45,11 @@ class XxeReplayer(RequestReplayer):
         body = point.original_body or ""
         if self._looks_like_xml(body):
             mutated = self.mutate_xml_body(body, payload)
-            # Build request with the mutated body instead of param injection
-            return build_request(
-                self.flow,
-                point,
-                mutated,
-                override_body=True,
-            )
-        # Fallback: inject as parameter value (for JSON→XML conversion etc.)
-        modified = point.inject(payload, evasion_level=evasion_level)
-        return build_request(self.flow, point, modified)
+            headers = dict(point.original_headers)
+            headers.pop("content-length", None)
+            return httpx.Request(point.method.upper(), point.url, headers=headers, content=mutated.encode())
+        # Fallback: normal param injection via base logic
+        return super()._build_request(point, payload, evasion_level)
 
     def mutate_xml_body(self, body: str, payload: str) -> str:
         """Inject *payload* as an external entity definition in *body*.
