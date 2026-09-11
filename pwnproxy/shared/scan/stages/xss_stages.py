@@ -12,7 +12,6 @@ import logging
 import re
 import uuid
 
-import httpx
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -21,12 +20,6 @@ from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 
 logger = logging.getLogger(__name__)
-
-STORED_PAYLOADS = [
-    "<script>alert(1)</script>",
-    "<img src=x onerror=alert(1)>",
-    "{{constructor.constructor('alert(1)')()}}",
-]
 
 
 def _default_canary() -> str:
@@ -81,6 +74,8 @@ class ReflectedStage(DetectionStage):
         canary = self._canary_provider()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             probe = await self._replayer.replay(
                 point,
                 canary,
@@ -167,9 +162,10 @@ class StoredStage(DetectionStage):
     order = 1
     min_depth = DetectionDepth.STANDARD
     capability = "stored-xss"
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", stored_payloads: list[str] | None = None):
         self._replayer = replayer
         self._evasion = evasion_level
+        self._stored_payloads = stored_payloads or []
 
     async def execute(
         self,
@@ -180,7 +176,9 @@ class StoredStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
-            for payload in STORED_PAYLOADS:
+            if self._deadline_exceeded():
+                break
+            for payload in self._stored_payloads:
                 resp = await self._replayer.replay(
                     point,
                     payload,
@@ -266,6 +264,8 @@ class DomStage(DetectionStage):
         canary = self._canary_provider()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             probe = await self._replayer.replay(
                 point,
                 canary,
@@ -364,6 +364,8 @@ class ContextAwareStage(DetectionStage):
         canary = self._canary_provider()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             probe = await self._replayer.replay(
                 point,
                 canary,

