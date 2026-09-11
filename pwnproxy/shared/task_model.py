@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import event
@@ -31,7 +31,7 @@ class TaskRecord(TaskBase):
     result: Mapped[str | None] = mapped_column(default=None)
     error: Mapped[str | None] = mapped_column(default=None)
     created_at: Mapped[str] = mapped_column(
-        default=lambda: datetime.now(timezone.utc).isoformat()
+        default=lambda: datetime.now(UTC).isoformat()
     )
     completed_at: Mapped[str | None] = mapped_column(default=None)
 

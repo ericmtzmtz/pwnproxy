@@ -1,13 +1,13 @@
 import typer
 
-from apps.terminal.cli.start import start
-from apps.terminal.cli.history import app as history_app
 from apps.terminal.cli.findings import findings
-from apps.terminal.cli.session import app as session_app
-from apps.terminal.cli.tokens import app as tokens_app
+from apps.terminal.cli.history import app as history_app
+from apps.terminal.cli.import_cmd import app as import_app
 from apps.terminal.cli.plugin import app as plugin_app
 from apps.terminal.cli.scan import app as scan_app
-from apps.terminal.cli.import_cmd import app as import_app
+from apps.terminal.cli.session import app as session_app
+from apps.terminal.cli.start import start
+from apps.terminal.cli.tokens import app as tokens_app
 
 app = typer.Typer(
     name="pwnproxy",

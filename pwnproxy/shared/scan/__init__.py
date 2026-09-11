@@ -1,2 +1,2 @@
 # shared.scan module
-from . import protocols
+from . import protocols  # noqa: F401  (re-exported package attribute)

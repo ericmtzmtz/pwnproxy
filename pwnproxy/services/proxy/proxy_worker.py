@@ -1,13 +1,11 @@
 import argparse
-from pwnproxy.shared.flow_filter import FlowFilter
 import asyncio
+import contextlib
 import json
 import logging
-import os
 import signal
 import sys
 from pathlib import Path
-from typing import Optional
 
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
@@ -15,6 +13,7 @@ from mitmproxy.tools.dump import DumpMaster
 from pwnproxy.services.proxy.addons.storage import StorageAddon
 from pwnproxy.services.session.manager import ScopeConfig
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer
+from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger("proxy_worker")
@@ -51,13 +50,13 @@ class ProxyWorker:
 
     def __init__(self, args: argparse.Namespace):
         self._args = args
-        self._master: Optional[DumpMaster] = None
-        self._task: Optional[asyncio.Task] = None
+        self._master: DumpMaster | None = None
+        self._task: asyncio.Task | None = None
         self._bridge = TcpBridgeServer()
         self._running = False
-        self._scope_config: Optional[ScopeConfig] = None
-        self._flow_filter: Optional[FlowFilter] = None
-        self._watch_task: Optional[asyncio.Task] = None
+        self._scope_config: ScopeConfig | None = None
+        self._flow_filter: FlowFilter | None = None
+        self._watch_task: asyncio.Task | None = None
         if args.scope_enabled:
             # Build ScopeConfig from enabled flag and patterns
             data = {"enabled": True, "in_scope": args.scope_pattern or [], "out_of_scope": []}
@@ -188,10 +187,8 @@ class ProxyWorker:
                 pass
 
     async def _run_master(self) -> None:
-        try:
+        with contextlib.suppress(SystemExit):
             await self._master.run()
-        except SystemExit:
-            pass
 
     async def stop(self) -> None:
         self._running = False
@@ -200,10 +197,8 @@ class ProxyWorker:
             self._master = None
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
         await self._bridge.stop()
 
 

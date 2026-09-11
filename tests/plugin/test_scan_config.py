@@ -1,6 +1,8 @@
 """Config injection and parity tests through the real loader path."""
 import pytest
+
 from pwnproxy.plugins.core.chain import BudgetChain, DetectionDepth
+
 
 @pytest.mark.asyncio
 async def test_build_scan_loader_injects_config():
@@ -38,8 +40,8 @@ async def test_build_scan_loader_default_is_fast():
 @pytest.mark.asyncio
 async def test_discover_vs_standalone_parity():
     """Live discovery and standalone loader must expose the same scanner names."""
-    from pwnproxy.plugins.core.loader import PluginLoader
     from apps.terminal.cli.scan import _build_scan_loader
+    from pwnproxy.plugins.core.loader import PluginLoader
     # discovered via loader.discover_scanners()
     loader_disc = PluginLoader()
     await loader_disc.discover_scanners()

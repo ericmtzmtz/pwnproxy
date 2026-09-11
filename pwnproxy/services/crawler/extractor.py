@@ -9,8 +9,8 @@ and normalized before being returned.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from html.parser import HTMLParser
-from typing import Iterable, Optional
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 #: (tag, attribute) -> source label
@@ -33,7 +33,7 @@ _ABSOLUTE_RE = re.compile(r"[\"'](https?://[^\"'<>\\\s]{4,})[\"']")
 _RELATIVE_RE = re.compile(r"[\"'](/[^\"'<>\\\s]{1,300})[\"']")
 
 
-def normalize_url(raw: str, base_url: str) -> Optional[str]:
+def normalize_url(raw: str, base_url: str) -> str | None:
     """Resolve ``raw`` against ``base_url`` and normalize it.
 
     Normalization: strip fragment, sort query params, remove trailing slash,
@@ -111,7 +111,7 @@ def _looks_like_path(candidate: str) -> bool:
     return any(c.isalnum() for c in candidate)
 
 
-def extract_urls(body: Optional[str], base_url: str, content_type: str = "") -> list[tuple[str, str]]:
+def extract_urls(body: str | None, base_url: str, content_type: str = "") -> list[tuple[str, str]]:
     """Extract ``(normalized_url, source)`` pairs from a response body.
 
     Duplicates within the same body are collapsed; order is preserved.

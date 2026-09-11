@@ -3,14 +3,14 @@ from collections.abc import AsyncGenerator
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.stages.ssrf_stages import (
-    SsrfSimpleStage,
     RedirectStage,
     SsrfOOBStage,
+    SsrfSimpleStage,
 )
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 

@@ -8,12 +8,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
 from urllib.parse import urlparse
 
 from pwnproxy.services.crawler.extractor import extract_from_headers, extract_urls
-from pwnproxy.services.crawler.fetcher import Fetcher, fetch_robots, is_disallowed, parse_robots_disallow
+from pwnproxy.services.crawler.fetcher import (
+    Fetcher,
+    fetch_robots,
+    is_disallowed,
+    parse_robots_disallow,
+)
 from pwnproxy.services.session.manager import ScopeConfig
 
 logger = logging.getLogger(__name__)
@@ -69,7 +74,7 @@ class CrawlEngine:
     verify: bool = False
     _visited: set[str] = field(default_factory=set)
     _visited_paths: set[str] = field(default_factory=set)
-    _queue: asyncio.Queue[Optional[_QueueEntry]] = field(default_factory=asyncio.Queue)
+    _queue: asyncio.Queue[_QueueEntry | None] = field(default_factory=asyncio.Queue)
     _stats: CrawlStats = field(default_factory=CrawlStats)
     _cancel: bool = False
     _disallow_paths: list[str] = field(default_factory=list)
@@ -102,9 +107,8 @@ class CrawlEngine:
         path_key = self._path_key(url)
         if path_key in self._visited_paths:
             return False
-        if self.config.respect_robots and self._disallow_paths:
-            if is_disallowed(url, self._disallow_paths):
-                return False
+        if self.config.respect_robots and self._disallow_paths and is_disallowed(url, self._disallow_paths):
+            return False
         next_depth = current_depth + 1
         if next_depth > self.config.depth:
             return False
@@ -124,7 +128,7 @@ class CrawlEngine:
 
         sem = asyncio.Semaphore(self.config.concurrency)
 
-        async def _fetch_one(entry: _QueueEntry) -> Optional[tuple[dict, _QueueEntry]]:
+        async def _fetch_one(entry: _QueueEntry) -> tuple[dict, _QueueEntry] | None:
             if self._cancel or self._stats.fetched >= self.config.max_urls:
                 return None
             async with sem:
@@ -170,7 +174,7 @@ class CrawlEngine:
                 candidates.extend(extract_from_headers(headers, entry.url))
 
                 seen_in_page: set[str] = set()
-                for candidate_url, source in candidates:
+                for candidate_url, _source in candidates:
                     if candidate_url in seen_in_page:
                         continue
                     seen_in_page.add(candidate_url)
@@ -179,9 +183,12 @@ class CrawlEngine:
                     path_key = self._path_key(candidate_url)
                     if path_key in self._visited_paths:
                         continue
-                    if self.config.respect_robots and self._disallow_paths:
-                        if is_disallowed(candidate_url, self._disallow_paths):
-                            continue
+                    if (
+                        self.config.respect_robots
+                        and self._disallow_paths
+                        and is_disallowed(candidate_url, self._disallow_paths)
+                    ):
+                        continue
                     next_depth = entry.depth + 1
                     if next_depth <= self.config.depth:
                         self._visited.add(candidate_url)

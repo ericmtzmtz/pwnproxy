@@ -1,6 +1,5 @@
 import tomllib
 from pathlib import Path
-from typing import Optional
 
 
 def load_config() -> dict:
@@ -21,5 +20,5 @@ def load_config() -> dict:
         return defaults
 
 
-def get_registry_url() -> Optional[str]:
+def get_registry_url() -> str | None:
     return load_config().get("registry")

@@ -1,6 +1,5 @@
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +26,8 @@ def jwt_decode(token_value: str) -> dict:
         return result
 
     try:
-        import json as json_mod
         import base64
+        import json as json_mod
 
         parts = token_value.split(".")
         header_json = base64.urlsafe_b64decode(parts[0] + "==").decode("utf-8")
@@ -39,8 +38,8 @@ def jwt_decode(token_value: str) -> dict:
     exp = result.get("payload", {}).get("exp")
     if exp is not None:
         try:
-            exp_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
-            now = datetime.now(timezone.utc)
+            exp_dt = datetime.fromtimestamp(exp, tz=UTC)
+            now = datetime.now(UTC)
             result["status"] = "valid" if now < exp_dt else "expired"
             result["expires_at"] = exp_dt
         except Exception:

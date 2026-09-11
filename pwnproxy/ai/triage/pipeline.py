@@ -5,8 +5,9 @@ Wired as FindingStorage.on_saved at server startup so every persisted finding
 Failures never lose the finding: it simply stays with its last known triage state.
 """
 import asyncio
+import contextlib
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from pwnproxy.ai.triage.config import TriageConfig, load_triage_config
 from pwnproxy.ai.triage.heuristic import HeuristicResult, score_finding
@@ -22,15 +23,15 @@ class TriagePipeline:
         self,
         storage_factory: StorageFactory,
         hook_bus=None,
-        judge: Optional[LLMJudge] = None,
-        config: Optional[TriageConfig] = None,
+        judge: LLMJudge | None = None,
+        config: TriageConfig | None = None,
     ):
         self._storage_factory = storage_factory
         self.hook_bus = hook_bus
         self.judge = judge
         self.config = config or load_triage_config()
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=self.config.queue_maxsize)
-        self._worker_task: Optional[asyncio.Task] = None
+        self._worker_task: asyncio.Task | None = None
         # Per-scan LLM call budget (scan_id -> count). Findings without a
         # scan_id share the "default" bucket.
         self._llm_calls: dict[str, int] = {}
@@ -44,10 +45,8 @@ class TriagePipeline:
     async def stop(self) -> None:
         if self._worker_task is not None:
             self._worker_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._worker_task
-            except asyncio.CancelledError:
-                pass
             self._worker_task = None
 
     # -- entry point (FindingStorage.on_saved signature) ----------------------
@@ -79,7 +78,7 @@ class TriagePipeline:
         except Exception:
             logger.exception("triage pipeline failed for finding %s", row.get("id"))
 
-    async def handle_human_feedback(self, finding_id: int, verdict: str, reason: str | None = None) -> Optional[dict]:
+    async def handle_human_feedback(self, finding_id: int, verdict: str, reason: str | None = None) -> dict | None:
         """Persist a human verdict; used by the REST feedback endpoint."""
         return await self._set(finding_id, verdict, "human", None, reason or "human_review")
 
@@ -164,7 +163,7 @@ class TriagePipeline:
         reason = ";".join(result.reasons) or "default"
         await self._set(finding_id, verdict, method, result.score, reason, features=result.features)
 
-    async def _set(self, finding_id, verdict, method, score, reason, features=None) -> Optional[dict]:
+    async def _set(self, finding_id, verdict, method, score, reason, features=None) -> dict | None:
         storage = self._storage_factory()
         updated = await storage.set_triage(
             finding_id, verdict=verdict, method=method, score=score, reason=reason, features=features,

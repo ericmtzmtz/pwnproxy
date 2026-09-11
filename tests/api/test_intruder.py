@@ -1,18 +1,18 @@
 import asyncio
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.transport.rest.app import app
+from pwnproxy.services.intruder.engine import IntruderEngine
+from pwnproxy.services.session.store import TaskStore
 from pwnproxy.shared.db import Base as CoreBase
 from pwnproxy.shared.hooks import HookBus
-from pwnproxy.services.intruder.engine import IntruderEngine, IntruderResult
 from pwnproxy.shared.task_model import create_task_engine, init_task_db
-from pwnproxy.services.session.store import TaskStore
+from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture

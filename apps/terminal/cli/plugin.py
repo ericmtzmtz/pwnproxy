@@ -1,10 +1,15 @@
-import typer
 from pathlib import Path
+
+import typer
 from rich.console import Console
 from rich.table import Table
 
-from pwnproxy.plugins.core.config import load_config, get_registry_url
-from pwnproxy.plugins.core.discovery import discover_installed, search_pypi, install_package
+from pwnproxy.plugins.core.config import get_registry_url
+from pwnproxy.plugins.core.discovery import (
+    discover_installed,
+    install_package,
+    search_pypi,
+)
 
 app = typer.Typer(help="Manage pwnproxy plugins")
 console = Console()

@@ -44,6 +44,20 @@ markers = [
     "flaky: known-intermittent test under investigation (still runs in CI; fix the root cause, do not deselect)",
 ]
 
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+# Curated, reproducible rule set (ruff's built-in default is broad and
+# version-dependent). Add rules deliberately, not by default.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "B008",   # FastAPI Depends()/Query()/Body() in argument defaults is idiomatic
+    "SIM117", # nested with-statements: explicit nesting is preferred here
+    "UP042",  # str+Enum -> StrEnum changes str()/format semantics
+]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

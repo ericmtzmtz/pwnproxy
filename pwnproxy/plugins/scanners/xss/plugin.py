@@ -2,12 +2,12 @@
 
 from collections.abc import AsyncGenerator
 
-from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.xss.payloads import STORED_PAYLOADS
+from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 class XSSScannerPlugin(ScannerPlugin):

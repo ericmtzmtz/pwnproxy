@@ -1,5 +1,5 @@
 """Ollama adapter: POST /api/chat on a local daemon. No API key required."""
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import httpx
 
@@ -16,7 +16,7 @@ class OllamaProvider(Provider):
     def default_base_url(self) -> str:
         return "http://127.0.0.1:11434"
 
-    def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None, base_url: Optional[str] = None, timeout_s: float = 30.0):
+    def __init__(self, model: str | None = None, api_key: str | None = None, base_url: str | None = None, timeout_s: float = 30.0):
         super().__init__(model=model, api_key=None, base_url=base_url, timeout_s=timeout_s)
 
     async def generate(self, request: LLMRequest, http: httpx.AsyncClient) -> LLMResponse:

@@ -1,8 +1,8 @@
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -22,47 +22,47 @@ class PluginsListResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     plugins: list[dict[str, Any]] = Field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class PluginToggleResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
-    name: Optional[str] = None
+    status: str | None = None
+    name: str | None = None
 
 
 class ScanLaunchResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    scan_id: Optional[str] = None
-    task_id: Optional[str] = None
-    status: Optional[str] = None
+    scan_id: str | None = None
+    task_id: str | None = None
+    status: str | None = None
 
 
 class ScanPollResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
-    url: Optional[str] = None
+    status: str | None = None
+    url: str | None = None
     findings_count: int = 0
     findings: list[dict[str, Any]] = Field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class BurpImportResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
+    status: str | None = None
     imported: int = 0
-    include_count: Optional[int] = None
-    exclude_count: Optional[int] = None
-    detail: Optional[str] = None
+    include_count: int | None = None
+    exclude_count: int | None = None
+    detail: str | None = None
 
 
 @router.get("/plugins", response_model=PluginsListResponse)
 async def list_plugins(request: Request):
-    loader: Optional[PluginLoader] = getattr(request.app.state, "plugin_loader", None)
+    loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
         return {"error": "plugin_loader not available", "plugins": []}
     return {"plugins": loader.list_active()}
@@ -70,7 +70,7 @@ async def list_plugins(request: Request):
 
 @router.post("/plugins/{name}/toggle", response_model=PluginToggleResponse)
 async def toggle_plugin(name: str, request: Request):
-    loader: Optional[PluginLoader] = getattr(request.app.state, "plugin_loader", None)
+    loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
         raise HTTPException(status_code=503, detail="plugin_loader not available")
     plugin = loader.get_plugin(name)
@@ -131,7 +131,7 @@ async def launch_scan(
         try:
             config["headers"] = json.loads(headers)
         except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="headers must be a valid JSON object")
+            raise HTTPException(status_code=400, detail="headers must be a valid JSON object") from None
     task_id = await store.create("scan", config, session_name=session_name)
 
     from pwnproxy.transport.rest.tasks import _launch_task_runner
@@ -145,7 +145,7 @@ async def launch_scan(
             "scanners": scanners,
             "target": url,
             "session_id": session_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
     return {"scan_id": task_id, "task_id": task_id, "status": "running"}
 
@@ -168,8 +168,8 @@ async def poll_scan(scan_id: str, request: Request):
 
 @router.get("/export/{scan_id}")
 async def export_scan(scan_id: str, request: Request, format: str = "json"):
-    from pwnproxy.services.findings.engine import ExportEngine
     from pwnproxy.plugins.core.base import Finding
+    from pwnproxy.services.findings.engine import ExportEngine
     from pwnproxy.transport.rest.tasks import get_task_store
 
     store = get_task_store(request)
@@ -210,7 +210,7 @@ async def import_burp(request: Request, body: BurpImportRequest):
     try:
         data = json.loads(body.config)
     except json.JSONDecodeError as e:
-        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}") from e
 
     from apps.terminal.cli.import_cmd import _parse_burp_scope
 

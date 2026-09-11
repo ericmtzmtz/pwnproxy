@@ -9,39 +9,39 @@ deterministic signals from the response body and headers.
 from __future__ import annotations
 
 import re
-from typing import Mapping, Optional
+from collections.abc import Mapping
 
 # Body markers that identify a WAF/proxy block/error page. Only meaningful when
 # the HTTP status is an error (>= 400) — a 200 page may contain the word
 # "blocked" incidentally (e.g. UI copy), which must not count.
 BLOCK_PAGE_PATTERNS: list[re.Pattern] = [
-    re.compile(r"request\s+rejected", re.I),
-    re.compile(r"attention\s+required", re.I),
-    re.compile(r"mod[_\s]?security", re.I),
-    re.compile(r"the\s+request\s+was\s+blocked", re.I),
-    re.compile(r"access\s+denied", re.I),
-    re.compile(r"cloudflare\s+ray", re.I),
-    re.compile(r"incapsula", re.I),
-    re.compile(r"akamai", re.I),
-    re.compile(r"imperva", re.I),
-    re.compile(r"sucuri", re.I),
-    re.compile(r"barracuda", re.I),
-    re.compile(r"\bf5\b", re.I),
-    re.compile(r"not\s+allowed\s+to\s+access", re.I),
-    re.compile(r"blocked\s+by\s+(?:the\s+)?(?:firewall|waf|security)", re.I),
+    re.compile(r"request\s+rejected", re.IGNORECASE),
+    re.compile(r"attention\s+required", re.IGNORECASE),
+    re.compile(r"mod[_\s]?security", re.IGNORECASE),
+    re.compile(r"the\s+request\s+was\s+blocked", re.IGNORECASE),
+    re.compile(r"access\s+denied", re.IGNORECASE),
+    re.compile(r"cloudflare\s+ray", re.IGNORECASE),
+    re.compile(r"incapsula", re.IGNORECASE),
+    re.compile(r"akamai", re.IGNORECASE),
+    re.compile(r"imperva", re.IGNORECASE),
+    re.compile(r"sucuri", re.IGNORECASE),
+    re.compile(r"barracuda", re.IGNORECASE),
+    re.compile(r"\bf5\b", re.IGNORECASE),
+    re.compile(r"not\s+allowed\s+to\s+access", re.IGNORECASE),
+    re.compile(r"blocked\s+by\s+(?:the\s+)?(?:firewall|waf|security)", re.IGNORECASE),
 ]
 
 # Header-name -> pattern. Header names are matched case-insensitively; values are
 # checked against the pattern.
 BLOCK_HEADER_PATTERNS: dict[str, re.Pattern] = {
-    "server": re.compile(r"cloudflare|akamai|sucuri|barracuda|incapsula|imperva|f5", re.I),
+    "server": re.compile(r"cloudflare|akamai|sucuri|barracuda|incapsula|imperva|f5", re.IGNORECASE),
     "cf-ray": re.compile(r".+"),
     "x-waf": re.compile(r".+"),
     "x-waf-request-id": re.compile(r".+"),
     "x-deny-reason": re.compile(r".+"),
     "x-sucuri-id": re.compile(r".+"),
-    "x-cdn": re.compile(r"incapsula|akamai", re.I),
-    "x-powered-by": re.compile(r"waf|akamai|imperva", re.I),
+    "x-cdn": re.compile(r"incapsula|akamai", re.IGNORECASE),
+    "x-powered-by": re.compile(r"waf|akamai|imperva", re.IGNORECASE),
 }
 
 # Statuses that indicate an intermediary rate limit / bot defense rather than a
@@ -58,12 +58,12 @@ INTERMEDIARY_STATUSES = RATE_LIMIT_STATUSES | {502}
 _BODY_SCAN_LIMIT = 2048
 
 
-def is_rate_limit_status(status: Optional[int]) -> bool:
+def is_rate_limit_status(status: int | None) -> bool:
     """True for intermediary rate-limit / bot-defense statuses (429, 503)."""
     return status in RATE_LIMIT_STATUSES
 
 
-def is_intermediary_status(status: Optional[int]) -> bool:
+def is_intermediary_status(status: int | None) -> bool:
     """True for statuses attributable to an intermediary, not the payload.
 
     Covers 429/503 (rate limit / bot defense) and 502 (bad gateway). A scanner
@@ -73,9 +73,9 @@ def is_intermediary_status(status: Optional[int]) -> bool:
 
 
 def looks_like_block_page(
-    status: Optional[int],
-    body: Optional[str],
-    headers: Optional[Mapping[str, str]] = None,
+    status: int | None,
+    body: str | None,
+    headers: Mapping[str, str] | None = None,
 ) -> bool:
     """True when an error response appears to come from a WAF/proxy block page.
 
@@ -102,7 +102,7 @@ def looks_like_block_page(
     return False
 
 
-def _header_value(headers: Mapping[str, str], name: str) -> Optional[str]:
+def _header_value(headers: Mapping[str, str], name: str) -> str | None:
     for key, value in headers.items():
         if key.lower() == name.lower():
             return value

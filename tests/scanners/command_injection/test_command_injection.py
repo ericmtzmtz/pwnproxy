@@ -4,6 +4,7 @@ Runs the real CommandInjectionScannerPlugin over the in-process fixture and
 asserts detection on the injectable endpoint and no finding on the safe one.
 """
 
+import contextlib
 import importlib.util
 from pathlib import Path
 
@@ -21,7 +22,9 @@ def _load_target_module(name: str, filename: str):
 
 async def _run(url: str, flow_id: str) -> list:
     from pwnproxy.plugins.core.loader import PluginLoader
-    from pwnproxy.plugins.scanners.command_injection.plugin import CommandInjectionScannerPlugin
+    from pwnproxy.plugins.scanners.command_injection.plugin import (
+        CommandInjectionScannerPlugin,
+    )
     from pwnproxy.shared.models import Flow
 
     loader = PluginLoader()
@@ -31,10 +34,8 @@ async def _run(url: str, flow_id: str) -> list:
         flow = Flow(id=flow_id, method="GET", url=url, request_headers={}, request_body=None)
         return await loader.run_scan(flow)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             await loader.unload(plugin.metadata.name)
-        except Exception:
-            pass
 
 
 @pytest.mark.golden

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical

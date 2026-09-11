@@ -1,5 +1,4 @@
 import difflib
-from typing import Optional
 
 from pwnproxy.services.proxy.interceptor.controller import FlowSnapshot
 
@@ -24,8 +23,8 @@ def _format_header_line(key: str, value: str) -> str:
 
 
 def compute_headers_diff(
-    original: Optional[dict[str, str]],
-    edited: Optional[dict[str, str]],
+    original: dict[str, str] | None,
+    edited: dict[str, str] | None,
 ) -> list[str]:
     orig = original or {}
     ed = edited or {}

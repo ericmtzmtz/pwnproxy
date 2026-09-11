@@ -2,16 +2,15 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Optional
 
 import httpx
 import typer
 from rich.console import Console
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.services.findings.engine import ExportEngine
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.loader import PluginLoader
+from pwnproxy.services.findings.engine import ExportEngine
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -25,12 +24,12 @@ def url(
     scanners: str = typer.Option("", "--scanners", "-s", help="Comma-separated scanner names (default: all active)"),
     timeout: int = typer.Option(60, "--timeout", "-t", help="Scan timeout in seconds"),
     output: str = typer.Option("json", "--output", "-o", help="Output format: json, sarif, html, pdf"),
-    output_file: Optional[str] = typer.Option(None, "--output-file", "-f", help="Output file path (default: stdout)"),
-    cookies: Optional[list[str]] = typer.Option(None, "--cookie", "-c", help='Cookie header, e.g. "PHPSESSID=abc; security_level=0". Repeatable.'),
-    headers: Optional[list[str]] = typer.Option(None, "--header", "-H", help='Extra header, format "Name: Value". Repeatable.'),
+    output_file: str | None = typer.Option(None, "--output-file", "-f", help="Output file path (default: stdout)"),
+    cookies: list[str] | None = typer.Option(None, "--cookie", "-c", help='Cookie header, e.g. "PHPSESSID=abc; security_level=0". Repeatable.'),
+    headers: list[str] | None = typer.Option(None, "--header", "-H", help='Extra header, format "Name: Value". Repeatable.'),
     method: str = typer.Option("GET", "--method", "-m", help="HTTP method for the target request (GET, POST, PUT, PATCH)"),
-    data: Optional[str] = typer.Option(None, "--data", "-d", help="Raw request body (e.g. XML or JSON payload)"),
-    content_type: Optional[str] = typer.Option(None, "--content-type", help="Content-Type header for the body (e.g. text/xml, application/json)"),
+    data: str | None = typer.Option(None, "--data", "-d", help="Raw request body (e.g. XML or JSON payload)"),
+    content_type: str | None = typer.Option(None, "--content-type", help="Content-Type header for the body (e.g. text/xml, application/json)"),
     detection_depth: str = typer.Option("fast", "--depth", help="Detection depth: fast, standard, deep"),
     evasion_level: str = typer.Option("none", "--evasion", help="Evasion level: none, light, aggressive"),
 ):
@@ -73,7 +72,7 @@ def url(
         console.print(f"[red]Scan failed:[/red] {e}")
         if logger.isEnabledFor(logging.DEBUG):
             logger.exception("Scan error")
-        raise typer.Exit(2)
+        raise typer.Exit(2) from e
 
 
 def _resolve_scanner_config(detection_depth: str = "fast", evasion_level: str = "none") -> dict:
@@ -82,17 +81,19 @@ def _resolve_scanner_config(detection_depth: str = "fast", evasion_level: str = 
 
 
 async def _build_scan_loader(
-    scanners: Optional[set[str]] = None,
-    disabled_plugins: Optional[list[str]] = None,
-    config: Optional[dict] = None,
+    scanners: set[str] | None = None,
+    disabled_plugins: list[str] | None = None,
+    config: dict | None = None,
 ) -> PluginLoader:
-    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
-    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
-    from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
-    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
-    from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
-    from pwnproxy.plugins.scanners.command_injection.plugin import CommandInjectionScannerPlugin
     from pwnproxy.plugins.core.loader import PluginLoader
+    from pwnproxy.plugins.scanners.command_injection.plugin import (
+        CommandInjectionScannerPlugin,
+    )
+    from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
+    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
+    from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
+    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
+    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
 
     loader = PluginLoader()
     builtin_plugins = {
@@ -125,9 +126,9 @@ async def _scan_target(
     loader: PluginLoader,
     target: str,
     timeout: int,
-    extra_headers: Optional[dict[str, str]] = None,
+    extra_headers: dict[str, str] | None = None,
     method: str = "GET",
-    body: Optional[str] = None,
+    body: str | None = None,
 ) -> list[Finding]:
     console.print(f"[cyan]Scanning:[/cyan] {target}")
     start = time.monotonic()
@@ -177,7 +178,7 @@ def _print_xss_scope_note(findings: list[Finding]) -> None:
     )
 
 
-def _output_findings(findings: list[Finding], fmt: str, output_file: Optional[str]) -> None:
+def _output_findings(findings: list[Finding], fmt: str, output_file: str | None) -> None:
     engine = ExportEngine(findings)
     result = engine.write(fmt, output_file)
     if output_file:

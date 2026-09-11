@@ -10,7 +10,7 @@ so (future) auto-scan consumers can act on it.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -20,7 +20,7 @@ from pwnproxy.shared.db import FlowRecord
 logger = logging.getLogger(__name__)
 
 
-async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> Optional[int]:
+async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> int | None:
     """Persist a ``crawler.flow`` payload into ``traffic.db``.
 
     Returns the new ``FlowRecord`` id, or ``None`` if persistence failed

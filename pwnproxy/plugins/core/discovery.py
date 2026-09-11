@@ -3,7 +3,6 @@ import json
 import logging
 import subprocess
 import sys
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ def discover_installed() -> list[dict]:
     return packages
 
 
-def _read_pwnproxy_metadata(dist) -> Optional[dict]:
+def _read_pwnproxy_metadata(dist) -> dict | None:
     try:
         text = dist.read_text("pyproject.toml")
         if text is None:
@@ -47,7 +46,7 @@ def _read_pwnproxy_metadata(dist) -> Optional[dict]:
     return None
 
 
-def search_pypi(term: str, registry_url: Optional[str] = None) -> list[dict]:
+def search_pypi(term: str, registry_url: str | None = None) -> list[dict]:
     if registry_url:
         return _search_registry(registry_url, term)
     return _search_pypi_xmlrpc(term)

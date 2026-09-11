@@ -12,7 +12,6 @@ module instead of reaching for them directly.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from pwnproxy.services.crawler.storage import JobStorage
 

@@ -7,10 +7,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.transport.rest.app import app
-from pwnproxy.shared.db import Base as CoreBase
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
+from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
@@ -100,9 +99,9 @@ class TestRoomManager:
 class TestRoomIsolation:
     @pytest.mark.asyncio
     async def test_no_cross_talk(self):
-        from pwnproxy.transport.ws.events import RoomManager, RoomDispatcher
         from pwnproxy.shared.hooks import HookBus
         from pwnproxy.shared.models import Flow
+        from pwnproxy.transport.ws.events import RoomDispatcher, RoomManager
 
         hook_bus = HookBus()
         rm = RoomManager()
@@ -128,9 +127,9 @@ class TestRoomIsolation:
 
     @pytest.mark.asyncio
     async def test_untagged_not_fanned_out(self):
-        from pwnproxy.transport.ws.events import RoomManager, RoomDispatcher
         from pwnproxy.shared.hooks import HookBus
         from pwnproxy.shared.models import Flow
+        from pwnproxy.transport.ws.events import RoomDispatcher, RoomManager
 
         hook_bus = HookBus()
         rm = RoomManager()
@@ -156,7 +155,7 @@ class TestRoomAuth:
         try:
             with client.websocket_connect("/ws/rooms/badroom") as ws:
                 ws.receive_text()
-                assert False, "should have closed"
+                raise AssertionError("should have closed")
         except Exception as exc:
             # Must be a real 4404 close, not just any exception
             code = getattr(exc, "code", None)
@@ -167,7 +166,7 @@ class TestRoomAuth:
         try:
             with client.websocket_connect("/ws/rooms/traffic:ghost-not-exist-xyz") as ws:
                 ws.receive_text()
-                assert False, "should have closed"
+                raise AssertionError("should have closed")
         except Exception as exc:
             code = getattr(exc, "code", None)
             assert code == 4403 or "4403" in str(exc), f"expected 4403, got {exc!r} code={code}"
@@ -187,9 +186,8 @@ class TestPublishersSessionTag:
         # Verify tasks.py _run_scan tags session_id (via direct publish check)
         # Minimal: launch_scan already tags scan.started, _run_scan tags scan.completed
         # Here we just verify the hook_bus publish path includes session_id when session_manager present
-        from unittest.mock import MagicMock
-        from pwnproxy.transport.ws.events import RoomManager, RoomDispatcher
         from pwnproxy.shared.hooks import HookBus
+        from pwnproxy.transport.ws.events import RoomDispatcher, RoomManager
 
         hook_bus = HookBus()
         rm = RoomManager()

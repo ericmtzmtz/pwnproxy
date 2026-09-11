@@ -1,11 +1,10 @@
 """Tests for active crawler: storage, engine, fetcher, API, WS."""
-from pwnproxy.services.crawler.wordlist import resolve_wordlist, estimate_requests
 import asyncio
 import ipaddress
 import json
 import ssl
 import tempfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -14,17 +13,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.crawler.engine import CrawlConfig, CrawlEngine
-from pwnproxy.services.crawler.extractor import extract_urls, normalize_url
 from pwnproxy.services.crawler.fetcher import (
     Fetcher,
     RateLimiter,
-    fetch_robots,
     is_disallowed,
     parse_robots_disallow,
 )
-from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobORM, JobStorage
+from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
+from pwnproxy.services.crawler.wordlist import estimate_requests, resolve_wordlist
 from pwnproxy.services.session.manager import ScopeConfig
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -257,7 +254,10 @@ class TestWorkerCrawlE2E:
     async def test_crawl_start_and_complete(self):
         """Spawn worker, send crawl.start, verify crawl.completed event."""
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
+            from pwnproxy.shared.bus.transports.tcp_bridge import (
+                TcpBridgeClient,
+                TcpBridgeServer,
+            )
 
             feed_server = TcpBridgeServer()
             await feed_server.start()
@@ -369,7 +369,10 @@ class TestWorkerCrawlE2E:
         ConnectionRefused and completes before the stop arrives.
         """
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
+            from pwnproxy.shared.bus.transports.tcp_bridge import (
+                TcpBridgeClient,
+                TcpBridgeServer,
+            )
 
             feed_server = TcpBridgeServer()
             await feed_server.start()
@@ -561,13 +564,13 @@ class TestCrawlRepublish:
     @pytest.mark.asyncio
     async def test_crawl_flow_persisted_as_flow_record(self):
         """Verify that _store_crawl_flow persists a FlowRecord to traffic.db."""
-        from pwnproxy.shared.db import FlowRecord, Base, init_db
+        from pwnproxy.shared.db import FlowRecord, init_db
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         await init_db(engine)
         try:
-            from sqlalchemy.orm import sessionmaker
             from sqlalchemy.ext.asyncio import AsyncSession
-            from pwnproxy.shared.models import Flow
+            from sqlalchemy.orm import sessionmaker
+
 
             sf = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
             body = b"<html>hello</html>"
@@ -882,8 +885,12 @@ class TestWorkerCrawlE2EExtended:
     @pytest.mark.asyncio
     async def test_include_discovered_adds_seeds(self):
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
             from aiohttp import web
+
+            from pwnproxy.shared.bus.transports.tcp_bridge import (
+                TcpBridgeClient,
+                TcpBridgeServer,
+            )
 
             feed_server = TcpBridgeServer()
             await feed_server.start()
@@ -950,8 +957,8 @@ class TestWorkerCrawlE2EExtended:
             .issuer_name(issuer)
             .public_key(key.public_key())
             .serial_number(x509.random_serial_number())
-            .not_valid_before(datetime.now(timezone.utc) - timedelta(days=1))
-            .not_valid_after(datetime.now(timezone.utc) + timedelta(days=30))
+            .not_valid_before(datetime.now(UTC) - timedelta(days=1))
+            .not_valid_after(datetime.now(UTC) + timedelta(days=30))
             .add_extension(
                 x509.SubjectAlternativeName([x509.IPAddress(ipaddress.IPv4Address("127.0.0.1"))]),
                 critical=False,
@@ -978,8 +985,12 @@ class TestWorkerCrawlE2EExtended:
         semantics and breaking fetches against self-signed targets.
         """
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
             from aiohttp import web
+
+            from pwnproxy.shared.bus.transports.tcp_bridge import (
+                TcpBridgeClient,
+                TcpBridgeServer,
+            )
 
             cert_path, key_path = self._make_self_signed_cert(tmp)
 
@@ -1028,8 +1039,12 @@ class TestWorkerCrawlE2EExtended:
     async def test_tls_without_ssl_insecure_verifies(self):
         """Without --ssl-insecure the self-signed fetch must fail (verify=True)."""
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-            from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
             from aiohttp import web
+
+            from pwnproxy.shared.bus.transports.tcp_bridge import (
+                TcpBridgeClient,
+                TcpBridgeServer,
+            )
 
             cert_path, key_path = self._make_self_signed_cert(tmp)
 
@@ -1202,8 +1217,8 @@ class TestPersistCrawlFlow:
 
     @pytest.mark.asyncio
     async def test_writes_record_and_publishes_flow_stored(self):
-        from pwnproxy.shared.hooks import HookBus
         from pwnproxy.services.crawler.republish import persist_crawl_flow
+        from pwnproxy.shared.hooks import HookBus
 
         engine = await self._make_engine()
         hb = HookBus()
@@ -1221,10 +1236,11 @@ class TestPersistCrawlFlow:
             with pytest.raises(asyncio.TimeoutError):
                 await asyncio.wait_for(q_done.get(), timeout=0.2)
 
-            from pwnproxy.shared.db import FlowRecord
             from sqlalchemy import select
             from sqlalchemy.ext.asyncio import AsyncSession
             from sqlalchemy.orm import sessionmaker
+
+            from pwnproxy.shared.db import FlowRecord
             factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
             async with factory() as session:
                 row = (await session.execute(
@@ -1238,8 +1254,8 @@ class TestPersistCrawlFlow:
 
     @pytest.mark.asyncio
     async def test_publishes_done_when_scan_while_crawl(self):
-        from pwnproxy.shared.hooks import HookBus
         from pwnproxy.services.crawler.republish import persist_crawl_flow
+        from pwnproxy.shared.hooks import HookBus
 
         engine = await self._make_engine()
         hb = HookBus()
@@ -1257,8 +1273,8 @@ class TestPersistCrawlFlow:
 
     @pytest.mark.asyncio
     async def test_returns_none_on_db_error(self):
-        from pwnproxy.shared.hooks import HookBus
         from pwnproxy.services.crawler.republish import persist_crawl_flow
+        from pwnproxy.shared.hooks import HookBus
 
         engine = await self._make_engine()
         hb = HookBus()
@@ -1313,7 +1329,6 @@ class TestBruteforceWordlist:
 class TestBruteforceProbeBaseline:
     @pytest.mark.asyncio
     async def test_probe_returns_status_and_length(self):
-        from pwnproxy.services.crawler.fetcher import Fetcher
         import httpx
 
         pages = {
@@ -1344,8 +1359,9 @@ class TestBruteforceProbeBaseline:
 
     @pytest.mark.asyncio
     async def test_learn_baseline_discovers_firmas(self):
-        from pwnproxy.services.crawler.fetcher import Fetcher, learn_baseline
         import httpx
+
+        from pwnproxy.services.crawler.fetcher import learn_baseline
 
         async def _mock_get(url, **kwargs):
             path = str(url).split("target.com")[-1]
@@ -1463,8 +1479,8 @@ class TestScopeUpdatedDuringActiveCrawl:
 
     @pytest.mark.asyncio
     async def test_scope_update_filters_candidates_mid_crawl(self, monkeypatch):
-        from pwnproxy.services.crawler.crawler_worker import CrawlConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import CrawlConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1555,8 +1571,8 @@ class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_completes_cleanly_when_nothing_found(self, monkeypatch):
         """All-404 target: job completes with zero hits and clean stats."""
-        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1598,8 +1614,8 @@ class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_soft404_filtered_and_hits_persisted(self, monkeypatch):
         """Custom 404 page (200 + fixed size): hits kept, soft-404 filtered out."""
-        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1654,8 +1670,8 @@ class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_max_requests_backstop(self, monkeypatch):
         """max_requests truncates the queue and marks maxed=true (spec 3.6)."""
-        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1691,8 +1707,8 @@ class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_out_of_scope_skipped_not_errors(self, monkeypatch):
         """Out-of-scope URLs count as skipped, NOT as errors."""
-        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1728,8 +1744,8 @@ class TestBruteforceWorkerE2E:
     @pytest.mark.asyncio
     async def test_bruteforce_cooperative_stop_publishes_no_completed(self, monkeypatch):
         """Cooperative stop: no completed/failed events; fetcher still closed."""
-        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
         import pwnproxy.services.crawler.crawler_worker as cw_mod
+        from pwnproxy.services.crawler.crawler_worker import BruteforceConfig
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)

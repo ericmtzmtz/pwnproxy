@@ -7,6 +7,7 @@ Each golden test uses in-process components (FakeFetcher, in-memory engines,
 FakeLLMClient) to guarantee determinism.
 """
 
+import contextlib
 import json
 
 import pytest
@@ -254,10 +255,8 @@ class TestGoldenFinding:
             try:
                 await loader.unload(plugin.metadata.name)
             except Exception:
-                try:
+                with contextlib.suppress(Exception):
                     await plugin.on_unload()
-                except Exception:
-                    pass
 
     def _make_storage(self):
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)

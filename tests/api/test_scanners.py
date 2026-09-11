@@ -2,17 +2,17 @@ import asyncio
 import tempfile
 from datetime import datetime
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from unittest.mock import MagicMock
-
-from pwnproxy.transport.rest.app import app
-from pwnproxy.shared.db import Base as CoreBase, FlowRecord, init_db
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.db import FlowRecord
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture

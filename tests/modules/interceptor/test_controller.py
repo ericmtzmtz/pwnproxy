@@ -3,12 +3,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
 from pwnproxy.services.proxy.interceptor.controller import (
-    InterceptorController,
     FlowSnapshot,
+    InterceptorController,
 )
+from pwnproxy.shared.models import Flow
 
 
 class _MockHeaders(dict):

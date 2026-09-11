@@ -2,16 +2,14 @@
 
 import asyncio
 import uuid
-from unittest.mock import AsyncMock
 
 import httpx
 
-from pwnproxy.plugins.core.chain import DetectionDepth
+from pwnproxy.plugins.scanners.lfi.payloads import UNIX_PAYLOADS
+from pwnproxy.plugins.scanners.lfi.signatures import OsSignatureMatcher
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.lfi_stages import SimpleStage
-from pwnproxy.plugins.scanners.lfi.signatures import OsSignatureMatcher
-from pwnproxy.plugins.scanners.lfi.payloads import UNIX_PAYLOADS
 
 
 class _FakeReplayer:
@@ -28,7 +26,7 @@ class _FakeReplayer:
         return self._resp
 
     def build_payload_request(self, point, payload, evasion_level="none"):
-        from urllib.parse import urlencode, urlparse, urlunparse
+        from urllib.parse import urlparse, urlunparse
 
         parsed = urlparse(point.url)
         from urllib.parse import parse_qs

@@ -1,16 +1,17 @@
 import asyncio
 import tempfile
 from pathlib import Path
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from unittest.mock import MagicMock
 
-from pwnproxy.transport.rest.app import app
-from pwnproxy.shared.db import Base as CoreBase, FlowRecord
+from pwnproxy.shared.db import Base as CoreBase
+from pwnproxy.shared.db import FlowRecord
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
@@ -149,7 +150,7 @@ class TestCommentAPI:
         async def _get():
             try:
                 return await asyncio.wait_for(q.get(), timeout=1.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return None
 
         evt = asyncio.run(_get())

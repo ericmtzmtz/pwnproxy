@@ -1,15 +1,15 @@
 import asyncio
+import contextlib
 import logging
 from datetime import datetime
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, DataTable, Static
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.proxy.interceptor.controller import InterceptorController
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class InterceptorWidget(Vertical):
         )
         self.app.notify(f"Intercepted: {flow.method} {flow.url[:60]}")
 
-    def _get_selected_flow_id(self) -> Optional[str]:
+    def _get_selected_flow_id(self) -> str | None:
         table = self.query_one("#interceptor-table", DataTable)
         try:
             row = table.coordinate_to_cell_key(table.cursor_coordinate)
@@ -159,14 +159,12 @@ class InterceptorWidget(Vertical):
         except Exception:
             pass
 
-    def _remove_row(self, flow_id: Optional[str]) -> None:
+    def _remove_row(self, flow_id: str | None) -> None:
         if not flow_id:
             return
         table = self.query_one("#interceptor-table", DataTable)
-        try:
+        with contextlib.suppress(Exception):
             table.remove_row(flow_id)
-        except Exception:
-            pass
 
     def _open_repeater(self, flow_id: str) -> None:
         flow = self._controller.pending.get(flow_id)
@@ -178,8 +176,8 @@ class InterceptorWidget(Vertical):
         flow = self._controller.pending.get(flow_id)
         if not flow:
             return
-        from pwnproxy.services.repeater.integration import format_flow_as_raw_request
         from pwnproxy.services.intruder.tui.screen import IntruderScreen
+        from pwnproxy.services.repeater.integration import format_flow_as_raw_request
         raw = format_flow_as_raw_request(flow)
         screen = IntruderScreen(initial_request=raw)
         self.app.push_screen(screen)

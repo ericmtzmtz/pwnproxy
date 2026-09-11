@@ -1,5 +1,6 @@
 """Unit tests for each HTTP adapter using httpx.MockTransport."""
 import json
+
 import httpx
 import pytest
 

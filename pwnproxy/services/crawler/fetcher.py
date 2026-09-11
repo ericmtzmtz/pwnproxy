@@ -11,7 +11,6 @@ import asyncio
 import logging
 import secrets
 import time
-from typing import Any, Optional
 from urllib.parse import urlparse
 
 import httpx
@@ -46,7 +45,7 @@ class Fetcher:
     def __init__(self, rate_limit: float = 10.0, verify: bool = False) -> None:
         self._limiter = RateLimiter(rate_limit)
         self._verify = verify
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
 
     async def start(self) -> None:
         self._client = httpx.AsyncClient(
@@ -60,7 +59,7 @@ class Fetcher:
             await self._client.aclose()
             self._client = None
 
-    async def fetch(self, url: str) -> Optional[dict]:
+    async def fetch(self, url: str) -> dict | None:
         # existing fetch method unchanged
         """GET *url* and return a flow-like dict, or None on failure.
 
@@ -68,7 +67,6 @@ class Fetcher:
         """
         if self._client is None:
             raise RuntimeError("Fetcher not started")
-        last_exc: Optional[Exception] = None
         for _ in range(1 + _MAX_RETRIES):
             await self._limiter.acquire()
             t0 = time.monotonic()
@@ -90,7 +88,6 @@ class Fetcher:
                     "tls": str(resp.url).startswith("https"),
                 }
             except (httpx.ConnectError, httpx.ReadTimeout, httpx.RemoteProtocolError) as exc:
-                last_exc = exc
                 logger.debug("fetch %s transient error: %s", url, exc)
                 continue
             except Exception as exc:
@@ -101,7 +98,7 @@ class Fetcher:
         """GET *url* and return (status_code, content_length, content_type)."""
         if self._client is None:
             raise RuntimeError("Fetcher not started")
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for _ in range(1 + _MAX_RETRIES):
             await self._limiter.acquire()
             try:
@@ -140,7 +137,7 @@ async def learn_baseline(fetcher: Fetcher, base_url: str, n: int = 3) -> set[tup
     return signatures
 
 
-async def fetch_robots(url: str, verify: bool = False) -> Optional[str]:
+async def fetch_robots(url: str, verify: bool = False) -> str | None:
     """Fetch robots.txt from *url*'s origin. Returns body text or None."""
     try:
         parsed = urlparse(url)
@@ -172,7 +169,4 @@ def is_disallowed(url: str, disallow_paths: list[str]) -> bool:
     """Return True if *url*'s path matches any Disallow prefix."""
     parsed = urlparse(url)
     path = parsed.path or "/"
-    for prefix in disallow_paths:
-        if path.startswith(prefix):
-            return True
-    return False
+    return any(path.startswith(prefix) for prefix in disallow_paths)

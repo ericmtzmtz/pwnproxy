@@ -6,10 +6,7 @@ def format_flow_as_raw_request(flow: Flow) -> str:
     path = flow.url
     if "://" in path:
         idx = path.find("/", path.find("://") + 3)
-        if idx != -1:
-            path = path[idx:]
-        else:
-            path = "/"
+        path = path[idx:] if idx != -1 else "/"
 
     lines: list[str] = []
     lines.append(f"{flow.method} {path} HTTP/1.1")

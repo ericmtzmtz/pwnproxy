@@ -22,7 +22,7 @@ from urllib.parse import parse_qs, urlparse
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def do_GET(self):  # noqa: N802 (http.server API)
+    def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         value = (params.get("name") or [""])[0]

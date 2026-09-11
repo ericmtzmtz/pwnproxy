@@ -1,7 +1,6 @@
+import asyncio
 import json
 import logging
-import asyncio
-from typing import Optional
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
@@ -72,7 +71,7 @@ class RequestReplayer:
         payload: str,
         timeout: float = 5.0,
         evasion_level: str | EvasionLevel = EvasionLevel.NONE,
-    ) -> Optional[httpx.Response]:
+    ) -> httpx.Response | None:
         """Send the request with the injection payload.
 
         Uses ``self._build_request()`` so subclasses can override
@@ -98,7 +97,7 @@ class RequestReplayer:
         """
         return self._build_request(point, payload, evasion_level)
 
-    async def send_clean(self, point: InjectionPoint, timeout: float = 10.0) -> Optional[httpx.Response]:
+    async def send_clean(self, point: InjectionPoint, timeout: float = 10.0) -> httpx.Response | None:
         headers = dict(point.original_headers)
         body = point.original_body.encode() if point.original_body else None
         try:
@@ -116,7 +115,7 @@ class RequestReplayer:
         payload: str,
         timeout: float,
         evasion_level: str = "none",
-    ) -> Optional[httpx.Response]:
+    ) -> httpx.Response | None:
         """Build and send the request with rate limiting, returning response or None on failure."""
         async with self._global_semaphore:
             async with self._host_lock:

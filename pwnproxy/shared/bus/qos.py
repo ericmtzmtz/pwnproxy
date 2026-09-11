@@ -13,8 +13,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from collections import OrderedDict
-from typing import Any
 
 from pwnproxy.shared.bus.topics import QoSClass
 
@@ -106,7 +104,7 @@ class QoSClassifiedQueue:
 
         try:
             return await asyncio.wait_for(self._queue.get(), timeout=0.5)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Check retry buffer after timeout
             if self._retry_buffer:
                 now = time.monotonic()
@@ -221,7 +219,7 @@ class QoSClassifiedQueue:
             return
         now = time.monotonic()
         still_pending: list[tuple[str, dict, float, int]] = []
-        for topic, data, next_retry, attempts in self._retry_buffer:
+        for topic, data, _next_retry, attempts in self._retry_buffer:
             if attempts >= _MAX_RETRIES:
                 self._dropped += 1
                 logger.warning(

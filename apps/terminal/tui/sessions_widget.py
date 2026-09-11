@@ -1,4 +1,3 @@
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -116,7 +115,7 @@ class SessionsTable(DataTable):
     def on_sessions_table_session_deleted(self, event: SessionDeleted) -> None:
         pass
 
-    def get_selected_name(self) -> Optional[str]:
+    def get_selected_name(self) -> str | None:
         idx = self.cursor_row
         if idx is None:
             return None

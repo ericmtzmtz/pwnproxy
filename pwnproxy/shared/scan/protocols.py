@@ -5,7 +5,7 @@ validate at load time that they received a compatible replayer,
 without being coupled to a concrete class.
 """
 
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 import httpx
 
@@ -30,7 +30,7 @@ class XMLMutableReplayer(Protocol):
         payload: str,
         timeout: float = 10.0,
         evasion_level: str = "none",
-    ) -> Optional[httpx.Response]:
+    ) -> httpx.Response | None:
         """Send a request with the given payload injected."""
         ...
 

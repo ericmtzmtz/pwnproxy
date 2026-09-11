@@ -1,9 +1,9 @@
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 
-from sqlalchemy import Column, Integer, String, Text, DateTime
+from sqlalchemy import Column, DateTime, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -26,7 +26,7 @@ class DiscoveredURLORM(CrawlerBase):
     base_url = Column(Text, default="")
     method = Column(String(10), default="GET")
     source = Column(String(20), default="")
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class JobORM(CrawlerBase):
@@ -39,7 +39,7 @@ class JobORM(CrawlerBase):
     stats = Column(Text, nullable=False, default="{}")
     error = Column(Text, nullable=True)
     tenant_id = Column(String(50), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
     started_at = Column(DateTime, nullable=True)
     finished_at = Column(DateTime, nullable=True)
 
@@ -79,7 +79,7 @@ class DiscoveredURLStorage:
                     await conn.execute(text(f"ALTER TABLE discovered_urls ADD COLUMN {column} {ddl}"))
                     logger.info("Migrated discovered_urls table: added %s column", column)
 
-    async def save(self, url: str, source: str = "", method: str = "GET", base_url: str = "") -> Optional[int]:
+    async def save(self, url: str, source: str = "", method: str = "GET", base_url: str = "") -> int | None:
         """Insert a discovered URL. Returns the new row id, or None if duplicate."""
         record = DiscoveredURLORM(url=url, source=source or "", method=method or "GET", base_url=base_url or "")
         async with self._factory() as session:
@@ -101,7 +101,7 @@ class DiscoveredURLStorage:
     def _row_dict(record: DiscoveredURLORM) -> dict:
         return {c.name: getattr(record, c.name) for c in DiscoveredURLORM.__table__.columns}
 
-    async def list(self, source: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[dict]:
+    async def list(self, source: str | None = None, limit: int = 100, offset: int = 0) -> list[dict]:
         from sqlalchemy import select
         async with self._factory() as session:
             query = select(DiscoveredURLORM)
@@ -112,8 +112,8 @@ class DiscoveredURLStorage:
             rows = result.scalars().all()
             return [self._row_dict(r) for r in rows]
 
-    async def count(self, source: Optional[str] = None) -> int:
-        from sqlalchemy import select, func
+    async def count(self, source: str | None = None) -> int:
+        from sqlalchemy import func, select
         async with self._factory() as session:
             query = select(func.count(DiscoveredURLORM.id))
             if source:
@@ -127,9 +127,9 @@ class JobStorage:
         self._engine = engine
         self._factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-    async def create(self, job_type: str = "active", config: Optional[dict] = None) -> int:
+    async def create(self, job_type: str = "active", config: dict | None = None) -> int:
         """Create a new job and return its id."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = JobORM(
             type=job_type,
             status="queued",
@@ -142,7 +142,7 @@ class JobStorage:
             await session.commit()
             return record.id  # type: ignore[return-value]
 
-    async def get(self, job_id: int) -> Optional[dict]:
+    async def get(self, job_id: int) -> dict | None:
         """Fetch a job by id, or None."""
         from sqlalchemy import select
         async with self._factory() as session:
@@ -179,7 +179,7 @@ class JobStorage:
         job_id: int,
         status: str,
         error: Any = _UNSET,
-        expected_status: Optional[str] = None,
+        expected_status: str | None = None,
     ) -> int:
         """Low-level status write. PREFER ``transition_status`` — it enforces
         the JobState machine; this method only validates enum membership.
@@ -191,14 +191,14 @@ class JobStorage:
         ``error`` default is a sentinel: when omitted the error column is
         left untouched; pass ``None`` explicitly to clear it.
         """
-        from pwnproxy.shared.contracts.job import JobState, _LEGACY_MAP
+        from pwnproxy.shared.contracts.job import _LEGACY_MAP, JobState
         canonical = _LEGACY_MAP.get(status, status)
         try:
             JobState(canonical)
         except ValueError:
-            raise ValueError(f"Invalid job status: {status!r}")
+            raise ValueError(f"Invalid job status: {status!r}") from None
         from sqlalchemy import update
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         values: dict[str, Any] = {"status": status}
         if error is not _UNSET:
             values["error"] = error
@@ -255,7 +255,7 @@ class JobStorage:
         original = await self.get(original_id)
         if original is None:
             raise ValueError(f"Job {original_id} not found")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = JobORM(
             type=original["type"],
             status="created",
@@ -272,8 +272,8 @@ class JobStorage:
         self,
         job_id: int,
         target_status: str,
-        error: Optional[str] = None,
-        expected_state: Optional[str] = None,
+        error: str | None = None,
+        expected_state: str | None = None,
     ) -> str:
         """Load a job, validate the transition via the canonical JobState
         machine, and persist every step with an atomic compare-and-set.
@@ -299,10 +299,12 @@ class JobStorage:
         transition stops and the winner's current status is returned.
         """
         from pwnproxy.shared.contracts.job import (
+            TERMINAL_STATES,
+            InvalidJobTransition,
             Job,
             JobState,
-            InvalidJobTransition,
-            TERMINAL_STATES,
+        )
+        from pwnproxy.shared.contracts.job import (
             transition as job_transition,
         )
         raw = await self.get(job_id)

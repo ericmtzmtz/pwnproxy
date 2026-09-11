@@ -1,14 +1,13 @@
 
 import asyncio
-import json
-from typing import Optional, Callable, Any
-from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient
 import logging
 import signal
 import sys
-from typing import Optional
+from collections.abc import Callable
+from typing import Any
 
 from pwnproxy.services.session.manager import ProxyConfig
+from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +16,12 @@ class ProxyProcess:
     """Manages the proxy worker subprocess."""
 
     def __init__(self):
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._event_port: int = 0
-        self._bridge: Optional[TcpBridgeClient] = None
-        self._stderr_reader: Optional[asyncio.Task] = None
+        self._bridge: TcpBridgeClient | None = None
+        self._stderr_reader: asyncio.Task | None = None
         self._ready = asyncio.Event()
-        self._on_event: Optional[Callable[[str, Any], None]] = None
+        self._on_event: Callable[[str, Any], None] | None = None
 
     @property
     def running(self) -> bool:
@@ -35,7 +34,7 @@ class ProxyProcess:
         """
         self._on_event = callback
 
-    async def start(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None, scope_json: Optional[str] = None) -> None:
+    async def start(self, config: ProxyConfig, db_path: str | None = None, scope: list[str] | None = None, scope_json: str | None = None) -> None:
         """Start the proxy subprocess and event bridge.
 
         The caller can set an event callback via ``set_event_callback`` before
@@ -102,7 +101,7 @@ class ProxyProcess:
                     if not line:
                         break
                     logger.warning(f"[worker stderr] {line.decode().strip()}")
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
         except Exception as e:
             logger.debug(f"Stderr reader stopped: {e}")
@@ -122,7 +121,7 @@ class ProxyProcess:
             self._proc.terminate()
             try:
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Proxy did not exit in time, killing")
                 self._proc.kill()
                 await self._proc.wait()
@@ -130,7 +129,7 @@ class ProxyProcess:
         self._proc = None
         self._event_port = 0
 
-    async def restart(self, config: ProxyConfig, db_path: Optional[str] = None, scope: Optional[list[str]] = None, scope_json: Optional[str] = None) -> None:
+    async def restart(self, config: ProxyConfig, db_path: str | None = None, scope: list[str] | None = None, scope_json: str | None = None) -> None:
         await self.stop()
         await self.start(config, db_path=db_path, scope=scope, scope_json=scope_json)
 

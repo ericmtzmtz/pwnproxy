@@ -1,15 +1,15 @@
 import asyncio
+import contextlib
 import logging
 from pathlib import Path
-from typing import Optional
 
 import uvicorn
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from pwnproxy.transport.rest.app import app
-from pwnproxy.shared.hooks import HookBus
 from pwnproxy.ai.llm import create_client_from_config
 from pwnproxy.ai.llm.usage import UsageLedger, default_ledger_engine
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.transport.rest.app import app
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +21,13 @@ class _SuppressCancelledError(logging.Filter):
             return False
         if record.exc_text and "CancelledError" in record.exc_text:
             return False
-        if record.exc_info and record.exc_info[0] is asyncio.CancelledError:
-            return False
-        return True
+        return not (record.exc_info and record.exc_info[0] is asyncio.CancelledError)
 
 
 logging.getLogger("uvicorn.error").addFilter(_SuppressCancelledError())
 
 
-def _create_scanner_engine(session_path: Optional[str] = None) -> AsyncEngine:
+def _create_scanner_engine(session_path: str | None = None) -> AsyncEngine:
     if session_path:
         db_path = Path(session_path) / "scanner_results.db"
     else:
@@ -52,8 +50,8 @@ def _create_sessions_engine() -> AsyncEngine:
 async def start_api_server(
     hook_bus: HookBus,
     bus=None,
-    traffic_engine: Optional[AsyncEngine] = None,
-    scanner_engine: Optional[AsyncEngine] = None,
+    traffic_engine: AsyncEngine | None = None,
+    scanner_engine: AsyncEngine | None = None,
     token_storage=None,
     interceptor_controller=None,
     repeater_engine=None,
@@ -122,14 +120,10 @@ async def start_api_server(
 
     @app.on_event("shutdown")
     async def _stop_room_dispatcher():
-        try:
+        with contextlib.suppress(Exception):
             await room_dispatcher.stop()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             dispatcher_task.cancel()
-        except Exception:
-            pass
 
     config = uvicorn.Config(
         app,
@@ -141,10 +135,8 @@ async def start_api_server(
     server = uvicorn.Server(config)
 
     async def _serve() -> None:
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await server.serve()
-        except asyncio.CancelledError:
-            pass
 
     task = asyncio.create_task(_serve())
     logger.info(f"API server started on {host}:{port}")

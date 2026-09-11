@@ -1,13 +1,14 @@
+import asyncio
 import dataclasses
+from datetime import UTC, datetime
+
 import pytest
 import pytest_asyncio
-import asyncio
-from datetime import datetime, timezone
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.base import PluginMetadata, PluginContext, PwnPlugin, Finding
-from pwnproxy.plugins.core.loader import UniversalPluginLoader, PluginLoader
+from pwnproxy.plugins.core.base import Finding, PluginContext, PluginMetadata, PwnPlugin
+from pwnproxy.plugins.core.loader import PluginLoader, UniversalPluginLoader
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
 
 
 class MockFlowPlugin(PwnPlugin):
@@ -164,7 +165,7 @@ class TestUniversalPluginLoader:
             confidence="confirmed",
             payload="test_payload",
             evidence="Response contains error message",
-            timestamp=datetime.now(timezone.utc)
+            timestamp=datetime.now(UTC)
         )
         loader.hook_bus.publish("finding", test_finding)
     

@@ -1,4 +1,3 @@
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.binding import Binding
@@ -6,14 +5,14 @@ from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Header, Input, Label, Static, TextArea
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.services.proxy.interceptor.diff import compute_full_diff
-from pwnproxy.services.proxy.interceptor.controller import (
-    InterceptorController,
-    FlowSnapshot,
-)
-from pwnproxy.services.intruder.tui.screen import IntruderScreen
 from apps.terminal.tui.interceptor_widget import InterceptorWidget
+from pwnproxy.services.intruder.tui.screen import IntruderScreen
+from pwnproxy.services.proxy.interceptor.controller import (
+    FlowSnapshot,
+    InterceptorController,
+)
+from pwnproxy.services.proxy.interceptor.diff import compute_full_diff
+from pwnproxy.shared.models import Flow
 
 MAX_TUI_BODY = 102_400  # 100 KB display cap
 
@@ -32,9 +31,9 @@ class DiffOverlay(ModalScreen[None]):
         self,
         original: FlowSnapshot,
         edited: FlowSnapshot,
-        name: Optional[str] = None,
-        ident: Optional[str] = None,
-        classes: Optional[str] = None,
+        name: str | None = None,
+        ident: str | None = None,
+        classes: str | None = None,
     ):
         super().__init__(name=name, id=ident, classes=classes)
         self._diffs = compute_full_diff(original, edited)
@@ -138,12 +137,12 @@ class InterceptorScreen(Screen[None]):
                 yield Button("Send to Intruder", id="btn-intruder", variant="default")
                 yield Button("Diff", id="btn-diff", variant="default")
 
-    def _format_headers(self, headers: Optional[dict[str, str]]) -> str:
+    def _format_headers(self, headers: dict[str, str] | None) -> str:
         if not headers:
             return ""
         return "\n".join(f"{k}: {v}" for k, v in headers.items())
 
-    def _format_body(self, body: Optional[bytes]) -> str:
+    def _format_body(self, body: bytes | None) -> str:
         if not body:
             return ""
         text = body.decode("utf-8", "replace")
@@ -159,7 +158,7 @@ class InterceptorScreen(Screen[None]):
                 result[k.strip()] = v.strip()
         return result
 
-    def _read_body_bytes(self, text_area: TextArea) -> Optional[bytes]:
+    def _read_body_bytes(self, text_area: TextArea) -> bytes | None:
         text = text_area.text
         if not text.strip():
             return None
@@ -238,7 +237,9 @@ class InterceptorScreen(Screen[None]):
             self.app.post_message(InterceptorWidget.SendToRepeater(self._flow))
             self.app.pop_screen()
         elif event.button.id == "btn-intruder":
-            from pwnproxy.services.repeater.integration import format_flow_as_raw_request
+            from pwnproxy.services.repeater.integration import (
+                format_flow_as_raw_request,
+            )
             raw = format_flow_as_raw_request(self._flow)
             intruder_screen = IntruderScreen(initial_request=raw)
             self.app.push_screen(intruder_screen)

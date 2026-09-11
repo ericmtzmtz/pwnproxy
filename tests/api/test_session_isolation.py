@@ -1,6 +1,6 @@
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy import select
@@ -97,7 +97,6 @@ class TestSessionManagerApplyProxyConfig:
     async def test_skips_when_no_proxy_engine(self, manager):
         manager._proxy_engine = None
         await manager._apply_proxy_config()
-        pass
 
 
 @pytest.mark.asyncio

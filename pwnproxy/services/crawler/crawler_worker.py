@@ -14,6 +14,7 @@ This module wires them together and owns the process lifecycle (start/stop/signa
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import signal
@@ -22,7 +23,9 @@ import sys
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.crawler.events import EventPublisher
-from pwnproxy.services.crawler.fetcher import Fetcher  # noqa: F401 — re-exported for test monkeypatching
+from pwnproxy.services.crawler.fetcher import (
+    Fetcher,
+)
 from pwnproxy.services.crawler.lifecycle import (
     BruteforceStartConfig,
     CrawlStartConfig,
@@ -30,7 +33,10 @@ from pwnproxy.services.crawler.lifecycle import (
 from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 from pwnproxy.services.crawler.strategies.active import run_crawl
 from pwnproxy.services.crawler.strategies.directory import run_bruteforce
-from pwnproxy.services.crawler.strategies.passive import extract_and_persist, process_passive
+from pwnproxy.services.crawler.strategies.passive import (
+    extract_and_persist,
+    process_passive,
+)
 from pwnproxy.services.jobs.lifecycle import JobLifecycle
 from pwnproxy.services.session.manager import ScopeConfig
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient, TcpBridgeServer
@@ -107,10 +113,8 @@ class CrawlerWorker:
         task = self._state["active_task"]
         if task and not task.done():
             task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._state["active_task"] = None
         await self._feed_client.stop()
         await self._bridge.stop()

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
-import asyncio
 import json
-import logging
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator as AIter
+from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
-from pwnproxy.shared.bus.topics import QoSClass, TOPIC_QOS, DEFAULT_QOS
+from pwnproxy.shared.bus.topics import DEFAULT_QOS, TOPIC_QOS, QoSClass
 
 
 @dataclass
@@ -19,7 +17,7 @@ class Envelope:
     data: Any
     source: str = ""
     id: str = field(default_factory=lambda: uuid4().hex)
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     qos_class: QoSClass = field(default=DEFAULT_QOS)
 
     def __post_init__(self) -> None:
@@ -35,7 +33,7 @@ class Envelope:
         }, default=str)
 
     @classmethod
-    def from_json(cls, raw: str) -> "Envelope":
+    def from_json(cls, raw: str) -> Envelope:
         d = json.loads(raw)
         qos_raw = d.get("qos_class", DEFAULT_QOS.value)
         try:
@@ -47,7 +45,7 @@ class Envelope:
             data=d["data"],
             source=d.get("source", ""),
             id=d.get("id", ""),
-            timestamp=datetime.fromisoformat(d["timestamp"]) if "timestamp" in d else datetime.now(timezone.utc),
+            timestamp=datetime.fromisoformat(d["timestamp"]) if "timestamp" in d else datetime.now(UTC),
             qos_class=qos,
         )
 

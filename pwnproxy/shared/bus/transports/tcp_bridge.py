@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 from asyncio import StreamReader, StreamWriter
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pwnproxy.shared.bus.qos import QoSClassifiedQueue
-from pwnproxy.shared.bus.topics import QoSClass, TOPIC_QOS, DEFAULT_QOS
+from pwnproxy.shared.bus.topics import DEFAULT_QOS, TOPIC_QOS, QoSClass
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +17,7 @@ logger = logging.getLogger(__name__)
 class _ClientQueues:
     """Per-client QoS queue set + consumer task."""
 
-    __slots__ = ("critical", "important", "best_effort", "_task", "_writer")
+    __slots__ = ("_task", "_writer", "best_effort", "critical", "important")
 
     def __init__(self, writer: StreamWriter) -> None:
         self.critical = QoSClassifiedQueue(QoSClass.CRITICAL)
@@ -64,7 +66,7 @@ class TcpBridgeServer:
     def __init__(self, host: str = "127.0.0.1", port: int = 0):
         self._host = host
         self._port = port
-        self._server: Optional[asyncio.AbstractServer] = None
+        self._server: asyncio.AbstractServer | None = None
         self._client_queues: dict[StreamWriter, _ClientQueues] = {}
         self._lock = asyncio.Lock()
 
@@ -182,7 +184,7 @@ class TcpBridgeServer:
                         topic, data = await cq.important.get()
                     elif b_has:
                         topic, data = await cq.best_effort.get()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Queue appeared ready but timed out — race between
                     # has_data check and get(). Safe to skip.
                     continue
@@ -244,12 +246,12 @@ class TcpBridgeClient:
         self,
         host: str = "127.0.0.1",
         port: int = 0,
-        on_event: Optional[Callable[[str, Any], None]] = None,
+        on_event: Callable[[str, Any], None] | None = None,
     ):
         self._host = host
         self._port = port
         self._on_event = on_event
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
 
     @property
     def port(self) -> int:
@@ -261,10 +263,8 @@ class TcpBridgeClient:
     async def stop(self) -> None:
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._task = None
 
     async def _run(self) -> None:
@@ -294,7 +294,7 @@ class TcpBridgeClient:
                         await writer.wait_closed()
                     except Exception:
                         pass
-            except (ConnectionRefusedError, OSError, asyncio.TimeoutError):
+            except (TimeoutError, ConnectionRefusedError, OSError):
                 logger.debug("TcpBridgeClient waiting for server...")
                 await asyncio.sleep(1)
             except asyncio.CancelledError:

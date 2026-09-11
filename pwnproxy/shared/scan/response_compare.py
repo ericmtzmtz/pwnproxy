@@ -13,7 +13,6 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 # UUIDs, e.g. 0f8fad5b-d9cb-469f-a165-70867728950e
 _UUID_RE = re.compile(
@@ -70,7 +69,7 @@ class Fingerprint:
     block_hashes: list[str] = field(default_factory=list)
 
     @classmethod
-    def build(cls, status: int, body: str, block: int = DEFAULT_BLOCK) -> "Fingerprint":
+    def build(cls, status: int, body: str, block: int = DEFAULT_BLOCK) -> Fingerprint:
         norm = normalize_body(body or "")
         return cls(
             status=status,

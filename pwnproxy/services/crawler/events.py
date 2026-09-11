@@ -6,7 +6,7 @@ small for future QoS tuning at the publisher level.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pwnproxy.shared.bus.topics import (
@@ -77,5 +77,5 @@ class EventPublisher:
     async def discovered_url(self, record: dict) -> None:
         await self._bridge.publish(CRAWLER_URL, {
             **record,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })

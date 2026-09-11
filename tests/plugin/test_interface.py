@@ -205,11 +205,11 @@ async def test_plugin_loader_passes_depth_and_evasion():
 @pytest.mark.asyncio
 async def test_scanner_plugin_capabilities_match_techniques():
     """Each scanner's capabilities should cover its techniques."""
-    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
-    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
-    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
+    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
     from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
+    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
+    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
 
     plugins = [SQLiScannerPlugin(), XSSScannerPlugin(), LFIScannerPlugin(),
                XXEScannerPlugin(), SSRFScannerPlugin()]

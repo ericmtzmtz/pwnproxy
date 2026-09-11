@@ -5,7 +5,7 @@ what have they done recently" — a single endpoint for the UI status strip.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,7 +23,7 @@ class ActiveTask(BaseModel):
     status: str = ""
     progress: int = 0
     total: int = 0
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 class CrawlerJob(BaseModel):
@@ -32,13 +32,13 @@ class CrawlerJob(BaseModel):
     id: Any = None
     type: str = ""
     status: str = ""
-    created_at: Optional[str] = None
+    created_at: str | None = None
 
 
 class AutoScanBatchOut(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    batch_id: Optional[str] = None
+    batch_id: str | None = None
     flows: int = 0
     findings: int = 0
     duration_ms: float = 0.0
@@ -48,15 +48,15 @@ class AutoScanStatus(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     running: bool = False
-    active: Optional[AutoScanBatchOut] = None
-    last: Optional[AutoScanBatchOut] = None
+    active: AutoScanBatchOut | None = None
+    last: AutoScanBatchOut | None = None
 
 
 class ProxyStatus(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     running: bool = False
-    port: Optional[int] = None
+    port: int | None = None
     capture_enabled: bool = False
 
 

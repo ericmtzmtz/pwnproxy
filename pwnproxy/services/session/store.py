@@ -2,16 +2,17 @@ import asyncio
 import json
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
-from sqlalchemy import select, delete as sa_delete, func
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from pwnproxy.shared.contracts.job import (
-    JobState,
-    TERMINAL_STATES,
     _LEGAL_TRANSITIONS,
+    TERMINAL_STATES,
+    JobState,
 )
 from pwnproxy.shared.task_model import TaskRecord, init_task_db
 
@@ -55,9 +56,7 @@ def _task_transition_legal(current: str, new: str) -> bool:
     if cur == JobState.CREATED and new_s in (JobState.RUNNING, JobState.FAILED):
         return True
     # Implicit bridge: RUNNING may reach CANCELLED through STOPPING.
-    if cur == JobState.RUNNING and new_s == JobState.CANCELLED:
-        return True
-    return False
+    return bool(cur == JobState.RUNNING and new_s == JobState.CANCELLED)
 
 
 def _task_is_terminal(status: str) -> bool:
@@ -93,7 +92,7 @@ class TaskStore:
             type=task_type,
             config=json.dumps(config),
             status="queued",  # CREATED-equivalent; first update("running") is the legal move to RUNNING
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
         async with self._session_factory() as s:
             s.add(record)
@@ -124,7 +123,7 @@ class TaskStore:
                     return
                 record.status = new_status
                 if _task_is_terminal(new_status):
-                    record.completed_at = datetime.now(timezone.utc).isoformat()
+                    record.completed_at = datetime.now(UTC).isoformat()
             if progress is not None:
                 record.progress = progress
             if total is not None:
@@ -135,16 +134,16 @@ class TaskStore:
                 record.error = error
             await s.commit()
 
-    async def get(self, task_id: str) -> Optional[dict[str, Any]]:
+    async def get(self, task_id: str) -> dict[str, Any] | None:
         async with self._session_factory() as s:
             record = await s.get(TaskRecord, task_id)
             if record is None:
                 return None
             if record.status in ("running", "queued") and not _task_is_terminal(record.status):
-                created = datetime.fromisoformat(record.created_at) if record.created_at else datetime.now(timezone.utc)
-                if datetime.now(timezone.utc) - created > STALE_TIMEOUT and record.id not in self._running_tasks:
+                created = datetime.fromisoformat(record.created_at) if record.created_at else datetime.now(UTC)
+                if datetime.now(UTC) - created > STALE_TIMEOUT and record.id not in self._running_tasks:
                     record.status = "failed"
-                    record.completed_at = datetime.now(timezone.utc).isoformat()
+                    record.completed_at = datetime.now(UTC).isoformat()
                     record.error = "Stale — task timed out"
                     await s.commit()
             return self._record_to_dict(record)
@@ -163,7 +162,7 @@ class TaskStore:
         async with self._session_factory() as s:
             result = await s.execute(stmt)
             rows = result.scalars().all()
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             stale_tasks = []
             for r in rows:
                 if r.status in ("running", "queued") and not _task_is_terminal(r.status):
@@ -201,7 +200,7 @@ class TaskStore:
                 )
                 return True
             record.status = "cancelled"
-            record.completed_at = datetime.now(timezone.utc).isoformat()
+            record.completed_at = datetime.now(UTC).isoformat()
             await s.commit()
         runner = self._running_tasks.pop(task_id, None)
         if runner and not runner.done():

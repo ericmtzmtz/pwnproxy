@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.ai.llm.testing import FakeLLMClient
-from pwnproxy.ai.triage import TriagePipeline, TriageConfig, score_finding
+from pwnproxy.ai.triage import TriageConfig, TriagePipeline, score_finding
 from pwnproxy.ai.triage.judge import JudgeVerdict, LLMJudge
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.shared.findings.storage import FindingStorage, TriageHistoryORM
@@ -423,7 +423,7 @@ class TestApi:
         asyncio.run(_mark_human())
         r = c.get("/api/v1/findings/export-triage")
         assert r.status_code == 200
-        lines = [json.loads(l) for l in r.text.strip().splitlines()]
+        lines = [json.loads(line) for line in r.text.strip().splitlines()]
         assert len(lines) == 2
         by_id = {d["id"]: d for d in lines}
         assert by_id[id1]["ground_truth"] is None          # automatic verdict -> no ground truth
@@ -446,14 +446,13 @@ class TestWsEvent:
         bus = HookBus()
         app.state.hook_bus = bus
         FindingStorage.on_saved = None
-        with TestClient(app) as c:
-            with c.websocket_connect("/ws/events") as ws:
-                bus.publish("triage.updated", {
-                    "finding_id": 7, "verdict": "false_positive",
-                    "method": "llm", "score": 0.85, "reason": "scanner_noise",
-                })
-                data = ws.receive_text()
-                parsed = json.loads(data)
-                assert parsed["type"] == "triage.updated"
-                assert parsed["finding_id"] == 7
-                assert parsed["verdict"] == "false_positive"
+        with TestClient(app) as c, c.websocket_connect("/ws/events") as ws:
+            bus.publish("triage.updated", {
+                "finding_id": 7, "verdict": "false_positive",
+                "method": "llm", "score": 0.85, "reason": "scanner_noise",
+            })
+            data = ws.receive_text()
+            parsed = json.loads(data)
+            assert parsed["type"] == "triage.updated"
+            assert parsed["finding_id"] == 7
+            assert parsed["verdict"] == "false_positive"

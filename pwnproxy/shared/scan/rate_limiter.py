@@ -1,6 +1,5 @@
 import asyncio
 import time
-from typing import Optional
 
 
 class RateLimiter:
@@ -22,11 +21,10 @@ class RateLimiter:
         async with self._host_lock:
             if host not in self._host_sems:
                 self._host_sems[host] = asyncio.Semaphore(self._per_host_max)
-        async with self._host_sems[host]:
-            async with self._host_lock:
-                last = self._host_last_req.get(host, 0.0)
-                now = time.monotonic()
-                wait = self._inter_req_delay - (now - last)
-                if wait > 0:
-                    await asyncio.sleep(wait)
-                self._host_last_req[host] = time.monotonic()
+        async with self._host_sems[host], self._host_lock:
+            last = self._host_last_req.get(host, 0.0)
+            now = time.monotonic()
+            wait = self._inter_req_delay - (now - last)
+            if wait > 0:
+                await asyncio.sleep(wait)
+            self._host_last_req[host] = time.monotonic()

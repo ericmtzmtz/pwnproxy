@@ -1,5 +1,6 @@
 """Report generation: analyzer units, E2E with FakeLLMClient, anti-hallucination, persistence."""
 import asyncio
+import contextlib
 import importlib
 import json
 from pathlib import Path
@@ -12,19 +13,20 @@ from starlette.responses import FileResponse
 
 from pwnproxy.ai.llm.testing import FakeLLMClient
 from pwnproxy.ai.reports.analyzer import (
+    GroupFacts,
     chunk,
     dedup_findings,
     extract_group_facts,
     risk_aggregates,
     sanitize_facts,
     strip_untraceable_cves,
-    GroupFacts,
 )
 from pwnproxy.ai.reports.generator import GroupNarrative, ReportGenerator
 from pwnproxy.ai.reports.render import render_pdf
 from pwnproxy.services.session.store import TaskStore
 from pwnproxy.shared.findings.storage import FindingStorage
 from pwnproxy.shared.task_model import create_task_engine, init_task_db
+
 reports_rest = importlib.import_module("pwnproxy.transport.rest.reports")
 
 
@@ -52,10 +54,8 @@ def _dispose_engines():
     finally:
         _mod.create_task_engine = _orig
         for engine in created:
-            try:
+            with contextlib.suppress(Exception):
                 asyncio.run(engine.dispose())
-            except Exception:
-                pass
 
 
 def _finding(url="http://target.local/search", technique="sqli-union", param="q",
@@ -355,7 +355,6 @@ async def test_report_downloadable_after_server_restart(tmp_path, monkeypatch):
 
 class TestPdfOptional:
     def test_missing_weasyprint_gives_actionable_error(self, tmp_path):
-        pytest.importorskip.__doc__
         try:
             import weasyprint  # noqa: F401
 

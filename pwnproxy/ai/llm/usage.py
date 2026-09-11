@@ -1,7 +1,7 @@
 """Append-only usage ledger (ai_usage table) for cost/latency observability."""
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Boolean, Column, Integer, String, Text
@@ -21,7 +21,7 @@ class UsageRecordORM(UsageBase):
     __tablename__ = "ai_usage"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    ts = Column(String(40), default=lambda: datetime.now(timezone.utc).isoformat())
+    ts = Column(String(40), default=lambda: datetime.now(UTC).isoformat())
     provider = Column(String(30), nullable=False)
     model = Column(String(100), default="")
     status = Column(String(10), nullable=False)  # ok | error | timeout

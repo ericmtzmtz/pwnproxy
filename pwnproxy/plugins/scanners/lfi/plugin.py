@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.lfi.payloads import (
-    get_payloads,
     PHP_WRAPPER_PAYLOADS,
+    get_payloads,
 )
+from pwnproxy.plugins.scanners.lfi.scanner import LFIScanner
 from pwnproxy.plugins.scanners.lfi.signatures import OsSignatureMatcher
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 class LFIScannerPlugin(ScannerPlugin):

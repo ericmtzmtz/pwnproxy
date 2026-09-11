@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import json
 import logging
 import signal
@@ -11,12 +12,13 @@ from rich.panel import Panel
 from rich.prompt import Prompt
 
 from apps.api.server import start_api_server
-from pwnproxy.shared.db import create_engine as create_traffic_engine, init_db
-from pwnproxy.services.proxy.proxy_process import ProxyProcess
 from pwnproxy.services.crawler.process import CrawlerProcess
-from pwnproxy.shared.hooks import HookBus
-from pwnproxy.shared.flow_filter import FlowFilter
+from pwnproxy.services.proxy.proxy_process import ProxyProcess
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
+from pwnproxy.shared.db import create_engine as create_traffic_engine
+from pwnproxy.shared.db import init_db
+from pwnproxy.shared.flow_filter import FlowFilter
+from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
@@ -157,7 +159,6 @@ def start(
 
         def _on_proxy_event(topic: str, data: dict) -> None:
             """Bridge events from proxy worker to HookBus (PluginLoader consumers)."""
-            from pwnproxy.shared.models import Flow
 
             if topic in ("proxy.flow", "proxy.done"):
                 flow = Flow.from_dict(data)
@@ -379,7 +380,6 @@ def start(
                 api_port=api_port,
                 hook_bus=hook_bus,
                 interceptor_controller=interceptor_controller,
-                scan_manager=scan_manager,
             )
             dashboard_task = asyncio.create_task(dashboard.run_async())
 
@@ -391,11 +391,11 @@ def start(
             f"[green]API Docs →[/] [bold]http://{host}:{api_port}/docs[/]",
         ]
         if tui:
-            panel_lines.append(f"[green]Web UI   →[/] [bold]http://127.0.0.1:4321[/]")
+            panel_lines.append("[green]Web UI   →[/] [bold]http://127.0.0.1:4321[/]")
         if upstream:
             panel_lines.append(f"[cyan]Upstream:[/] {upstream}")
         if dashboard_task:
-            panel_lines.append(f"[green]TUI dashboard[/] launched (press Q or Ctrl+Q to quit)")
+            panel_lines.append("[green]TUI dashboard[/] launched (press Q or Ctrl+Q to quit)")
         else:
             panel_lines.append("[dim]Press Ctrl+C to stop[/]")
         err_console.print(Panel("\n".join(panel_lines), title="[bold]pwnproxy[/]"))
@@ -430,7 +430,5 @@ def start(
             return_exceptions=True,
         )
 
-    try:
+    with contextlib.suppress(KeyboardInterrupt):
         asyncio.run(_run())
-    except KeyboardInterrupt:
-        pass

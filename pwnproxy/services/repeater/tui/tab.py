@@ -1,9 +1,8 @@
 import asyncio
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Button, Static, TextArea
+from textual.widgets import Button, Static
 
 from pwnproxy.services.intruder.tui.screen import IntruderScreen
 from pwnproxy.services.repeater.engine import RepeaterEngine
@@ -40,7 +39,7 @@ class RepeaterTab(Vertical):
     def __init__(
         self,
         initial_text: str = "",
-        engine: Optional[RepeaterEngine] = None,
+        engine: RepeaterEngine | None = None,
         on_response=None,
         **kwargs,
     ):

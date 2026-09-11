@@ -1,9 +1,8 @@
 import asyncio
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Container, Horizontal
+from textual.containers import Container
 from textual.screen import Screen
 from textual.widgets import DataTable, Header, Input, Static
 
@@ -24,11 +23,11 @@ class TokenScreen(Screen[None]):
         Binding("c", "copy_token", "Copy"),
     ]
 
-    def __init__(self, consumer: SessionConsumer, name: Optional[str] = None):
+    def __init__(self, consumer: SessionConsumer, name: str | None = None):
         super().__init__(name=name)
         self._consumer = consumer
         self._tokens: list[SessionToken] = []
-        self._filter_type: Optional[str] = None
+        self._filter_type: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -156,7 +155,7 @@ class TokenScreen(Screen[None]):
             import pyperclip
             pyperclip.copy(val)
             self.query_one("#token-detail", Static).update(
-                f"[green]Copied to clipboard![/]"
+                "[green]Copied to clipboard![/]"
             )
 
     def on_token(self, token: TokenCandidate) -> None:

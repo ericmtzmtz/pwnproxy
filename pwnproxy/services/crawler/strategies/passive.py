@@ -10,7 +10,6 @@ discovery.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from pwnproxy.services.crawler.extractor import extract_from_headers, extract_urls
@@ -34,9 +33,9 @@ def _content_type(headers: dict) -> str:
 
 async def extract_and_persist(
     flow_dict: dict,
-    scope: "ScopeConfig",
-    storage: "DiscoveredURLStorage",
-    events: "EventPublisher",
+    scope: ScopeConfig,
+    storage: DiscoveredURLStorage,
+    events: EventPublisher,
 ) -> None:
     """Extract URLs from a flow dict, persist new ones, and publish events.
 
@@ -77,9 +76,9 @@ async def extract_and_persist(
 
 async def process_passive(
     data: dict,
-    scope: "ScopeConfig",
-    storage: "DiscoveredURLStorage",
-    events: "EventPublisher",
+    scope: ScopeConfig,
+    storage: DiscoveredURLStorage,
+    events: EventPublisher,
 ) -> None:
     """Handle a single ``crawler.feed`` event from the proxy."""
     try:

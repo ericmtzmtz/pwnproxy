@@ -2,7 +2,6 @@
 import os
 import tomllib
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -12,13 +11,13 @@ KNOWN_PROVIDERS = ("ollama", "openai", "anthropic")
 
 
 class ProviderSettings(BaseModel):
-    model: Optional[str] = None
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
+    model: str | None = None
+    api_key: str | None = None
+    base_url: str | None = None
 
 
 class LLMSettings(BaseModel):
-    provider: Optional[str] = None
+    provider: str | None = None
     fallback_chain: list[str] = Field(default_factory=list)
     timeout_s: float = 30.0
     circuit_threshold: int = 3
@@ -33,7 +32,7 @@ class LLMSettings(BaseModel):
                 raise LLMConfigError(f"unknown LLM provider '{name}' (known: {', '.join(KNOWN_PROVIDERS)})")
 
 
-def load_llm_config(config_dir: Optional[Path] = None) -> LLMSettings:
+def load_llm_config(config_dir: Path | None = None) -> LLMSettings:
     config_dir = config_dir or (Path.home() / ".pwnproxy")
     config_path = config_dir / "config.toml"
     data: dict = {}
@@ -44,7 +43,7 @@ def load_llm_config(config_dir: Optional[Path] = None) -> LLMSettings:
             data = {}
 
     env = os.environ
-    def _key(name: str) -> Optional[str]:
+    def _key(name: str) -> str | None:
         return env.get(name) or None
 
     settings = LLMSettings(

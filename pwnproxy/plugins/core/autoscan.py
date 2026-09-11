@@ -11,10 +11,10 @@ dedups by flow.id within the active window and counts findings once.
 """
 
 import asyncio
+import contextlib
 import logging
 import time
 import uuid
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,9 @@ class AutoScanTracker:
     def __init__(self, hook_bus=None, window_s: float = WINDOW_S):
         self._hook_bus = hook_bus
         self._window_s = window_s
-        self._active: Optional[AutoScanBatch] = None
-        self._last: Optional[AutoScanBatch] = None
-        self._flush_task: Optional[asyncio.Task] = None
+        self._active: AutoScanBatch | None = None
+        self._last: AutoScanBatch | None = None
+        self._flush_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     # -- lifecycle ---------------------------------------------------------
@@ -58,10 +58,8 @@ class AutoScanTracker:
     async def stop(self) -> None:
         if self._flush_task is not None:
             self._flush_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._flush_task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._flush_task = None
         await self.close_active()
 
@@ -75,10 +73,9 @@ class AutoScanTracker:
                 await self._close_current(now)
                 self._active = AutoScanBatch(uuid.uuid4().hex[:12])
             fid = getattr(flow, "id", None)
-            if fid is not None:
-                if str(fid) not in self._active.flow_ids:
-                    self._active.flow_ids.add(str(fid))
-                    self._active.flow_count += 1
+            if fid is not None and str(fid) not in self._active.flow_ids:
+                self._active.flow_ids.add(str(fid))
+                self._active.flow_count += 1
             self._active.last_activity = now
             # Emit started only after the first flow is in the batch.
             if self._active.flow_count == 1:

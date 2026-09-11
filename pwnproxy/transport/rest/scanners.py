@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
@@ -19,7 +19,7 @@ VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
 class TriggerRequest(BaseModel):
     budget_ms: int | None = None
     flow_id: int
-    scanners: List[str]
+    scanners: list[str]
 
 
 class FlowTriggerRequest(BaseModel):
@@ -27,17 +27,17 @@ class FlowTriggerRequest(BaseModel):
     id: str
     method: str
     url: str
-    request_headers: Dict[str, str] = {}
+    request_headers: dict[str, str] = {}
     request_body: str | None = None
     status_code: int | None = None
-    response_headers: Dict[str, str] = {}
+    response_headers: dict[str, str] = {}
     response_body: str | None = None
 
 
 class TriggerResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
+    status: str | None = None
     flow_id: Any = None
 
 

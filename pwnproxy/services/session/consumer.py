@@ -1,13 +1,14 @@
 import asyncio
+import contextlib
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
-from pwnproxy.shared.hooks import HookBus
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.session.extractors import cookies, csrf, jwt
 from pwnproxy.services.session.models import TokenCandidate
 from pwnproxy.services.session.storage import TokenStorage
 from pwnproxy.services.session.validator import jwt_decode
+from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -16,15 +17,15 @@ class SessionConsumer:
     def __init__(
         self,
         hook_bus: HookBus,
-        storage: Optional[TokenStorage] = None,
-        on_token: Optional[Callable] = None,
+        storage: TokenStorage | None = None,
+        on_token: Callable | None = None,
     ):
         self._hook_bus = hook_bus
         self._storage = storage or TokenStorage()
         self._on_token = on_token
 
-        self._queue: Optional[asyncio.Queue] = None
-        self._task: Optional[asyncio.Task] = None
+        self._queue: asyncio.Queue | None = None
+        self._task: asyncio.Task | None = None
         self._running = False
 
     @property
@@ -43,10 +44,8 @@ class SessionConsumer:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
             self._task = None
         await self._storage.close()
 

@@ -1,12 +1,17 @@
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
 from pwnproxy.plugins.core.chain import (
-    DetectionDepth, DetectionStage, StageResult,
-    BudgetChain, chain_from_depth,
+    BudgetChain,
+    DetectionDepth,
+    DetectionStage,
+    StageResult,
+    chain_from_depth,
 )
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
+
 
 @pytest.fixture
 def flow():

@@ -1,19 +1,22 @@
 from collections.abc import AsyncGenerator
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
-from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.core.chain import chain_from_depth
-from pwnproxy.shared.scan.stages.sqli_stages import (
-    ErrorBasedStage,
-    BooleanBlindStage,
-    TimeBlindStage,
-    OOBStage,
+from pwnproxy.plugins.scanners.sqli.payloads import (
+    get_error_payloads,
+    get_time_payloads,
 )
-from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
-from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads, get_time_payloads
 from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
+from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.stages.sqli_stages import (
+    BooleanBlindStage,
+    ErrorBasedStage,
+    OOBStage,
+    TimeBlindStage,
+)
 
 
 class SQLiScannerPlugin(ScannerPlugin):

@@ -179,7 +179,6 @@ class TestNarrativeMetadataInjection:
         assert "authoritative" in meta
 
     def test_narrative_user_message_carries_metadata(self):
-        from pwnproxy.ai.llm.models import LLMMessage, LLMRequest
 
         captured: list = []
 

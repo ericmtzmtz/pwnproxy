@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+
 from pwnproxy.services.session.manager import ScopeConfig
 
 logger = logging.getLogger(__name__)

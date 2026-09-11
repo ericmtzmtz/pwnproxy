@@ -1,10 +1,9 @@
 import json as json_mod
 import logging
-from typing import Optional
 from urllib.parse import parse_qs
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.session.models import TokenCandidate
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,7 @@ def extract(flow: Flow) -> list[TokenCandidate]:
     return candidates
 
 
-def _get_form_body(flow: Flow) -> Optional[dict[str, list[str]]]:
+def _get_form_body(flow: Flow) -> dict[str, list[str]] | None:
     if flow.request_body is None:
         return None
     ct = flow.request_headers.get("content-type", "").lower()
@@ -72,7 +71,7 @@ def _get_form_body(flow: Flow) -> Optional[dict[str, list[str]]]:
     )
 
 
-def _get_json_body(flow: Flow) -> Optional[dict]:
+def _get_json_body(flow: Flow) -> dict | None:
     if flow.request_body is None:
         return None
     ct = flow.request_headers.get("content-type", "").lower()

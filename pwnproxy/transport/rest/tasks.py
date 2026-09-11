@@ -1,10 +1,11 @@
 import asyncio
+import contextlib
 import logging
-from typing import Optional
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from datetime import datetime, timezone
 
+from pwnproxy.services.session.store import TaskStore
 from pwnproxy.shared.schemas import (
     TaskCreateRequest,
     TaskCreateResponse,
@@ -12,7 +13,6 @@ from pwnproxy.shared.schemas import (
     TaskStatusResponse,
     TaskSummary,
 )
-from pwnproxy.services.session.store import TaskStore
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["tasks"])
@@ -27,7 +27,7 @@ def get_task_store(request: Request) -> TaskStore:
     mgr = getattr(request.app.state, "session_manager", None)
     if mgr and mgr.task_store:
         return mgr.task_store
-    store: Optional[TaskStore] = getattr(request.app.state, "task_store", None)
+    store: TaskStore | None = getattr(request.app.state, "task_store", None)
     if store is None:
         raise HTTPException(status_code=503, detail="Task store not available")
     return store
@@ -113,10 +113,8 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     # Tag findings with the scan's session (for WS rooms, prefer task session over global active)
     scan_session = config.get("session_name")
     if scan_session:
-        try:
+        with contextlib.suppress(Exception):
             loader._current_scan_session = scan_session
-        except Exception:
-            pass
     try:
         findings = await _scan_target(
             loader, url, 60,
@@ -175,14 +173,19 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
             "findings_count": len(result_data) if result_data else 0,
             "duration_ms": duration_ms,
             "session_id": session_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
         })
 
 
 async def _run_intruder(config: dict, task_id: str, store: TaskStore, request: Request) -> None:
-    from pwnproxy.services.intruder.generator import ClusterBombGenerator, SniperGenerator, read_wordlist
-    from pwnproxy.services.intruder.parser import parse_markers
     from pathlib import Path
+
+    from pwnproxy.services.intruder.generator import (
+        ClusterBombGenerator,
+        SniperGenerator,
+        read_wordlist,
+    )
+    from pwnproxy.services.intruder.parser import parse_markers
 
     engine = getattr(request.app.state, "intruder_engine", None)
     if engine is None:
@@ -235,7 +238,7 @@ async def list_tasks(
 
     tasks = await store.list(task_type=type, limit=limit, session_name=session_name)
     total = await store.count(task_type=type, session_name=session_name)
-    summaries = [TaskSummary(**{k: t[k] for k in TaskSummary.model_fields.keys() if k in t}) for t in tasks]
+    summaries = [TaskSummary(**{k: t[k] for k in TaskSummary.model_fields if k in t}) for t in tasks]
     return TaskListResponse(tasks=summaries, total=total)
 
 

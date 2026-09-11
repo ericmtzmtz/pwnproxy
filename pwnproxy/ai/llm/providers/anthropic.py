@@ -1,5 +1,5 @@
 """Anthropic adapter: messages API (system goes in its own field)."""
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import httpx
 

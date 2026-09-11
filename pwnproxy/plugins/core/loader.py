@@ -1,30 +1,36 @@
 import asyncio
+import contextlib
 import importlib
 import importlib.util
 import logging
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 from collections.abc import AsyncGenerator
+from pathlib import Path
+from typing import Any
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.base import Finding, PwnPlugin, PluginMetadata, PluginContext, ScannerPlugin
+from pwnproxy.plugins.core.base import (
+    Finding,
+    PluginContext,
+    PluginMetadata,
+    PwnPlugin,
+    ScannerPlugin,
+)
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
 
 class PluginLoadError(Exception):
     """Exception raised when a plugin fails to load."""
-    pass
 
 
-def _implicit_consumes(plugin: PwnPlugin) -> List[str]:
+def _implicit_consumes(plugin: PwnPlugin) -> list[str]:
     """Channels a plugin consumes implicitly via duck-typed handlers.
 
     Shared by ``load``, ``start`` and ``activate`` (3 real consumers) — the
     same computation was duplicated verbatim in all three before extraction.
     """
-    implicit: List[str] = []
+    implicit: list[str] = []
     if hasattr(plugin, "on_finding") and "finding" not in plugin.metadata.consumes:
         implicit.append("finding")
     if hasattr(plugin, "on_surface") and "surface" not in plugin.metadata.consumes:
@@ -41,8 +47,8 @@ class UniversalPluginLoader:
         self.hook_bus = hook_bus
         self.bus = bus  # Optional MessageBus
         self._scanners_path = scanners_path
-        self._plugins: Dict[str, PwnPlugin] = {}
-        self._plugin_tasks: Dict[str, asyncio.Task] = {}
+        self._plugins: dict[str, PwnPlugin] = {}
+        self._plugin_tasks: dict[str, asyncio.Task] = {}
         self._timeout = 0.1  # Short timeout for consumer loop responsiveness
         # Auto-scan batch tracker (optional; wired in server startup so the
         # proxy auto-scan path reports windowed started/completed events).
@@ -51,7 +57,7 @@ class UniversalPluginLoader:
     async def load(
         self, 
         plugin: PwnPlugin, 
-        channel_mapping: Optional[Dict[str, str]] = None
+        channel_mapping: dict[str, str] | None = None
     ) -> None:
         """Load a plugin and connect it to appropriate channels based on contracts.
         
@@ -157,7 +163,7 @@ class UniversalPluginLoader:
                     except asyncio.CancelledError:
                         logger.debug("Consumer cancelled for %s on %s", plugin.metadata.name, channel_name)
                         raise
-                    except asyncio.TimeoutError:
+                    except TimeoutError:
                         # Timeout indicates no data; loop again to check for cancellation
                         continue
                     except Exception as e:
@@ -234,7 +240,7 @@ class UniversalPluginLoader:
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
 
-                for name, obj in vars(module).items():
+                for _name, obj in vars(module).items():
                     if isinstance(obj, type) and issubclass(obj, ScannerPlugin) and obj is not ScannerPlugin:
                         plugin_instance = obj()
                         await self.load_builtin(plugin_instance)
@@ -243,13 +249,13 @@ class UniversalPluginLoader:
             except Exception as e:
                 logger.warning("Failed to load scanner from %s: %s", entry.name, e)
 
-    async def start(self, name: Optional[str] = None) -> None:
+    async def start(self, name: str | None = None) -> None:
         """Start consumer tasks for plugins and wire FindingStorage to HookBus."""
         # Auto-discover scanners from filesystem
         await self.discover_scanners()
 
         # Existing plugin consumer startup
-        plugins_to_start: Dict[str, PwnPlugin] = {}
+        plugins_to_start: dict[str, PwnPlugin] = {}
         if name is not None:
             plugin = self._plugins.get(name)
             if plugin:
@@ -304,10 +310,8 @@ class UniversalPluginLoader:
             if task_key.startswith(f"{name}_"):
                 task = self._plugin_tasks.pop(task_key)
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
         
         # Call plugin unload hook
         try:
@@ -318,15 +322,15 @@ class UniversalPluginLoader:
         del self._plugins[name]
         logger.info("Unloaded plugin: %s", name)
 
-    def get_plugin(self, name: str) -> Optional[PwnPlugin]:
+    def get_plugin(self, name: str) -> PwnPlugin | None:
         """Get a loaded plugin by name."""
         return self._plugins.get(name)
 
-    def list_plugins(self) -> List[str]:
+    def list_plugins(self) -> list[str]:
         """List all loaded plugin names."""
         return list(self._plugins.keys())
 
-    def get_plugin_info(self, name: str) -> Optional[Dict[str, Any]]:
+    def get_plugin_info(self, name: str) -> dict[str, Any] | None:
         """Get information about a loaded plugin."""
         plugin = self._plugins.get(name)
         if plugin is None:
@@ -363,7 +367,7 @@ class PluginLoader(UniversalPluginLoader):
             hook_bus = HookBus()
         super().__init__(hook_bus, bus=bus)
     
-    async def load_builtin(self, plugin: PwnPlugin, config: Optional[dict] = None) -> None:
+    async def load_builtin(self, plugin: PwnPlugin, config: dict | None = None) -> None:
         """Load a builtin plugin and call its on_load hook."""
         await self.load(plugin)
         ctx = PluginContext(config=config or {}, hook_bus=self.hook_bus)
@@ -404,28 +408,28 @@ class PluginLoader(UniversalPluginLoader):
         logger.info("Deactivated plugin: %s", name)
         return True
     
-    def list_active(self) -> List[Dict[str, Any]]:
+    def list_active(self) -> list[dict[str, Any]]:
         return [self.get_plugin_info(name) for name in self.list_plugins()
                 if self.get_plugin_info(name) and not self._plugins[name].metadata.disabled]
     
-    def watchdog_stats(self) -> Dict[str, Any]:
+    def watchdog_stats(self) -> dict[str, Any]:
         disabled = [name for name, p in self._plugins.items() if p.metadata.disabled]
         return {"disabled": disabled}
     
-    def get_scanner(self, name: str) -> Optional[PwnPlugin]:
+    def get_scanner(self, name: str) -> PwnPlugin | None:
         """Get a scanner plugin (backward compatibility)."""
         return self.get_plugin(name)
     
-    def get_all_scanners(self) -> Dict[str, PwnPlugin]:
+    def get_all_scanners(self) -> dict[str, PwnPlugin]:
         """Get all scanner plugins (backward compatibility)."""
         return {name: plugin for name, plugin in self._plugins.items() if hasattr(plugin, 'on_flow')}
     
-    async def run_scan(self, flow: Flow) -> List[Finding]:
+    async def run_scan(self, flow: Flow) -> list[Finding]:
         """Run a scan across loaded scanner plugins.
 
         Depth and evasion are load-time properties baked into the chain.
         """
-        results: List[Finding] = []
+        results: list[Finding] = []
         for plugin in self._plugins.values():
             if isinstance(plugin, ScannerPlugin):
                 try:

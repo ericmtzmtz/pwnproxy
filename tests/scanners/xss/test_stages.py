@@ -15,14 +15,14 @@ import asyncio
 import httpx
 import pytest
 
-from pwnproxy.shared.scan.stages.xss_stages import (
-    _default_canary,
-    ContextAwareStage,
-    ReflectedStage,
-)
+from pwnproxy.plugins.scanners.xss.payloads import get_payloads_for_context
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.plugins.scanners.xss.payloads import get_payloads_for_context
+from pwnproxy.shared.scan.stages.xss_stages import (
+    ContextAwareStage,
+    ReflectedStage,
+    _default_canary,
+)
 
 CANARY = "pwnxss-testcanary123"
 PROBE_HTML_BODY = f"<html><body><p>{CANARY}</p></body></html>"
@@ -180,9 +180,9 @@ class TestContextAwareStageDepthGating:
                 return StageResult(findings=[], confirmed_points=set())
 
         stages = [ContextAwareStage(FakeXssReplayer()), DummyStage()]
-        chain_fast = DetectionChain(stages, DetectionDepth.FAST)
-        chain_standard = DetectionChain(stages, DetectionDepth.STANDARD)
-        chain_deep = DetectionChain(stages, DetectionDepth.DEEP)
+        DetectionChain(stages, DetectionDepth.FAST)
+        DetectionChain(stages, DetectionDepth.STANDARD)
+        DetectionChain(stages, DetectionDepth.DEEP)
 
         # should_run must be False below DEEP for ContextAwareStage
         assert not ContextAwareStage(FakeXssReplayer()).should_run(DetectionDepth.FAST)

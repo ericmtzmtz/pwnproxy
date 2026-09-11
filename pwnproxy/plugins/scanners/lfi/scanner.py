@@ -9,15 +9,15 @@ from __future__ import annotations
 import logging
 
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth, chain_from_depth
-from pwnproxy.shared.scan.stages.lfi_stages import (
-    SimpleStage,
-    PHPWrapperStage,
-    LfiOOBStage,
-)
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.plugins.core.chain import DetectionDepth, chain_from_depth
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.stages.lfi_stages import (
+    LfiOOBStage,
+    PHPWrapperStage,
+    SimpleStage,
+)
 
 logger = logging.getLogger(__name__)
 

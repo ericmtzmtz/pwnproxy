@@ -3,7 +3,6 @@
 Provides encoding transforms that modify payloads to bypass common WAFs.
 """
 import logging
-import re
 import urllib.parse
 from enum import Enum
 

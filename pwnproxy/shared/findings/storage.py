@@ -1,9 +1,8 @@
 import asyncio
 import logging
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 
-from sqlalchemy import Column, Integer, Float, String, Text, DateTime, JSON
+from sqlalchemy import JSON, Column, DateTime, Float, Integer, String, Text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -26,7 +25,7 @@ class FindingORM(Base):
     confidence = Column(String(20), default="tentative")
     payload = Column(Text, default="")
     evidence = Column(Text, default="")
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(UTC))
     extra = Column(JSON, default=dict)
     request_data = Column(JSON, default=None)
     triage_score = Column(Float, default=None)
@@ -44,7 +43,7 @@ class TriageHistoryORM(Base):
     method = Column(String(10), nullable=False)
     score = Column(Float, default=None)
     reason = Column(String(255), default=None)
-    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    timestamp = Column(DateTime, default=lambda: datetime.now(UTC))
 
 
 class FindingStorage:
@@ -76,7 +75,6 @@ class FindingStorage:
                     logger.info("Migrated findings table: added %s column", column)
 
     async def save(self, finding) -> int:
-        from pwnproxy.plugins.core.base import Finding as BaseFinding
         record = FindingORM(
             scanner=finding.scanner,
             url=finding.url,
@@ -112,7 +110,7 @@ class FindingStorage:
         except Exception:
             logger.exception("post-save triage callback failed for finding %s", row.get("id"))
 
-    async def list(self, scanner: Optional[str] = None, limit: int = 100, offset: int = 0) -> list[dict]:
+    async def list(self, scanner: str | None = None, limit: int = 100, offset: int = 0) -> list[dict]:
         from sqlalchemy import select
         async with self._factory() as session:
             query = select(FindingORM)
@@ -123,8 +121,8 @@ class FindingStorage:
             rows = result.scalars().all()
             return [{c.name: getattr(r, c.name) for c in FindingORM.__table__.columns} for r in rows]
 
-    async def count(self, scanner: Optional[str] = None) -> int:
-        from sqlalchemy import select, func
+    async def count(self, scanner: str | None = None) -> int:
+        from sqlalchemy import func, select
         async with self._factory() as session:
             query = select(func.count(FindingORM.id))
             if scanner:
@@ -132,7 +130,7 @@ class FindingStorage:
             result = await session.execute(query)
             return result.scalar() or 0
 
-    async def get(self, finding_id: int) -> Optional[dict]:
+    async def get(self, finding_id: int) -> dict | None:
         from sqlalchemy import select
         async with self._factory() as session:
             result = await session.execute(select(FindingORM).where(FindingORM.id == finding_id))
@@ -144,10 +142,10 @@ class FindingStorage:
         finding_id: int,
         verdict: str,
         method: str,
-        score: Optional[float] = None,
-        reason: Optional[str] = None,
-        features: Optional[dict] = None,
-    ) -> Optional[dict]:
+        score: float | None = None,
+        reason: str | None = None,
+        features: dict | None = None,
+    ) -> dict | None:
         """Update triage columns and append an immutable history row. Returns updated row."""
         from sqlalchemy import select
         if reason and len(reason) > 255:

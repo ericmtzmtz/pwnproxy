@@ -5,12 +5,11 @@ Tests MCPApiClient with mocked httpx, error handling, session headers,
 and JSON-RPC fallback path.
 """
 
-import asyncio
 import json
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -96,8 +95,8 @@ class TestMCPApiClient:
 
     @pytest.mark.asyncio
     async def test_connection_refused(self):
-        from pwnproxy_mcp.server import MCPApiClient
         import httpx
+        from pwnproxy_mcp.server import MCPApiClient
         client = MCPApiClient(base_url="http://localhost:9999/api/v1")
         client._client = AsyncMock()
         client._client.request = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
@@ -108,8 +107,8 @@ class TestMCPApiClient:
 
     @pytest.mark.asyncio
     async def test_timeout(self):
-        from pwnproxy_mcp.server import MCPApiClient
         import httpx
+        from pwnproxy_mcp.server import MCPApiClient
         client = MCPApiClient(base_url="http://localhost:8000/api/v1")
         client._client = AsyncMock()
         client._client.request = AsyncMock(side_effect=httpx.TimeoutException("timed out"))

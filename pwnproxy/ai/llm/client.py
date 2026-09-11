@@ -4,12 +4,25 @@ import json
 import logging
 import re
 import time
-from typing import Any, Literal, Optional, Protocol, TypeVar, Union, get_args, get_origin
+from typing import (
+    Any,
+    Literal,
+    Protocol,
+    TypeVar,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from pwnproxy.ai.llm.errors import LLMRateLimited, LLMSchemaError, LLMTimeout, LLMUnavailable
+from pwnproxy.ai.llm.errors import (
+    LLMRateLimited,
+    LLMSchemaError,
+    LLMTimeout,
+    LLMUnavailable,
+)
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest, LLMResponse
 from pwnproxy.ai.llm.usage import UsageLedger
 
@@ -156,9 +169,7 @@ class CircuitBreaker:
         opened_at = self._opened_at.get(provider)
         if opened_at is None:
             return False
-        if (time.monotonic() - opened_at) >= self.cooldown_s:
-            return False
-        return True
+        return not time.monotonic() - opened_at >= self.cooldown_s
 
     def record_success(self, provider: str) -> None:
         self._failures[provider] = 0
@@ -203,10 +214,10 @@ class UnifiedLLMClient:
         self,
         providers: dict,
         chain: list[str],
-        ledger: Optional[UsageLedger] = None,
+        ledger: UsageLedger | None = None,
         circuit_threshold: int = 3,
         cooldown_s: float = 60.0,
-        transport: Optional[httpx.AsyncBaseTransport] = None,
+        transport: httpx.AsyncBaseTransport | None = None,
         rate_limit_retries: int = 2,
     ):
         self._providers = providers
@@ -367,7 +378,7 @@ class UnifiedLLMClient:
             raw_text=resp2.text,
         )
 
-    def _validate(self, text: str, schema: type[T]) -> Optional[T]:
+    def _validate(self, text: str, schema: type[T]) -> T | None:
         try:
             data = json.loads(extract_json(text))
         except json.JSONDecodeError:

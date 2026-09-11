@@ -1,10 +1,10 @@
 from collections.abc import AsyncGenerator
 
-from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
-from pwnproxy.plugins.core.base import PluginMetadata, ScannerPlugin, Finding
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.command_injection.scanner import CommandInjectionScanner
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 class CommandInjectionScannerPlugin(ScannerPlugin):

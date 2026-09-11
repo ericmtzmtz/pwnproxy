@@ -1,6 +1,5 @@
 import re
 from enum import Enum
-from typing import Optional
 
 
 class ReflectionContext(str, Enum):
@@ -22,8 +21,8 @@ NON_EXEC_WITHOUT_BREAKOUT = {
     ReflectionContext.HTML_COMMENT,
 }
 
-_EVENT_HANDLER_RE = re.compile(r"\bon\w+\s*=", re.I)
-_JS_URI_RE = re.compile(r"^\s*javascript\s*:|^\s*data\s*:", re.I)
+_EVENT_HANDLER_RE = re.compile(r"\bon\w+\s*=", re.IGNORECASE)
+_JS_URI_RE = re.compile(r"^\s*javascript\s*:|^\s*data\s*:", re.IGNORECASE)
 _JS_BREAK_CHARS = ("'", '"', "`")
 
 
@@ -72,7 +71,7 @@ class ContextAnalyzer:
             return ctx
         return ReflectionContext.UNKNOWN
 
-    def _check_html_comment(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_html_comment(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         before = body[max(0, pos - 100):pos]
         after = body[pos + len(canary):pos + len(canary) + 100]
         if re.search(r'<!--\s*$', before) and re.search(r'^\s*-->', after):
@@ -84,13 +83,13 @@ class ContextAnalyzer:
                 return ReflectionContext.HTML_COMMENT
         return None
 
-    def _check_js_string(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_js_string(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         if not body or not canary:
             return None
         before = body[max(0, pos - 200):pos]
         after = body[pos + len(canary):pos + len(canary) + 200]
 
-        if re.search(r'<script[^>]*>', before, re.I) and re.search(r'</script>', after, re.I):
+        if re.search(r'<script[^>]*>', before, re.IGNORECASE) and re.search(r'</script>', after, re.IGNORECASE):
             return ReflectionContext.JS_STRING
         if re.search(r'(?:var|let|const|function)\s+\w+\s*[=:]\s*["\']', before) and re.search(r'["\'\s;,]', after[:5]):
             return ReflectionContext.JS_STRING
@@ -109,26 +108,26 @@ class ContextAnalyzer:
             return ReflectionContext.JS_STRING
         return None
 
-    def _check_svg_namespace(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_svg_namespace(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         before = body[max(0, pos - 200):pos]
-        if re.search(r'xlink:href\s*=\s*["\']', before, re.I):
+        if re.search(r'xlink:href\s*=\s*["\']', before, re.IGNORECASE):
             return ReflectionContext.SVG_NAMESPACE
-        if re.search(r'href\s*=\s*["\']', before, re.I):
+        if re.search(r'href\s*=\s*["\']', before, re.IGNORECASE):
             preceding = body[max(0, pos - 400):pos]
-            if re.search(r'<svg[^>]*>', preceding, re.I):
+            if re.search(r'<svg[^>]*>', preceding, re.IGNORECASE):
                 return ReflectionContext.SVG_NAMESPACE
         return None
 
-    def _check_url(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_url(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         before = body[max(0, pos - 100):pos]
-        m = re.search(r'(href|src|action)\s*=\s*["\']([^"\']*)$', before, re.I)
+        m = re.search(r'(href|src|action)\s*=\s*["\']([^"\']*)$', before, re.IGNORECASE)
         if m:
             if canary in m.group(0):
                 return None
             return ReflectionContext.URL
         return None
 
-    def _check_html_attr(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_html_attr(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         before = body[max(0, pos - 100):pos]
         if re.search(r'\w+\s*=\s*["\'][^"\']*$', before):
             return ReflectionContext.HTML_ATTR
@@ -136,7 +135,7 @@ class ContextAnalyzer:
             return None
         return None
 
-    def _check_html_body(self, body: str, canary: str, pos: int) -> Optional[ReflectionContext]:
+    def _check_html_body(self, body: str, canary: str, pos: int) -> ReflectionContext | None:
         before = body[max(0, pos - 100):pos]
         after = body[pos + len(canary):pos + len(canary) + 100]
         in_tag = '<' in before and '>' not in before[-50:]
@@ -169,9 +168,8 @@ class ContextAnalyzer:
                     return (True, [ctx], f"{ctx.value} breakout")
             elif ctx == ReflectionContext.HTML_BODY:
                 return (True, [ctx], "html_body unescaped markup")
-            elif ctx == ReflectionContext.SVG_NAMESPACE:
-                if self._has_js_uri(payload):
-                    return (True, [ctx], "svg_namespace javascript/data uri")
+            elif ctx == ReflectionContext.SVG_NAMESPACE and self._has_js_uri(payload):
+                return (True, [ctx], "svg_namespace javascript/data uri")
         return (False, contexts, "reflection without exploitable breakout")
 
     @staticmethod

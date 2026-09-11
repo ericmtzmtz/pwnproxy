@@ -1,11 +1,11 @@
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, func, delete
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -18,14 +18,14 @@ router = APIRouter(prefix="/api/v1", tags=["findings"])
 VALID_TRIAGE_VERDICTS = ("true_positive", "false_positive")
 
 
-def _severity_clause(severity: Optional[str]) -> list:
+def _severity_clause(severity: str | None) -> list:
     if not severity:
         return []
     return [s.strip() for s in severity.split(",") if s.strip()]
 
 
-def _apply_filters(query, scanner: Optional[str] = None, severity: Optional[str] = None,
-                   verdict: Optional[str] = None):
+def _apply_filters(query, scanner: str | None = None, severity: str | None = None,
+                   verdict: str | None = None):
     if scanner:
         query = query.where(FindingORM.scanner == scanner)
     levels = _severity_clause(severity)
@@ -38,7 +38,7 @@ def _apply_filters(query, scanner: Optional[str] = None, severity: Optional[str]
 
 class TriageFeedback(BaseModel):
     verdict: str
-    reason: Optional[str] = None
+    reason: str | None = None
 
 
 class FindingsListResponse(BaseModel):
@@ -74,7 +74,7 @@ async def triage_feedback(finding_id: int, payload: TriageFeedback, request: Req
             )
     except Exception as exc:
         logger.warning("triage feedback failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
     if updated is None:
         raise HTTPException(status_code=404, detail="Finding not found")
     # Publish only when no pipeline handled it: TriagePipeline._set already
@@ -147,8 +147,8 @@ async def get_findings(
     request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=500),
-    severity: Optional[str] = Query(None, description="Comma-separated severity levels"),
-    verdict: Optional[str] = Query(None, description="Triage verdict filter (true_positive|false_positive|uncertain)"),
+    severity: str | None = Query(None, description="Comma-separated severity levels"),
+    verdict: str | None = Query(None, description="Triage verdict filter (true_positive|false_positive|uncertain)"),
 ):
     offset = (page - 1) * per_page
     engine = request.app.state.session_manager.get_scanner_engine()
@@ -174,8 +174,8 @@ async def list_all_findings(
     request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=500),
-    severity: Optional[str] = Query(None, description="Comma-separated severity levels"),
-    verdict: Optional[str] = Query(None, description="Triage verdict filter (true_positive|false_positive|uncertain)"),
+    severity: str | None = Query(None, description="Comma-separated severity levels"),
+    verdict: str | None = Query(None, description="Triage verdict filter (true_positive|false_positive|uncertain)"),
 ):
     offset = (page - 1) * per_page
     engine = request.app.state.session_manager.get_scanner_engine()
@@ -210,7 +210,7 @@ async def delete_all_findings(request: Request, ids: str = Query(None, descripti
                 await session.execute(FindingORM.__table__.delete())
             await session.commit()
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=f"Invalid ids: {exc}")
+            raise HTTPException(status_code=422, detail=f"Invalid ids: {exc}") from exc
         except Exception as exc:
             logger.warning(f"Could not delete findings: {exc}")
 
@@ -231,4 +231,4 @@ async def delete_finding(finding_id: int, request: Request):
             raise
         except Exception as exc:
             logger.warning(f"Could not delete finding: {exc}")
-            raise HTTPException(status_code=500, detail=str(exc))
+            raise HTTPException(status_code=500, detail=str(exc)) from exc

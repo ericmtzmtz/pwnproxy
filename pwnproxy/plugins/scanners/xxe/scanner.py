@@ -9,15 +9,15 @@ from __future__ import annotations
 import logging
 
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import create_chain, DetectionDepth
+from pwnproxy.plugins.core.chain import DetectionDepth, create_chain
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayers.xxe import XxeReplayer
 from pwnproxy.shared.scan.stages.xxe_stages import (
-    XxeErrorBasedStage,
     JSONMutateStage,
+    XxeErrorBasedStage,
     XxeOOBStage,
 )
-from pwnproxy.shared.scan.replayers.xxe import XxeReplayer
-from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 

@@ -3,9 +3,11 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from pwnproxy.transport.rest.app import app
-from pwnproxy.services.session.manager import ScopeConfig, SESSIONS_ROOT, LAST_SESSION_FILE
+from pwnproxy.services.session.manager import (
+    ScopeConfig,
+)
 from pwnproxy.shared.bus.topics import SCOPE_UPDATED
+from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -16,7 +16,7 @@ class HealthResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     status: str = "ok"
-    version: Optional[str] = None
+    version: str | None = None
     checks: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -46,7 +46,7 @@ async def health_check(request: Request):
     proxy_port = getattr(request.app.state, "proxy_port", 8080)
     proxy_ok = await _check_port("127.0.0.1", proxy_port)
 
-    loader: Optional[PluginLoader] = getattr(request.app.state, "plugin_loader", None)
+    loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
     scanner_names = []
     plugin_names = []
     if loader is not None:
@@ -75,7 +75,7 @@ async def health_check(request: Request):
     }
 
     overall = "ok"
-    for name, check in checks.items():
+    for _name, check in checks.items():
         if check["status"] == "down":
             overall = "degraded"
             break

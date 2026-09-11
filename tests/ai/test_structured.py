@@ -1,6 +1,6 @@
 """Structured output: valid, invalid-then-retry-ok, invalid-twice."""
 import json
-from typing import Literal, Optional
+from typing import Literal
 
 import pytest
 from pydantic import BaseModel, Field
@@ -25,7 +25,7 @@ class Probe(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, description="confidence between 0.0 and 1.0")
     verdict: Literal["true_positive", "false_positive", "uncertain"]
     items: list[str] = Field(description="some strings")
-    maybe: Optional[int] = None
+    maybe: int | None = None
     sub: Sub = Field(description="nested")
     weird: dict = Field(description="anything")
     long: str = Field(description="x" * 300)

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Callable, Optional
 
 import mitmproxy.http
 
@@ -48,7 +47,7 @@ class InterceptorAddon:
         pwn_flow = Flow.from_mitmproxy(f)
         self._output_queue.put_nowait(pwn_flow)
 
-    def resume(self, flow_id: str) -> Optional[mitmproxy.http.HTTPFlow]:
+    def resume(self, flow_id: str) -> mitmproxy.http.HTTPFlow | None:
         f = self._intercepted.pop(flow_id, None)
         if f is None:
             logger.warning(f"resume: flow {flow_id} not found")
@@ -56,7 +55,7 @@ class InterceptorAddon:
         f.resume()
         return f
 
-    def kill(self, flow_id: str) -> Optional[mitmproxy.http.HTTPFlow]:
+    def kill(self, flow_id: str) -> mitmproxy.http.HTTPFlow | None:
         f = self._intercepted.pop(flow_id, None)
         if f is None:
             logger.warning(f"kill: flow {flow_id} not found")

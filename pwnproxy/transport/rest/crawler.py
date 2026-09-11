@@ -1,14 +1,11 @@
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import sessionmaker
 
-from pwnproxy.services.crawler.storage import DiscoveredURLORM, JobStorage
-from pwnproxy.services.crawler.wordlist import resolve_wordlist, builtin_sizes
+from pwnproxy.services.crawler.storage import JobStorage
+from pwnproxy.services.crawler.wordlist import builtin_sizes, resolve_wordlist
 from pwnproxy.services.jobs.lifecycle import JobLifecycle
 
 logger = logging.getLogger(__name__)
@@ -29,25 +26,25 @@ class CrawlStartResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     job_id: Any = None
-    status: Optional[str] = None
+    status: str | None = None
 
 
 class CrawlStopResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     stopped: bool = True
-    detail: Optional[str] = None
-    accepted: Optional[bool] = None
+    detail: str | None = None
+    accepted: bool | None = None
     job_id: Any = None
-    state: Optional[str] = None
+    state: str | None = None
 
 
 class BruteforceStartResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     job_id: Any = None
-    status: Optional[str] = None
-    total_estimated: Optional[int] = None
+    status: str | None = None
+    total_estimated: int | None = None
 
 
 class WordlistsResponse(BaseModel):
@@ -66,7 +63,7 @@ class CrawlerStatusResponse(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 
-async def _get_job_storage(request: Request) -> Optional[JobStorage]:
+async def _get_job_storage(request: Request) -> JobStorage | None:
     sm = getattr(request.app.state, "session_manager", None)
     engine = sm.get_crawler_engine() if sm and hasattr(sm, "get_crawler_engine") else None
     if engine is None:
@@ -91,7 +88,7 @@ async def list_crawler_urls(
     request: Request,
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=500),
-    source: Optional[str] = Query(None, description="Filter by source (a, form, script, js, img, location)"),
+    source: str | None = Query(None, description="Filter by source (a, form, script, js, img, location)"),
 ):
     storage = await _get_discovered_storage(request)
     if storage is None:
@@ -218,7 +215,7 @@ async def start_bruteforce(request: Request, body: BruteforceStartRequest):
     try:
         resolved_words = resolve_wordlist(body.wordlist)
     except (ValueError, TypeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     if len(resolved_words) < 1:
         raise HTTPException(status_code=422, detail="Wordlist resolved to 0 entries")

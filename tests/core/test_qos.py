@@ -2,15 +2,20 @@
 
 import asyncio
 import json
+
 import pytest
+
 from pwnproxy.shared.bus import Envelope
 from pwnproxy.shared.bus.qos import QoSClassifiedQueue, _coalesce_key
 from pwnproxy.shared.bus.topics import (
-    QoSClass, TOPIC_QOS, FINDING_CREATED, CRAWL_PROGRESS,
-    CRAWLER_FLOW, CRAWLER_URL, SCOPE_UPDATED,
+    CRAWL_PROGRESS,
+    CRAWLER_FLOW,
+    CRAWLER_URL,
+    FINDING_CREATED,
+    SCOPE_UPDATED,
+    QoSClass,
 )
-from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
-
+from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient, TcpBridgeServer
 
 # ── Envelope QoS classification ─────────────────────────────────────
 
@@ -193,7 +198,6 @@ async def test_tcp_bridge_coalesce_progress():
 @pytest.mark.asyncio
 async def test_tcp_bridge_producer_never_blocks():
     """publish() returns immediately even when consumer is slow."""
-    from pwnproxy.shared.bus.topics import CRAWLER_URL
 
     server = TcpBridgeServer()
     port = await server.start()

@@ -1,4 +1,3 @@
-import pytest
 
 from pwnproxy.services.proxy.addons.hook_relay import HookRelayAddon
 from pwnproxy.services.proxy.addons.storage import StorageAddon

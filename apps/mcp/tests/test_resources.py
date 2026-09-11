@@ -20,15 +20,14 @@ for p in (_REPO_ROOT, _MCP_SRC):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
 
-from pwnproxy_mcp import server
+from pwnproxy_mcp import server  # noqa: E402  (after sys.path setup)
 
 
 class _ScriptedStdin(io.StringIO):
     """io.StringIO subclass that yields one line per iteration."""
 
     def __iter__(self):
-        for line in self.getvalue().splitlines(keepends=True):
-            yield line
+        yield from self.getvalue().splitlines(keepends=True)
 
 
 class _StubClient:

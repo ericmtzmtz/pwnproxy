@@ -9,7 +9,7 @@ import asyncio
 import logging
 import re
 from collections import Counter
-from typing import Awaitable, Callable, Iterable, Optional
+from collections.abc import Awaitable, Callable
 from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
@@ -75,7 +75,7 @@ def dedup_findings(findings: list[dict]) -> list[dict]:
     return list(groups.values())
 
 
-def _severity_rank(severity: Optional[str]) -> int:
+def _severity_rank(severity: str | None) -> int:
     return SEVERITY_ORDER.get((severity or "").lower(), len(SEVERITY_ORDER))
 
 
@@ -213,7 +213,7 @@ def _finding_context(group: dict) -> str:
 async def extract_group_facts(
     llm: LLMClient,
     groups: list[dict],
-    progress: Optional[Callable[[int, int], Awaitable[None]]] = None,
+    progress: Callable[[int, int], Awaitable[None]] | None = None,
 ) -> None:
     """Populate ``facts`` on each group in place using structured LLM output.
 
@@ -221,8 +221,7 @@ async def extract_group_facts(
     group is flagged so the renderer can mark it.
     """
     system = _prompt("facts.txt")
-    done = 0
-    for group in groups:
+    for done, group in enumerate(groups, start=1):
         request = LLMRequest(
             messages=[
                 LLMMessage(role="system", content=system),
@@ -235,7 +234,6 @@ async def extract_group_facts(
         data, flagged = sanitize_facts(data, group)
         group["facts"] = data
         group["flagged"] = flagged
-        done += 1
         if progress:
             await progress(done, len(groups))
         # Pace sequential LLM calls to avoid saturating rate-limited proxies

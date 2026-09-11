@@ -12,8 +12,8 @@ import re
 import httpx
 
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.protocols import XMLMutableReplayer
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 logger = logging.getLogger(__name__)
 

@@ -2,8 +2,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 @pytest.fixture

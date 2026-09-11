@@ -12,7 +12,6 @@ import logging
 import re
 import uuid
 
-
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
@@ -220,9 +219,7 @@ class StoredStage(DetectionStage):
         if encoded in body:
             return True
         double = encoded.replace("%", "%25")
-        if double in body:
-            return True
-        return False
+        return double in body
 
     @staticmethod
     def _point_key(point: InjectionPoint) -> tuple:
@@ -282,10 +279,10 @@ class DomStage(DetectionStage):
                 continue
 
             from pwnproxy.plugins.scanners.xss.dom_sinks import (
-                find_sinks,
-                find_sink_snippet,
                 find_param_location_sinks,
                 find_param_location_snippet,
+                find_sink_snippet,
+                find_sinks,
             )
 
             # Signal 1: canary inside a sink in the served script.
@@ -333,7 +330,7 @@ class DomStage(DetectionStage):
         """True if the canary appears in the HTML outside of <script> blocks."""
         if canary not in body:
             return False
-        stripped = re.sub(r"<script\b[^>]*>.*?</script>", "", body, flags=re.I | re.S)
+        stripped = re.sub(r"<script\b[^>]*>.*?</script>", "", body, flags=re.IGNORECASE | re.DOTALL)
         return canary in stripped
 
     @staticmethod

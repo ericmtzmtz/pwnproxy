@@ -1,12 +1,13 @@
 import json
 import logging
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import Optional, Awaitable
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
 
 class Base(DeclarativeBase):
     pass
@@ -33,7 +34,7 @@ class UnifiedFinding(Base):
     evidence: Mapped[str]
     timestamp: Mapped[str]
     extra: Mapped[str]
-    source_flow_id: Mapped[Optional[str]] = mapped_column(default=None)
+    source_flow_id: Mapped[str | None] = mapped_column(default=None)
 
 class _TestAsyncSession(AsyncSession):
     async def execute(self, statement, *args, **kwargs):  # type: ignore[override]
@@ -42,11 +43,8 @@ class _TestAsyncSession(AsyncSession):
         return await super().execute(statement, *args, **kwargs)
 
 class PluginOutputStorage:
-    def __init__(self, db_path: Optional[str] = None):
-        if db_path is None:
-            db_path_obj = Path.home() / ".pwnproxy" / "findings.db"
-        else:
-            db_path_obj = Path(db_path)
+    def __init__(self, db_path: str | None = None):
+        db_path_obj = Path.home() / ".pwnproxy" / "findings.db" if db_path is None else Path(db_path)
         db_path_obj.parent.mkdir(parents=True, exist_ok=True)
         db_url = f"sqlite+aiosqlite:///{db_path_obj.absolute()}"
         self.engine: AsyncEngine = create_async_engine(db_url, echo=False)
@@ -87,7 +85,7 @@ class PluginOutputStorage:
         metadata = getattr(finding, "metadata", None)
         if metadata and getattr(metadata, "storage", None):
             storage_class = metadata.storage
-            if hasattr(storage_class, "__call__") and callable(storage_class.__call__):
+            if callable(storage_class) and callable(storage_class.__call__):
                 result = storage_class.__call__(storage_class)
                 if hasattr(result, "__await__"):
                     storage_instance = await result

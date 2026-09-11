@@ -1,8 +1,6 @@
 """HTTP callback server for OOB vulnerability confirmation."""
-import asyncio
 import logging
 import os
-from typing import Optional
 
 from aiohttp import web
 
@@ -28,9 +26,9 @@ class HTTPCallbackServer:
     ):
         self.host = host
         self.port = port
-        self._app: Optional[web.Application] = None
-        self._runner: Optional[web.AppRunner] = None
-        self._site: Optional[web.TCPSite] = None
+        self._app: web.Application | None = None
+        self._runner: web.AppRunner | None = None
+        self._site: web.TCPSite | None = None
         self._running = False
     
     async def start(self) -> None:
@@ -133,7 +131,7 @@ class HTTPCallbackServer:
 
 
 # Global server instance
-_server: Optional[HTTPCallbackServer] = None
+_server: HTTPCallbackServer | None = None
 
 
 async def get_server() -> HTTPCallbackServer:

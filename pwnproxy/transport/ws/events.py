@@ -1,12 +1,10 @@
 import asyncio
+import contextlib
 import json
 import logging
-from typing import Any, Dict, List, Set, Optional
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import sessionmaker
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +13,7 @@ router = APIRouter(tags=["websocket"])
 
 class ConnectionManager:
     def __init__(self):
-        self._connections: Set[WebSocket] = set()
+        self._connections: set[WebSocket] = set()
 
     async def connect(self, ws: WebSocket) -> None:
         await ws.accept()
@@ -25,7 +23,7 @@ class ConnectionManager:
         self._connections.discard(ws)
 
     async def broadcast(self, message: str) -> None:
-        dead: List[WebSocket] = []
+        dead: list[WebSocket] = []
         for ws in self._connections:
             try:
                 await ws.send_text(message)
@@ -41,7 +39,7 @@ class ConnectionManager:
 
 class RoomManager:
     def __init__(self):
-        self._rooms: Dict[str, Set[WebSocket]] = {}
+        self._rooms: dict[str, set[WebSocket]] = {}
 
     async def connect(self, room_id: str, ws: WebSocket) -> None:
         await ws.accept()
@@ -60,7 +58,7 @@ class RoomManager:
         room = self._rooms.get(room_id)
         if not room:
             return
-        dead: List[WebSocket] = []
+        dead: list[WebSocket] = []
         for ws in room:
             try:
                 await ws.send_text(message)
@@ -108,7 +106,7 @@ class RoomDispatcher:
     ]
 
     # Map HookBus channel -> room prefix
-    _ROOM_PREFIX: Dict[str, str] = {
+    _ROOM_PREFIX: dict[str, str] = {
         "response": "traffic",
         "flow": "traffic",
         "done": "traffic",
@@ -124,20 +122,20 @@ class RoomDispatcher:
     def __init__(self, hook_bus, room_mgr: RoomManager):
         self._hook_bus = hook_bus
         self._room_mgr = room_mgr
-        self._tasks: List[asyncio.Task] = []
+        self._tasks: list[asyncio.Task] = []
         self._running = False
         self._untagged: int = 0
 
-    def _extract_session(self, data: Any) -> tuple[Optional[str], Optional[str]]:
+    def _extract_session(self, data: Any) -> tuple[str | None, str | None]:
         """Return (session_id, job_id) from event data (Flow or dict)."""
-        session_id: Optional[str] = None
-        job_id: Optional[str] = None
+        session_id: str | None = None
+        job_id: str | None = None
         if data is None:
             return None, None
         # Flow object (response/flow)
         if hasattr(data, "session_id"):
             try:
-                session_id = getattr(data, "session_id")
+                session_id = data.session_id
             except Exception:
                 session_id = None
             # Flow may also be the data itself; job_id not applicable
@@ -150,7 +148,7 @@ class RoomDispatcher:
                 job_id = str(job_id)
         return session_id, job_id
 
-    def _room_for(self, channel: str, session_id: Optional[str], job_id: Optional[str]) -> Optional[str]:
+    def _room_for(self, channel: str, session_id: str | None, job_id: str | None) -> str | None:
         if job_id and channel in ("crawl.started", "crawl.progress", "crawl.completed", "crawl.failed", "bruteforce.started", "bruteforce.progress", "bruteforce.completed", "bruteforce.failed", "scan.started", "scan.completed", "autoscan.started", "autoscan.completed"):
             return f"job:{job_id}"
         prefix = self._ROOM_PREFIX.get(channel)
@@ -190,10 +188,8 @@ class RoomDispatcher:
             except Exception as exc:
                 logger.debug("RoomDispatcher envelope failed for %s: %s", channel, exc)
                 continue
-            try:
+            with contextlib.suppress(Exception):
                 await self._room_mgr.broadcast(room_id, envelope)
-            except Exception:
-                pass
 
     async def start(self) -> None:
         if self._running:
@@ -377,9 +373,8 @@ async def ws_events(ws: WebSocket):
                 elif task is bruteforce_completed_task:
                     if isinstance(result, dict):
                         payload = json.dumps({"type": "bruteforce.completed", **result}, default=str)
-                elif task is bruteforce_failed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
+                elif task is bruteforce_failed_task and isinstance(result, dict):
+                    payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
 
                 if payload:
                     await ws.send_text(payload)
@@ -398,9 +393,7 @@ def _is_valid_room_id(room_id: str) -> bool:
     prefix, sid = room_id.split(":", 1)
     if prefix not in _VALID_ROOM_PREFIXES:
         return False
-    if not sid or not sid.strip():
-        return False
-    return True
+    return not (not sid or not sid.strip())
 
 
 @router.websocket("/ws/rooms/{room_id}")
@@ -442,7 +435,7 @@ async def ws_room(ws: WebSocket, room_id: str):
             # half-open connections. Most clients are read-only listeners.
             try:
                 await asyncio.wait_for(ws.receive_text(), timeout=30.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 try:
                     await ws.send_text('{"type":"ping"}')
                 except Exception:
@@ -451,4 +444,3 @@ async def ws_room(ws: WebSocket, room_id: str):
         room_manager.disconnect(room_id, ws)
     except asyncio.CancelledError:
         room_manager.disconnect(room_id, ws)
-        pass

@@ -1,8 +1,8 @@
+import contextlib
 from collections import deque
-from typing import Optional
 
 from textual.message import Message
-from textual.widgets import DataTable, Label
+from textual.widgets import DataTable
 from textual.widgets._data_table import RowKey
 
 SEVERITY_STYLES: dict[str, str] = {
@@ -16,7 +16,7 @@ SEVERITY_STYLES: dict[str, str] = {
 MAX_FINDING_ROWS = 5000
 
 
-def _color_severity(severity: Optional[str]) -> str:
+def _color_severity(severity: str | None) -> str:
     s = (severity or "info").lower()
     color = SEVERITY_STYLES.get(s, "white")
     return f"[{color}]{s.upper()}[/]"
@@ -46,7 +46,7 @@ class FindingsTable(DataTable):
         super().__init__(**kwargs)
         self._row_keys: deque[RowKey] = deque()
         self._can_focus = False
-        self._url_filter: Optional[str] = None
+        self._url_filter: str | None = None
 
     def on_mount(self) -> None:
         self.add_columns("Scanner", "Target", "Severity", "Detail")
@@ -77,7 +77,5 @@ class FindingsTable(DataTable):
     def _trim(self) -> None:
         while len(self._row_keys) > MAX_FINDING_ROWS:
             oldest = self._row_keys.popleft()
-            try:
+            with contextlib.suppress(Exception):
                 self.remove_row(oldest)
-            except Exception:
-                pass

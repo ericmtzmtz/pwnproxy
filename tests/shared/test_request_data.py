@@ -1,11 +1,9 @@
 """Tests for finding request_data capture (serialize + storage roundtrip)."""
 
 import asyncio
-import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
-import pytest
 
 from pwnproxy.shared.scan.replayer import _serialize_request
 
@@ -40,9 +38,9 @@ class TestStorageRoundtrip:
     def test_save_load_request_data(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
 
+        from pwnproxy.plugins.core.base import Finding as BaseFinding
         from pwnproxy.shared.db import Base
         from pwnproxy.shared.findings.storage import FindingStorage
-        from pwnproxy.plugins.core.base import Finding as BaseFinding
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path}/t.db")
 
@@ -72,7 +70,7 @@ class TestStorageRoundtrip:
             confidence="confirmed",
             payload="../../../../../../etc/passwd",
             evidence="root:x:0:0:",
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             extra={"os": "unix"},
             request_data=request_data,
         )

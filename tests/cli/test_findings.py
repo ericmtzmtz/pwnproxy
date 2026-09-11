@@ -1,5 +1,4 @@
 import asyncio
-from pathlib import Path
 
 import pytest
 from sqlalchemy import text
@@ -55,6 +54,7 @@ def test_findings_all(findings_dir):
     asyncio.run(engine.dispose())
 
     from unittest.mock import patch
+
     from apps.terminal.cli.findings import _list_findings
     with patch("apps.terminal.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings(None, 20))
@@ -68,6 +68,7 @@ def test_findings_filter_sqli(findings_dir):
     asyncio.run(engine.dispose())
 
     from unittest.mock import patch
+
     from apps.terminal.cli.findings import _list_findings
     with patch("apps.terminal.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings("sqli", 20))
@@ -75,6 +76,7 @@ def test_findings_filter_sqli(findings_dir):
 
 def test_findings_unknown_scanner():
     from typer.testing import CliRunner
+
     from apps.terminal.cli import app
     runner = CliRunner()
     result = runner.invoke(app, ["findings", "--scanner", "unknown"])
@@ -84,6 +86,7 @@ def test_findings_unknown_scanner():
 
 def test_findings_empty(findings_dir):
     from unittest.mock import patch
+
     from apps.terminal.cli.findings import _list_findings
     with patch("apps.terminal.cli.findings.Path.home", return_value=findings_dir):
         asyncio.run(_list_findings("sqli", 20))

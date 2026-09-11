@@ -14,7 +14,7 @@ PROVIDER_CLASSES: dict[str, type[Provider]] = {
     AnthropicProvider.name: AnthropicProvider,
 }
 
-__all__ = ["Provider", "PROVIDER_CLASSES", "build_providers", "create_client_from_config"]
+__all__ = ["PROVIDER_CLASSES", "Provider", "build_providers", "create_client_from_config"]
 
 
 def build_providers(settings: LLMSettings) -> dict[str, Provider]:

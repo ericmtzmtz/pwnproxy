@@ -1,4 +1,3 @@
-from typing import Optional
 
 from textual.widgets import TextArea
 
@@ -9,7 +8,7 @@ class ResponseViewer(TextArea):
     def __init__(self, **kwargs):
         super().__init__(text="", read_only=True, **kwargs)
 
-    def show_response(self, status_code: int, headers: dict, body: Optional[bytes]) -> None:
+    def show_response(self, status_code: int, headers: dict, body: bytes | None) -> None:
         parts = [f"HTTP/1.1 {status_code}"]
         for key, value in headers.items():
             parts.append(f"{key}: {value}")

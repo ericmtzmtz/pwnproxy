@@ -1,8 +1,8 @@
 """[triage] section in ~/.pwnproxy/config.toml + PWNPROXY_TRIAGE_* env overrides."""
+import contextlib
 import os
 import tomllib
 from pathlib import Path
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -48,7 +48,7 @@ class TriageConfig(BaseModel):
     enrich_fp_threshold: float = 0.85
 
 
-def load_triage_config(config_dir: Optional[Path] = None) -> TriageConfig:
+def load_triage_config(config_dir: Path | None = None) -> TriageConfig:
     config_dir = config_dir or (Path.home() / ".pwnproxy")
     config_path = config_dir / "config.toml"
     data: dict = {}
@@ -63,10 +63,8 @@ def load_triage_config(config_dir: Optional[Path] = None) -> TriageConfig:
     for key in list(weights):
         raw = data.get("weights", {}).get(key) if isinstance(data.get("weights"), dict) else None
         if raw is not None:
-            try:
+            with contextlib.suppress(TypeError, ValueError):
                 weights[key] = float(raw)
-            except (TypeError, ValueError):
-                pass
 
     mode = str(env.get("PWNPROXY_TRIAGE_MODE") or data.get("mode") or "heuristic").lower()
     if mode not in VALID_MODES:

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import extract as extract_params, is_url_like_param
-from pwnproxy.shared.models import Flow
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.params import is_url_like_param
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 class SSRFScannerPlugin(ScannerPlugin):

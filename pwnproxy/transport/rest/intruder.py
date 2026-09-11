@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,7 +27,7 @@ class IntruderResultItem(BaseModel):
     timing_ms: float
     response_headers: dict[str, str] = {}
     response_body: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class WordlistEntry(BaseModel):
@@ -40,26 +40,25 @@ class WordlistEntry(BaseModel):
 class IntruderRunResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    attack_id: Optional[str] = None
-    task_id: Optional[str] = None
-    status: Optional[str] = None
+    attack_id: str | None = None
+    task_id: str | None = None
+    status: str | None = None
     total: int = 0
 
 
 class IntruderPollResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
-    total: Optional[int] = None
-    completed: Optional[int] = None
+    status: str | None = None
+    total: int | None = None
+    completed: int | None = None
     results: list[Any] = Field(default_factory=list)
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @router.post("/intruder/run", response_model=IntruderRunResponse)
 async def intruder_run(request: Request, body: IntruderRunRequest):
     from pwnproxy.services.intruder.parser import parse_markers
-
     from pwnproxy.transport.rest.tasks import get_task_store
     store = get_task_store(request)
     engine = request.app.state.intruder_engine

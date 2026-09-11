@@ -1,11 +1,10 @@
-import pytest
 
 from pwnproxy.shared.scan.response_compare import (
-    normalize_body,
     Fingerprint,
-    similarity,
-    is_boolean_differentiable,
     bool_pair_similarity,
+    is_boolean_differentiable,
+    normalize_body,
+    similarity,
 )
 
 
