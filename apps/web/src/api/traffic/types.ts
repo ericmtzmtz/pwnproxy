@@ -11,4 +11,5 @@ export interface FlowRecord {
   duration_ms: number;
   tls: boolean;
   error: string | null;
+  comment_count?: number;
 }

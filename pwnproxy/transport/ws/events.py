@@ -102,6 +102,9 @@ class RoomDispatcher:
         "bruteforce.completed",
         "bruteforce.failed",
         "crawler.url",
+        "comment.created",
+        "comment.updated",
+        "comment.deleted",
     ]
 
     # Map HookBus channel -> room prefix
@@ -113,6 +116,9 @@ class RoomDispatcher:
         "finding": "findings",
         "triage.updated": "findings",
         "crawler.url": "traffic",
+        "comment.created": "traffic",
+        "comment.updated": "traffic",
+        "comment.deleted": "traffic",
     }
 
     def __init__(self, hook_bus, room_mgr: RoomManager):
