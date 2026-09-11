@@ -514,10 +514,10 @@ See the contribution documentation for architecture and development details.
 - Event-bus backpressure / QoS (per-subscriber queues)
 - Operational observability (`correlation_id`) and extended LLM usage telemetry
 - CI: suite, goldens, versioned perf baseline (`281.9ms` / 19 pages, `tests/perf/baseline.json`)
+- WebSocket rooms v1
 
 ### Next (post-hardening)
 
-- WebSocket rooms
 - Comments on flows
 - Extended report templates
 - AI-assisted finding descriptions / payload assistance
