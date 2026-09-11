@@ -26,8 +26,6 @@ class FlowCommentORM(Base):
     created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    
-
 
 class FlowRecord(Base):
     __tablename__ = "flows"
@@ -53,6 +51,12 @@ class FlowRecord(Base):
     error: Mapped[Optional[str]]
     tls: Mapped[bool] = mapped_column(default=False)
 
+
+@event.listens_for(Engine, "connect")
+def set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.close()
 
 
 def ensure_db_dir(db_path: Path) -> None:

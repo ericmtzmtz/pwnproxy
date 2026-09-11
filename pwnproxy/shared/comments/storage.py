@@ -1,9 +1,8 @@
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional, List
 
-from sqlalchemy import select, func, text, delete, update
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
