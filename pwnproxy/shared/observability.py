@@ -23,15 +23,14 @@ Usage::
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Callable, TypeVar
+from datetime import UTC, datetime
+from typing import Any
 
 # ── correlation_id contextvar ───────────────────────────────────────
 
@@ -67,7 +66,7 @@ class StructuredFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         # Extract structured fields from record (set via extra= or OperationContext)
         entry: dict[str, Any] = {
-            "timestamp": datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(),
+            "timestamp": datetime.fromtimestamp(record.created, tz=UTC).isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

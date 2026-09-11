@@ -1,4 +1,3 @@
-from typing import Optional
 
 
 def parse_raw_request(raw: str) -> dict:

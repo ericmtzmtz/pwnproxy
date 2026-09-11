@@ -11,10 +11,8 @@ from pwnproxy.shared.observability import (
     StructuredFormatter,
     gen_correlation_id,
     get_correlation_id,
-    operation_context,
     set_correlation_id,
 )
-
 
 # ── correlation_id contextvar ───────────────────────────────────────
 
@@ -151,7 +149,7 @@ class TestOperationContext:
     @pytest.mark.asyncio
     async def test_success_logs_result(self, caplog):
         with caplog.at_level(logging.INFO, logger="pwnproxy.test"):
-            async with OperationContext("test", "op1") as ctx:
+            async with OperationContext("test", "op1"):
                 pass
         assert any("Completed op1" in r.message for r in caplog.records)
         # Find the completion record

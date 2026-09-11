@@ -1,9 +1,7 @@
 import asyncio
 import logging
-from typing import Optional
 
 import httpx
-
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message

@@ -1,4 +1,3 @@
-from typing import Optional
 
 from textual.widgets import Static
 
@@ -16,5 +15,5 @@ class ContextBadge(Static):
 
 
 class EvidenceViewer(Static):
-    def __init__(self, evidence: Optional[str] = ""):
+    def __init__(self, evidence: str | None = ""):
         super().__init__(evidence or "No evidence", classes="evidence-viewer")

@@ -3,8 +3,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.shared.scan.replayer import RequestReplayer
 
 
 def _free_port() -> int:

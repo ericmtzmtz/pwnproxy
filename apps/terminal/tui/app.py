@@ -1,16 +1,15 @@
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any
 
 import httpx
-
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
-    Header,
     Footer,
+    Header,
     Input,
     Label,
     Static,
@@ -18,16 +17,16 @@ from textual.widgets import (
     TabPane,
 )
 
-from pwnproxy.shared.hooks import HookBus
-from pwnproxy.services.proxy.interceptor.controller import InterceptorController
+from apps.terminal.tui.findings_widget import FindingsTable
 from apps.terminal.tui.interceptor_widget import InterceptorWidget
 from apps.terminal.tui.log_widget import LogTable
-from apps.terminal.tui.findings_widget import FindingsTable
-from pwnproxy.services.repeater.tui.inline import InlineRepeater
-from apps.terminal.tui.scope_widget import ScopeTab
 from apps.terminal.tui.scanner_widget import ScannerTab
+from apps.terminal.tui.scope_widget import ScopeTab
 from apps.terminal.tui.sessions_widget import SessionsTab, SessionsTable
 from apps.terminal.tui.ws_client import stream_findings, stream_traffic
+from pwnproxy.services.proxy.interceptor.controller import InterceptorController
+from pwnproxy.services.repeater.tui.inline import InlineRepeater
+from pwnproxy.shared.hooks import HookBus
 
 logger = logging.getLogger(__name__)
 
@@ -215,8 +214,8 @@ class DashboardApp(App):
         self,
         host: str = "127.0.0.1",
         api_port: int = 8000,
-        hook_bus: Optional[HookBus] = None,
-        interceptor_controller: Optional[InterceptorController] = None,
+        hook_bus: HookBus | None = None,
+        interceptor_controller: InterceptorController | None = None,
         scan_manager: Any = None,
     ):
         super().__init__()
@@ -225,7 +224,7 @@ class DashboardApp(App):
         self._hook_bus = hook_bus
         self._interceptor_controller = interceptor_controller
         self._scan_manager = scan_manager
-        self._active_session: Optional[str] = None
+        self._active_session: str | None = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -266,7 +265,7 @@ class DashboardApp(App):
                 )
             )
 
-    def _on_session_picked(self, result: Optional[str]) -> None:
+    def _on_session_picked(self, result: str | None) -> None:
         if result is None or result == "__empty__":
             self.sub_title = "Session: (none)"
             return
@@ -452,7 +451,7 @@ class DashboardApp(App):
         except Exception as e:
             self.notify(f"[red]Error: {e}[/]", severity="error")
 
-    def _on_session_created(self, name: Optional[str]) -> None:
+    def _on_session_created(self, name: str | None) -> None:
         if name:
             asyncio.create_task(self._do_create(name))
 

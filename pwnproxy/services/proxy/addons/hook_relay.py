@@ -1,6 +1,6 @@
 import logging
+
 import mitmproxy.http
-from mitmproxy import flow
 
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow

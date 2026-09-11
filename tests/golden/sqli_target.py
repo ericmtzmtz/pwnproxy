@@ -24,7 +24,6 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-
 # Substrings emitted per endpoint; keep them OUT of the SQLi error signatures
 # (:error route emits a real signature via the ;error marker).
 TRUE_BODY = "<html><body><h1>Results</h1><p>5 rows returned.</p></body></html>"
@@ -50,7 +49,7 @@ def _noisy_body(value: str) -> str:
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def do_GET(self):  # noqa: N802 (http.server API)
+    def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         value = (params.get("id") or [""])[0]

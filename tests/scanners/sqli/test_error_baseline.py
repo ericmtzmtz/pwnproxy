@@ -83,7 +83,6 @@ async def test_baseline_fails_skips_fail_closed():
     class FailingReplayer(FakeReplayer):
         async def send_clean(self, point, timeout=10.0):
             self.clean_calls += 1
-            return None
 
     replayer = FailingReplayer("", "")
     stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())

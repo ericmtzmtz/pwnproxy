@@ -1,6 +1,6 @@
 """Fallback chain + circuit breaker behavior."""
-import asyncio
 
+import httpx
 import pytest
 
 from pwnproxy.ai.llm.client import CircuitBreaker, UnifiedLLMClient
@@ -46,7 +46,7 @@ class TestFallback:
 
     @pytest.mark.asyncio
     async def test_empty_chain_raises_unavailable(self):
-        client = UnifiedLLMClient(providers={}, chain=[], transport=__import__("httpx").MockTransport(lambda r: httpx.Response(200)))
+        client = UnifiedLLMClient(providers={}, chain=[], transport=httpx.MockTransport(lambda r: httpx.Response(200)))
         with pytest.raises(LLMUnavailable, match="no LLM provider"):
             await client.generate(_req())
 

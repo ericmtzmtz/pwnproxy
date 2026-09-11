@@ -1,13 +1,11 @@
-import asyncio
 import json
-import os
-from pathlib import Path
 
 import pytest
 import pytest_asyncio
 
 from pwnproxy.plugins.core.base import Finding, PluginMetadata
-from pwnproxy.plugins.core.storage import PluginOutputStorage, UnifiedFinding
+from pwnproxy.plugins.core.storage import PluginOutputStorage
+
 
 @pytest_asyncio.fixture(scope="function")
 async def storage_fixture(tmp_path_factory):
@@ -87,7 +85,7 @@ async def test_custom_storage(storage_fixture, monkeypatch):
         payload="test",
         evidence="none",
     )
-    setattr(finding, "metadata", meta)
+    finding.metadata = meta
     captured = {}
     async def fake_init(self, *args, **kwargs):
         captured["instance"] = self

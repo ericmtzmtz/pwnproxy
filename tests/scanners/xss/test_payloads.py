@@ -1,10 +1,10 @@
 from pwnproxy.plugins.scanners.xss.payloads import (
-    HTML_BODY_PAYLOADS,
     ATTR_BREAKOUT_PAYLOADS,
-    JS_STRING_PAYLOADS,
-    URL_CONTEXT_PAYLOADS,
     COMMENT_BREAKOUT_PAYLOADS,
+    HTML_BODY_PAYLOADS,
+    JS_STRING_PAYLOADS,
     SVG_NAMESPACE_PAYLOADS,
+    URL_CONTEXT_PAYLOADS,
     get_payloads_for_context,
 )
 

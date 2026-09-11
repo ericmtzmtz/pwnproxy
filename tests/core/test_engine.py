@@ -1,4 +1,3 @@
-import asyncio
 import pytest
 
 from pwnproxy.services.proxy.engine import ProxyEngine

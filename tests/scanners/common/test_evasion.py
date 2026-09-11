@@ -1,14 +1,13 @@
 """Tests for WAF evasion techniques."""
-import pytest
 
 from pwnproxy.shared.scan.evasion import (
     EvasionLevel,
     apply_evasion,
     apply_technique,
+    case_variation,
     double_url_encode,
     html_entity_encode,
     unicode_escape,
-    case_variation,
     whitespace_inject,
 )
 

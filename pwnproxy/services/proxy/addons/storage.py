@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from typing import Callable, Optional
+
 import mitmproxy.http
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 from sqlalchemy.orm import sessionmaker

@@ -39,7 +39,7 @@ class InProcessBus(MessageBus):
             while True:
                 try:
                     topic, data = await q.get()
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     # Empty period — QoS get raises ~every 0.5s; keep blocking
                     # so `async for` waits for the next event (Queue contract).
                     continue

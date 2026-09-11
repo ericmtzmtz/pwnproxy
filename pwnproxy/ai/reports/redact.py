@@ -36,7 +36,7 @@ _SECRET_PAIR_RE = re.compile(
 )
 
 
-def _redact_match(match: "re.Match[str]") -> str:
+def _redact_match(match: re.Match[str]) -> str:
     """Rebuild the match replacing the ``value`` capture with [redacted].
 
     A short auth scheme (Bearer/Basic/Digest) prefix is kept so the reader still

@@ -1,6 +1,8 @@
 import pytest
+
 from pwnproxy.services.session.manager import ScopeConfig
 from pwnproxy.shared.flow_filter import FlowFilter
+
 
 class TestFlowFilter:
     @pytest.fixture

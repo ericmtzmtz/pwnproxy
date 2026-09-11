@@ -3,15 +3,15 @@ from collections.abc import AsyncGenerator
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.stages.xss_stages import (
+    ContextAwareStage,
+    DomStage,
     ReflectedStage,
     StoredStage,
-    DomStage,
-    ContextAwareStage,
 )
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 

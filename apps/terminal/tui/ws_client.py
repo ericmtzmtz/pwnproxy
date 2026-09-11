@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import AsyncIterator, Callable, Optional
+from collections.abc import AsyncIterator, Callable
 
 import websockets
 
@@ -14,7 +14,7 @@ WS_MAX_RETRY = 60.0
 async def stream_traffic(
     host: str,
     api_port: int,
-    on_error: Optional[Callable[[str], None]] = None,
+    on_error: Callable[[str], None] | None = None,
 ) -> AsyncIterator[dict]:
     url = f"ws://{host}:{api_port}/ws/traffic"
     retry = WS_RETRY_DELAY
@@ -39,7 +39,7 @@ async def stream_traffic(
 async def stream_findings(
     host: str,
     api_port: int,
-    on_error: Optional[Callable[[str], None]] = None,
+    on_error: Callable[[str], None] | None = None,
 ) -> AsyncIterator[dict]:
     url = f"ws://{host}:{api_port}/ws/findings"
     retry = WS_RETRY_DELAY

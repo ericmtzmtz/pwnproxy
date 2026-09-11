@@ -2,11 +2,14 @@ from collections.abc import AsyncGenerator
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
-from pwnproxy.shared.scan.stages.command_injection_stages import CommandInjectionStage
-from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.plugins.scanners.command_injection.payloads import (
+    COMMAND_PAYLOADS,
+    WINDOWS_PAYLOADS,
+)
 from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.scanners.command_injection.payloads import COMMAND_PAYLOADS, WINDOWS_PAYLOADS
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.stages.command_injection_stages import CommandInjectionStage
 
 
 class CommandInjectionScanner:

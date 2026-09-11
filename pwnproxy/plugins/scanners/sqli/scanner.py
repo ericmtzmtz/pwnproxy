@@ -1,10 +1,10 @@
 import logging
 from collections.abc import AsyncGenerator
 
+from pwnproxy.plugins.core.base import Finding
+from pwnproxy.plugins.core.chain import DetectionChain
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.plugins.core.chain import DetectionChain
-from pwnproxy.plugins.core.base import Finding
 
 logger = logging.getLogger(__name__)
 

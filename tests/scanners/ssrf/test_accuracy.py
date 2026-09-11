@@ -4,13 +4,13 @@ Regression: previously any response with status < 400 produced a
 ``ssrf-error-based`` finding (huge false-positive flood on the auto-scan).
 Now only a confirmed canary callback emits a finding.
 """
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
+from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint, is_url_like_param
 from pwnproxy.shared.scan.stages.ssrf_stages import SsrfSimpleStage
-from pwnproxy.shared.models import Flow
 
 
 class FakeServer:

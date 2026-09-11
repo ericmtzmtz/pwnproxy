@@ -2,7 +2,6 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
@@ -16,21 +15,21 @@ router = APIRouter(prefix="/api/v1", tags=["repeater"])
 # --- Tab models ---
 
 class RepeaterTabCreate(BaseModel):
-    name: Optional[str] = None
+    name: str | None = None
     raw_request: str = ""
 
 
 class RepeaterTabUpdate(BaseModel):
-    name: Optional[str] = None
-    raw_request: Optional[str] = None
-    last_task_id: Optional[str] = None
+    name: str | None = None
+    raw_request: str | None = None
+    last_task_id: str | None = None
 
 
 class RepeaterTabOut(BaseModel):
     id: int
     name: str
     raw_request: str
-    last_task_id: Optional[str] = None
+    last_task_id: str | None = None
     created_at: str
     updated_at: str
 
@@ -56,8 +55,7 @@ def _load_tabs(session_name: str) -> dict[int, dict]:
         for t in raw:
             tid = t["id"]
             tabs[tid] = t
-            if tid > max_id:
-                max_id = tid
+            max_id = max(max_id, tid)
     _next_ids[session_name] = max_id + 1
     _tab_store[session_name] = tabs
     return tabs
@@ -139,7 +137,7 @@ async def delete_tab(request: Request, tab_id: int):
 
 class RepeaterSendRequest(BaseModel):
     raw_request: str
-    tab_id: Optional[int] = None
+    tab_id: int | None = None
 
 
 class RepeaterSendResponse(BaseModel):
@@ -197,6 +195,6 @@ async def repeater_send(request: Request, body: RepeaterSendRequest):
         elapsed = (time.monotonic() - start) * 1000
         error_result = {"status_code": 0, "headers": {}, "body": "", "duration_ms": round(elapsed, 1), "error": str(e)}
         await store.update(task_id, status="completed", progress=1, result=error_result)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         await engine.close()

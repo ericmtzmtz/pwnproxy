@@ -1,5 +1,5 @@
 """OpenAI adapter: chat completions with native JSON mode."""
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import httpx
 

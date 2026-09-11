@@ -1,5 +1,4 @@
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,7 +10,7 @@ from pwnproxy.transport.rest.app import app
 @pytest.fixture
 def test_app():
     # Setup temporary session manager with proxy_config
-    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True):
         # Mock proxy engine
         proxy_engine = MagicMock()
         proxy_engine.running = False

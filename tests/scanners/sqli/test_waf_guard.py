@@ -127,10 +127,9 @@ async def test_mixed_502_and_sql_500_only_counts_real_triggers():
         async def replay(self, point, payload, timeout=3.0, evasion_level="none"):
             self._calls += 1
             sql_payloads = {p.value for p in get_error_payloads()}
-            if payload in sql_payloads:
-                # every third SQL payload is a 502 (intermittent proxy failure)
-                if self._calls % 3 == 0:
-                    return self._mk(502, "<html>bad gateway</html>")
+            # every third SQL payload is a 502 (intermittent proxy failure)
+            if payload in sql_payloads and self._calls % 3 == 0:
+                return self._mk(502, "<html>bad gateway</html>")
             return await super().replay(point, payload, timeout=timeout, evasion_level=evasion_level)
 
     replayer = MixedReplayer()

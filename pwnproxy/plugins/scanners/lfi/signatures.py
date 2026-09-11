@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 LFI_SIGNATURES: dict[str, list[re.Pattern]] = {
     "unix": [
@@ -35,7 +34,7 @@ LFI_SIGNATURES: dict[str, list[re.Pattern]] = {
 class OsSignatureMatcher:
     """Matches OS type from LFI payload evidence in response body."""
 
-    def match(self, body: str, min_matches: int = 2) -> tuple[Optional[str], Optional[str]]:
+    def match(self, body: str, min_matches: int = 2) -> tuple[str | None, str | None]:
         best_os = None
         best_evidence = None
         best_count = 0
@@ -56,6 +55,6 @@ class OsSignatureMatcher:
         return None, None
 
 
-def detect_os(body: str, min_matches: int = 1) -> tuple[Optional[str], Optional[str]]:
+def detect_os(body: str, min_matches: int = 1) -> tuple[str | None, str | None]:
     """Legacy wrapper — prefer OsSignatureMatcher.match()."""
     return OsSignatureMatcher().match(body, min_matches)

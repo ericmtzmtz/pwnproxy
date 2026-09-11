@@ -2,7 +2,6 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from jinja2 import Environment, PackageLoader, select_autoescape
 
@@ -10,7 +9,7 @@ from pwnproxy.plugins.core.base import Finding
 
 logger = logging.getLogger(__name__)
 
-_env: Optional[Environment] = None
+_env: Environment | None = None
 
 
 def _get_env() -> Environment:
@@ -24,7 +23,7 @@ def _get_env() -> Environment:
 
 
 class ExportEngine:
-    def __init__(self, findings: list[Finding], target_url: str = "", scanners: Optional[list[str]] = None):
+    def __init__(self, findings: list[Finding], target_url: str = "", scanners: list[str] | None = None):
         self.findings = findings
         self.target_url = target_url
         self.scanners = scanners or list({f.scanner for f in findings})
@@ -76,7 +75,7 @@ class ExportEngine:
             version="0.1.0",
         )
 
-    def to_pdf(self, output_path: Optional[str] = None) -> Optional[str]:
+    def to_pdf(self, output_path: str | None = None) -> str | None:
         html = self.to_html()
         try:
             import weasyprint
@@ -95,7 +94,7 @@ class ExportEngine:
             return output_path
         return html
 
-    def write(self, fmt: str, output_path: Optional[str] = None) -> Optional[str]:
+    def write(self, fmt: str, output_path: str | None = None) -> str | None:
         if fmt == "json":
             content = self.to_json()
         elif fmt == "sarif":

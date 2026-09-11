@@ -21,6 +21,9 @@ __pycache__/
 .venv/
 .venv*/
 
+# IDE
+.vscode/
+
 # web-ui
 apps/web/node_modules/
 apps/web/dist/

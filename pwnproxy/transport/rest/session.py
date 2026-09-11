@@ -2,7 +2,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -22,7 +21,7 @@ class ScopeUpdateRequest(BaseModel):
 
     in_scope: list[str] = Field(default_factory=list)
     out_of_scope: list[str] = Field(default_factory=list)
-    enabled: Optional[bool] = None
+    enabled: bool | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -36,8 +35,8 @@ class SessionInfo(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str = ""
-    created_at: Optional[str] = None
-    last_modified: Optional[str] = None
+    created_at: str | None = None
+    last_modified: str | None = None
     active: bool = False
     last_active: bool = False
     request_count: int = 0
@@ -47,8 +46,8 @@ class SessionInfo(BaseModel):
 class ActiveSessionResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    name: Optional[str] = None
-    path: Optional[str] = None
+    name: str | None = None
+    path: str | None = None
     has_unsaved_changes: bool = False
     scope_enabled: bool = False
 
@@ -56,14 +55,14 @@ class ActiveSessionResponse(BaseModel):
 class SessionManageRequest(BaseModel):
     action: str = ""
     name: str = ""
-    new_name: Optional[str] = None
+    new_name: str | None = None
 
 
 class SessionManageResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
-    message: Optional[str] = None
+    status: str | None = None
+    message: str | None = None
 
 
 class ScopeResponse(BaseModel):
@@ -170,7 +169,7 @@ async def manage_session(request: Request, body: SessionManageRequest):
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.get("/sessions/scope", response_model=ScopeResponse)

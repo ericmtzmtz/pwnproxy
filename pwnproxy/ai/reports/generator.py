@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -41,7 +42,7 @@ class ReportGenerator:
         out_dir: Path,
         audience: str = "technical",
         formats: tuple[str, ...] | list[str] = ("md",),
-        progress: Optional[ProgressFn] = None,
+        progress: ProgressFn | None = None,
     ) -> dict[str, Any]:
         if not findings:
             raise ValueError(
@@ -196,7 +197,7 @@ class ReportGenerator:
         audience: str,
     ) -> dict:
         sections = []
-        for group, narrative in zip(groups, narratives):
+        for group, narrative in zip(groups, narratives, strict=False):
             request_data = group.get("request_data")
             request_data_red = redact_request_data(request_data)
             sections.append({
@@ -211,7 +212,7 @@ class ReportGenerator:
                 "occurrences": group.get("occurrences", 1),
                 "payloads": [redact_secrets(str(p)) for p in group.get("payloads", [])],
                 "flagged": bool(group.get("flagged")),
-                "evidence": redact_secrets((group.get("evidence") or ""))[:4000],
+                "evidence": redact_secrets(group.get("evidence") or "")[:4000],
                 "request_data_json": (
                     json.dumps(request_data_red, indent=2, default=str)[:4000] if request_data_red else ""
                 ),
@@ -226,7 +227,7 @@ class ReportGenerator:
             "subtitle": f"Session: {self._session_name}",
             "session": self._session_name,
             "audience": audience,
-            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+            "generated_at": datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
             "flagged_count": sum(1 for s in sections if s["flagged"]),
             "summary": aggregates,
             "exec_summary": exec_summary,

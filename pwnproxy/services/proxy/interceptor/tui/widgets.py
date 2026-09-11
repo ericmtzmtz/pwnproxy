@@ -1,5 +1,4 @@
 from textual.widgets import Static, TextArea
-from textual.widgets._toggle import Button
 
 
 class HeaderInput(Static):

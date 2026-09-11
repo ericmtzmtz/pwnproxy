@@ -1,13 +1,12 @@
 import builtins
 import json
-from pathlib import Path
 
 import typer
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 
-from pwnproxy.services.session.manager import SESSIONS_ROOT, SessionManager, ScopeConfig
+from pwnproxy.services.session.manager import SESSIONS_ROOT, SessionManager
 
 console = Console()
 app = typer.Typer(help="Manage proxy sessions (save/load proxy state)", no_args_is_help=True)
@@ -110,4 +109,4 @@ def rename(
         console.print(f"[green]Renamed session[/] {old} -> {new}")
     except ValueError as e:
         console.print(f"[red]{e}[/]")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e

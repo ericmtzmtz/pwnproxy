@@ -1,9 +1,7 @@
-import tempfile
-from pathlib import Path
 
 import pytest
 
-from pwnproxy.services.session.manager import ScopeConfig, SessionManager, SESSIONS_ROOT
+from pwnproxy.services.session.manager import ScopeConfig, SessionManager
 
 
 @pytest.fixture
@@ -124,9 +122,9 @@ class TestUpdateScopeOwnerAPI:
     matrix). It must mutate config, persist, and fire the change handler."""
 
     def _manager(self, monkeypatch, tmp_path):
-        from unittest.mock import AsyncMock
         import asyncio
-        from pwnproxy.services.session.manager import LAST_SESSION_FILE
+        from unittest.mock import AsyncMock
+
         monkeypatch.setattr("pwnproxy.services.session.manager.SESSIONS_ROOT", tmp_path)
         monkeypatch.setattr("pwnproxy.services.session.manager.LAST_SESSION_FILE", tmp_path / ".last_session")
         m = SessionManager.__new__(SessionManager)

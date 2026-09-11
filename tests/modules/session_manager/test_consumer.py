@@ -1,13 +1,11 @@
 import asyncio
-import tempfile
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from pwnproxy.services.session.consumer import SessionConsumer
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
-from pwnproxy.services.session.consumer import SessionConsumer
 
 
 @pytest.mark.asyncio

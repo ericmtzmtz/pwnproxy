@@ -1,13 +1,13 @@
 import asyncio
-from typing import AsyncIterator, List, Tuple
+from collections.abc import AsyncIterator
 
 
 async def read_wordlist(path: str) -> AsyncIterator[str]:
     """Yield lines from a wordlist file asynchronously."""
     loop = asyncio.get_running_loop()
 
-    def _read() -> List[str]:
-        with open(path, "r", encoding="utf-8", errors="replace") as f:
+    def _read() -> list[str]:
+        with open(path, encoding="utf-8", errors="replace") as f:
             return [line.rstrip("\r\n") for line in f if line.strip()]
 
     lines = await loop.run_in_executor(None, _read)
@@ -18,7 +18,7 @@ async def read_wordlist(path: str) -> AsyncIterator[str]:
 class SniperGenerator:
     """Sniper mode: one wordlist applied to markers sequentially."""
 
-    def __init__(self, template: str, markers: list[Tuple[int, str]], wordlist: List[str]):
+    def __init__(self, template: str, markers: list[tuple[int, str]], wordlist: list[str]):
         self._template = template
         self._markers = markers
         self._wordlist = wordlist
@@ -27,7 +27,7 @@ class SniperGenerator:
         return self._generate()
 
     async def _generate(self) -> AsyncIterator[tuple[str, str]]:
-        for idx, base_value in self._markers:
+        for idx, _base_value in self._markers:
             for payload in self._wordlist:
                 request = self._template.format(
                     *[payload if i == idx else self._markers[i][1] for i in range(len(self._markers))]
@@ -42,7 +42,7 @@ class SniperGenerator:
 class ClusterBombGenerator:
     """Cluster Bomb mode: N wordlists permuted across N markers."""
 
-    def __init__(self, template: str, markers: list[Tuple[int, str]], wordlists: List[List[str]]):
+    def __init__(self, template: str, markers: list[tuple[int, str]], wordlists: list[list[str]]):
         self._template = template
         self._markers = markers
         self._wordlists = wordlists

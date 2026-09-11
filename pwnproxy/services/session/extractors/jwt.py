@@ -1,9 +1,8 @@
 import json as json_mod
 import logging
-from typing import Optional
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.session.models import TokenCandidate
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +49,7 @@ def extract(flow: Flow) -> list[TokenCandidate]:
     return candidates
 
 
-def _get_text_body(flow: Flow) -> Optional[str]:
+def _get_text_body(flow: Flow) -> str | None:
     if flow.request_body is None:
         return None
     ct = flow.request_headers.get("content-type", "").lower()

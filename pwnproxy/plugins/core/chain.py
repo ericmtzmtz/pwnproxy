@@ -14,15 +14,15 @@ Example:
         ]
 """
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
 
+from pwnproxy.plugins.core.base import Finding
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.plugins.core.base import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,6 @@ class DetectionStage(ABC):
         Returns:
             StageResult with findings and confirmed injection points
         """
-        pass
     
     def should_run(self, depth: DetectionDepth) -> bool:
         """Check if this stage should run at the given depth."""
@@ -80,7 +79,7 @@ class DetectionStage(ABC):
         }
         return depth_order[depth] >= depth_order[self.min_depth]
 
-    def set_deadline(self, deadline: Optional[float]) -> None:
+    def set_deadline(self, deadline: float | None) -> None:
         """Receive the absolute intra-stage deadline (monotonic seconds).
 
         ``BudgetChain`` calls this before each stage runs so stages that test
@@ -174,9 +173,6 @@ class DetectionChain:
                 )
                 continue
 
-
-# Import time for BudgetChain
-import time
 
 # Convenience function for creating chains
 def create_chain(

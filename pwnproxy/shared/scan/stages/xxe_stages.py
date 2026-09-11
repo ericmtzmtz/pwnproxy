@@ -11,11 +11,11 @@ import logging
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
+from pwnproxy.shared.canary import get_registry
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint, _header
 from pwnproxy.shared.scan.protocols import XMLMutableReplayer
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
-from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -171,9 +171,7 @@ class JSONMutateStage(DetectionStage):
             for sig in XML_ERROR_SIGNATURES:
                 if sig.lower() in body_lower:
                     return True
-        if resp.status_code < 300 and "xml" in resp.headers.get("content-type", "").lower():
-            return True
-        return False
+        return bool(resp.status_code < 300 and "xml" in resp.headers.get("content-type", "").lower())
 
     @staticmethod
     def _point_key(point: InjectionPoint) -> tuple:

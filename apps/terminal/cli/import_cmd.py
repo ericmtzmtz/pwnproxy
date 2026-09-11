@@ -1,7 +1,7 @@
 import json
 import logging
+import re
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -15,7 +15,7 @@ app = typer.Typer(help="Import configurations from other tools")
 @app.command()
 def burp(
     config: str = typer.Argument(..., help="Path to Burp Suite project JSON config file"),
-    out: Optional[str] = typer.Option(None, "--out", "-o", help="Output pwnproxy scope config path"),
+    out: str | None = typer.Option(None, "--out", "-o", help="Output pwnproxy scope config path"),
 ):
     path = Path(config)
     if not path.exists():
@@ -26,7 +26,7 @@ def burp(
         data = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as e:
         console.print(f"[red]Invalid JSON:[/red] {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     scope = _parse_burp_scope(data)
     if not scope:
@@ -39,7 +39,7 @@ def burp(
         console.print(f"[green]Written to:[/green] {out}")
 
 
-def _parse_burp_scope(data: dict) -> Optional[dict]:
+def _parse_burp_scope(data: dict) -> dict | None:
     target = data.get("target", {})
     scope = target.get("scope", {})
     if not scope:
@@ -60,8 +60,6 @@ def _parse_burp_scope(data: dict) -> Optional[dict]:
     }
 
 
-import re
-
 _REGEX_META = re.compile(r"\\.|[.*+?^${}()|[\]\\\\]")
 
 
@@ -73,7 +71,7 @@ def _unescape_regex(s: str) -> str:
     return s.replace("\\.", ".").replace("\\/", "/").replace("\\*", "*")
 
 
-def _parse_url_rule(rule: dict) -> Optional[str]:
+def _parse_url_rule(rule: dict) -> str | None:
     if "prefix" in rule:
         return rule["prefix"]
     if "url" in rule:
@@ -104,11 +102,8 @@ def _parse_url_rule(rule: dict) -> Optional[str]:
     return f"{protocol}://{host_clean}{port_suffix}{file_clean}"
 
 
-def _write_scope(scope: dict, out_path: Optional[str] = None) -> None:
-    if out_path:
-        out = Path(out_path)
-    else:
-        out = Path.home() / ".pwnproxy" / "burp_scope.json"
+def _write_scope(scope: dict, out_path: str | None = None) -> None:
+    out = Path(out_path) if out_path else Path.home() / ".pwnproxy" / "burp_scope.json"
 
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(scope, indent=2), encoding="utf-8")

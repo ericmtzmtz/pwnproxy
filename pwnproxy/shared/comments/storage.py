@@ -1,8 +1,7 @@
 import logging
-from datetime import datetime, timezone
-from typing import Optional, List
+from datetime import UTC, datetime
 
-from sqlalchemy import select, func, delete
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -26,7 +25,7 @@ class FlowCommentStorage:
         from sqlalchemy import text as sql_text
         async with self._engine.begin() as conn:
             cols = await conn.execute(sql_text("SELECT name FROM pragma_table_info('flow_comments')"))
-            names = {row[0] for row in cols}
+            {row[0] for row in cols}
             # Example future columns (currently none). Keep placeholder for future expansions.
             # for column, ddl in (("new_col", "TEXT"),):
             #     if column not in names:
@@ -36,13 +35,13 @@ class FlowCommentStorage:
     def _row_dict(self, record: FlowCommentORM) -> dict:
         return {c.name: getattr(record, c.name) for c in FlowCommentORM.__table__.columns}
 
-    async def create(self, flow_id: int, body: str, kind: str = "note", resolved: bool = False, author: Optional[str] = None) -> dict:
+    async def create(self, flow_id: int, body: str, kind: str = "note", resolved: bool = False, author: str | None = None) -> dict:
         kind = kind.lower()
         if kind not in ("note", "flag", "todo"):
             raise ValueError(f"Invalid comment kind: {kind}")
         if not body:
             raise ValueError("Comment body cannot be empty")
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         record = FlowCommentORM(
             flow_id=flow_id,
             body=body,
@@ -55,24 +54,23 @@ class FlowCommentStorage:
         async with self._factory() as session:
             persisted = await session.merge(record)
             await session.flush()
-            row_id = persisted.id
             await session.commit()
         return self._row_dict(persisted)
 
-    async def list_by_flow(self, flow_id: int) -> List[dict]:
+    async def list_by_flow(self, flow_id: int) -> list[dict]:
         async with self._factory() as session:
             query = select(FlowCommentORM).where(FlowCommentORM.flow_id == flow_id).order_by(FlowCommentORM.id.asc())
             result = await session.execute(query)
             rows = result.scalars().all()
             return [self._row_dict(r) for r in rows]
 
-    async def get(self, comment_id: int) -> Optional[dict]:
+    async def get(self, comment_id: int) -> dict | None:
         async with self._factory() as session:
             result = await session.execute(select(FlowCommentORM).where(FlowCommentORM.id == comment_id))
             record = result.scalar_one_or_none()
             return self._row_dict(record) if record else None
 
-    async def update(self, comment_id: int, body: Optional[str] = None, kind: Optional[str] = None, resolved: Optional[bool] = None) -> Optional[dict]:
+    async def update(self, comment_id: int, body: str | None = None, kind: str | None = None, resolved: bool | None = None) -> dict | None:
         async with self._factory() as session:
             result = await session.execute(select(FlowCommentORM).where(FlowCommentORM.id == comment_id))
             record = result.scalar_one_or_none()
@@ -87,7 +85,7 @@ class FlowCommentStorage:
                 record.kind = kind
             if resolved is not None:
                 record.resolved = resolved
-            record.updated_at = datetime.now(timezone.utc)
+            record.updated_at = datetime.now(UTC)
             await session.commit()
             return self._row_dict(record)
 

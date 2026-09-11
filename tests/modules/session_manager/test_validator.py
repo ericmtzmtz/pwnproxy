@@ -13,8 +13,9 @@ class TestJwtDecode:
         assert result["status"] == "valid"
 
     def test_decode_expired_jwt(self):
-        import jwt as pyjwt
         import time
+
+        import jwt as pyjwt
         expired = pyjwt.encode(
             {"sub": "test", "exp": int(time.time()) - 3600},
             "secret",

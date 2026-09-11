@@ -28,15 +28,12 @@ _METACHARS = (";", "|", "`", "$(", "&")
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def do_GET(self):  # noqa: N802 (http.server API)
+    def do_GET(self):
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
         value = (params.get("cmd") or [""])[0]
 
-        if parsed.path == "/cmd" and any(m in value for m in _METACHARS):
-            body = CMD_OUTPUT
-        else:
-            body = SAFE_BODY
+        body = CMD_OUTPUT if parsed.path == "/cmd" and any(m in value for m in _METACHARS) else SAFE_BODY
 
         data = body.encode("utf-8")
         self.send_response(200)

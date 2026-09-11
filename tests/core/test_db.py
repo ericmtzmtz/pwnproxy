@@ -1,5 +1,6 @@
 from pwnproxy.shared.db import truncate_body
 
+
 def test_truncate_body():
     body, trunc = truncate_body(b"hello", max_size=10)
     assert body == b"hello"

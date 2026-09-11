@@ -1,8 +1,6 @@
-import re
 import logging
+import re
 import time
-from typing import Optional
-
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -11,16 +9,16 @@ from pwnproxy.plugins.scanners.sqli.payloads import (
     ESCALATION_BOOLEAN_PAIRS,
     get_control_payloads,
 )
+from pwnproxy.shared.canary import get_registry
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import InjectionPoint
+from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.scan.response_compare import (
     Fingerprint,
     is_boolean_differentiable,
     similarity,
 )
-from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.params import InjectionPoint
-from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.scan.waf import is_intermediary_status, looks_like_block_page
-from pwnproxy.shared.canary import get_registry
 
 logger = logging.getLogger(__name__)
 
@@ -50,9 +48,7 @@ def _stable_confirmation(round1_true, round1_false, round2_true, round2_false) -
     if _text_similarity(round1_false, round2_false) < CONSISTENT_ROUND_SIMILARITY:
         return False
     # 4. second round differentiable
-    if not _pair_differentiable(round2_true, round2_false):
-        return False
-    return True
+    return _pair_differentiable(round2_true, round2_false)
 
 
 def _text_similarity(resp_a, resp_b) -> float:
@@ -239,12 +235,12 @@ class BooleanBlindStage(DetectionStage):
     min_depth = DetectionDepth.STANDARD
     capability = "boolean-blind-sqli"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", deadline: Optional[float] = None):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", deadline: float | None = None):
         self._replayer = replayer
         self._evasion = evasion_level
         self._deadline = deadline
 
-    def set_deadline(self, deadline: Optional[float]) -> None:
+    def set_deadline(self, deadline: float | None) -> None:
         self._deadline = deadline
 
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
@@ -266,7 +262,7 @@ class BooleanBlindStage(DetectionStage):
             true1 = await self._replayer.replay(point, canonical_true, timeout=5.0, evasion_level=self._evasion)
             false1 = await self._replayer.replay(point, canonical_false, timeout=5.0, evasion_level=self._evasion)
 
-            pair: Optional[tuple[str, str]] = None
+            pair: tuple[str, str] | None = None
             round1_true = true1
             round1_false = false1
 
@@ -430,7 +426,7 @@ def _point_key(point: InjectionPoint) -> tuple:
     return (point.method, point.host + point.path, point.name, point.location)
 
 
-def _check_error_signatures(body: str, signatures: dict[str, list]) -> Optional[tuple[str, str]]:
+def _check_error_signatures(body: str, signatures: dict[str, list]) -> tuple[str, str] | None:
     for dbms, patterns in signatures.items():
         for pat in patterns:
             m = pat.search(body)
@@ -445,7 +441,7 @@ async def _check_time_based(
     baseline_ms: float,
     time_payloads: list,
     evasion_level: str = "none",
-) -> Optional[tuple[Finding, str]]:
+) -> tuple[Finding, str] | None:
     seen_dbms: set[str] = set()
     for pl in time_payloads:
         if pl.dbms in seen_dbms:

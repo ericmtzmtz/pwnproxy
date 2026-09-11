@@ -4,10 +4,9 @@ import time
 import httpx
 import pytest
 
-from pwnproxy.shared.scan.stages.sqli_stages import BooleanBlindStage
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
-
+from pwnproxy.shared.scan.stages.sqli_stages import BooleanBlindStage
 
 TRUE_BODY = "<html><body><h1>Results</h1><p>order id=42</p></body></html>"
 FALSE_BODY = "<html><body><h1>Error</h1><p>no rows found</p></body></html>"
@@ -52,7 +51,7 @@ class FakeBooleanReplayer:
         self._clean_count = 0
 
     def _is_canonical(self, payload):
-        return payload == CANONICAL_TRUE or payload == CANONICAL_FALSE
+        return payload in (CANONICAL_TRUE, CANONICAL_FALSE)
 
     @staticmethod
     def _is_true(payload):

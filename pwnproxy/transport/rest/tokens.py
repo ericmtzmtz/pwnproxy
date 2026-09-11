@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
@@ -9,38 +9,38 @@ router = APIRouter(prefix="/api/v1", tags=["tokens"])
 class TokenSummary(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    id: Optional[int] = None
-    token_type: Optional[str] = None
-    token_value: Optional[str] = None
-    label: Optional[str] = None
-    status: Optional[str] = None
-    source_url: Optional[str] = None
-    ref_count: Optional[int] = None
-    first_seen: Optional[str] = None
-    last_seen: Optional[str] = None
-    expires_at: Optional[str] = None
+    id: int | None = None
+    token_type: str | None = None
+    token_value: str | None = None
+    label: str | None = None
+    status: str | None = None
+    source_url: str | None = None
+    ref_count: int | None = None
+    first_seen: str | None = None
+    last_seen: str | None = None
+    expires_at: str | None = None
 
 
 class TokenDetail(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    id: Optional[int] = None
-    token_type: Optional[str] = None
-    token_value: Optional[str] = None
-    label: Optional[str] = None
-    status: Optional[str] = None
+    id: int | None = None
+    token_type: str | None = None
+    token_value: str | None = None
+    label: str | None = None
+    status: str | None = None
     decoded_header: Any = None
     decoded_payload: Any = None
-    source_url: Optional[str] = None
-    source_flow_id: Optional[int] = None
-    ref_count: Optional[int] = None
-    first_seen: Optional[str] = None
-    last_seen: Optional[str] = None
-    expires_at: Optional[str] = None
+    source_url: str | None = None
+    source_flow_id: int | None = None
+    ref_count: int | None = None
+    first_seen: str | None = None
+    last_seen: str | None = None
+    expires_at: str | None = None
 
 
 @router.get("/tokens", response_model=list[TokenSummary])
-async def list_tokens(request: Request, token_type: Optional[str] = None, search: Optional[str] = None):
+async def list_tokens(request: Request, token_type: str | None = None, search: str | None = None):
     storage = request.app.state.token_storage
     tokens = await storage.query(token_type=token_type, search=search)
     return [

@@ -1,9 +1,10 @@
 """Crawler tests: extractor, normalización, scope, storage, API/WS, worker E2E."""
 import asyncio
+import contextlib
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,7 +17,6 @@ from pwnproxy.services.crawler.extractor import (
 )
 from pwnproxy.services.crawler.storage import DiscoveredURLStorage
 from pwnproxy.services.session.manager import ScopeConfig
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -49,10 +49,7 @@ async def _make_storage(tmpdir: str | None = None):
     else:
         path = Path("/dev/null")  # unused with :memory:
         path = None
-    if path is not None:
-        url = f"sqlite+aiosqlite:///{path}"
-    else:
-        url = "sqlite+aiosqlite:///:memory:"
+    url = f"sqlite+aiosqlite:///{path}" if path is not None else "sqlite+aiosqlite:///:memory:"
     engine = create_async_engine(url, echo=False)
     st = DiscoveredURLStorage(engine)
     await st.create_table()
@@ -417,7 +414,7 @@ class TestWorkerE2E:
             proc.terminate()
             try:
                 await asyncio.wait_for(proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 proc.kill()
                 await proc.wait()
             await results_bridge.stop()
@@ -445,10 +442,8 @@ class TestWorkerE2E:
 
             # Kill the worker
             proc.kill()
-            try:
+            with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                pass
 
             # Main process feed server still works (publish to no clients = no error)
             await feed_server.publish("crawler.feed", _make_flow())
@@ -500,6 +495,7 @@ class TestScopeUpdatedEvent:
     def test_scope_updated_replaces_scope(self):
         """_on_feed_event('scope.updated', ...) replaces the worker's scope."""
         from argparse import Namespace
+
         from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
 
         args = Namespace(
@@ -522,6 +518,7 @@ class TestScopeUpdatedEvent:
     def test_scope_updated_affects_filtering(self):
         """After scope.updated, is_in_scope uses the new scope."""
         from argparse import Namespace
+
         from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
 
         args = Namespace(
@@ -550,6 +547,7 @@ class TestScopeUpdatedEvent:
         snapshot (review blocker: live scope update must affect active jobs).
         """
         from argparse import Namespace
+
         from pwnproxy.services.crawler.crawler_worker import CrawlerWorker
 
         args = Namespace(

@@ -1,11 +1,11 @@
 import asyncio
 import copy
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.proxy.interceptor.addon import InterceptorAddon
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +16,10 @@ class FlowSnapshot:
     method: str
     url: str
     request_headers: dict[str, str]
-    request_body: Optional[bytes]
-    status_code: Optional[int]
-    response_headers: Optional[dict[str, str]]
-    response_body: Optional[bytes]
+    request_body: bytes | None
+    status_code: int | None
+    response_headers: dict[str, str] | None
+    response_body: bytes | None
 
     @classmethod
     def from_flow(cls, flow: Flow) -> "FlowSnapshot":
@@ -43,7 +43,7 @@ class InterceptorController:
         self._on_intercepted = on_intercepted
         self._pending: dict[str, Flow] = {}
         self._snapshots: dict[str, FlowSnapshot] = {}
-        self._consumer_task: Optional[asyncio.Task] = None
+        self._consumer_task: asyncio.Task | None = None
 
     @property
     def pending_count(self) -> int:
@@ -135,5 +135,5 @@ class InterceptorController:
     def toggle(self) -> None:
         self.set_enabled(not self._addon.enabled)
 
-    def get_snapshot(self, flow_id: str) -> Optional[FlowSnapshot]:
+    def get_snapshot(self, flow_id: str) -> FlowSnapshot | None:
         return self._snapshots.get(flow_id)

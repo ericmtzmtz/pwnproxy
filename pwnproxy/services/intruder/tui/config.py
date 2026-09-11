@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.containers import Vertical
-from textual.widgets import Button, Input, Label, Select, Static
+from textual.widgets import Button, Input, Select, Static
 
 
 class IntruderConfig(Vertical):

@@ -1,10 +1,10 @@
 """DNS callback server for OOB vulnerability confirmation."""
 import asyncio
+import contextlib
 import logging
 import os
 import socket
 import struct
-from typing import Optional
 
 from pwnproxy.shared.canary import get_registry
 
@@ -31,9 +31,9 @@ class DNSCallbackServer:
         self.host = host
         self.port = port
         self.domain = domain
-        self._socket: Optional[socket.socket] = None
+        self._socket: socket.socket | None = None
         self._running = False
-        self._task: Optional[asyncio.Task] = None
+        self._task: asyncio.Task | None = None
     
     async def start(self) -> None:
         """Start the DNS callback server."""
@@ -69,10 +69,8 @@ class DNSCallbackServer:
         self._running = False
         if self._task:
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError):
                 await self._task
-            except asyncio.CancelledError:
-                pass
         if self._socket:
             self._socket.close()
         logger.info("OOB DNS callback server stopped")
@@ -130,7 +128,7 @@ class DNSCallbackServer:
         except Exception as e:
             logger.error("Error handling DNS query: %s", e)
     
-    def _parse_dns_query(self, data: bytes) -> Optional[tuple]:
+    def _parse_dns_query(self, data: bytes) -> tuple | None:
         """Parse DNS query packet.
         
         Returns:
@@ -213,7 +211,7 @@ class DNSCallbackServer:
 
 
 # Global server instance
-_server: Optional[DNSCallbackServer] = None
+_server: DNSCallbackServer | None = None
 
 
 async def get_server() -> DNSCallbackServer:

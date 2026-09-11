@@ -1,7 +1,6 @@
 """Transparent weighted heuristic scorer for findings (v0)."""
 import logging
 from dataclasses import dataclass, field
-from typing import Optional
 
 from pwnproxy.ai.triage.config import TriageConfig
 
@@ -18,7 +17,7 @@ class HeuristicResult:
     features: dict = field(default_factory=dict)
 
 
-def score_finding(row: dict, config: Optional[TriageConfig] = None) -> HeuristicResult:
+def score_finding(row: dict, config: TriageConfig | None = None) -> HeuristicResult:
     """Score a finding row dict. Pure function: no DB, no LLM, deterministic."""
     cfg = config or TriageConfig()
     w = cfg.weights

@@ -5,8 +5,8 @@ import pytest
 
 from pwnproxy.ai.llm.config import load_llm_config
 from pwnproxy.ai.llm.errors import LLMConfigError
-from pwnproxy.ai.llm.usage import UsageLedger, default_ledger_engine
 from pwnproxy.ai.llm.models import LLMResponse
+from pwnproxy.ai.llm.usage import UsageLedger
 
 
 def _write_config(tmp_path: Path, content: str) -> Path:
@@ -70,6 +70,7 @@ async def test_ledger_records_ok_and_error(tmp_path):
     await ledger.record_ok(LLMResponse(text="t", provider="ollama", model="llama3.2", input_tokens=3, output_tokens=4, latency_ms=9), "sum")
     await ledger.record_error("openai", "error", "HTTP 503", "sum2")
     from sqlalchemy import select
+
     from pwnproxy.ai.llm.usage import UsageRecordORM
 
     async with sa_async.AsyncSession(engine) as session:

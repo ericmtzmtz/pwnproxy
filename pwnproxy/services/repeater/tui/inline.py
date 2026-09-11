@@ -1,14 +1,13 @@
 from datetime import datetime
-from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Vertical
 from textual.widgets import DataTable, Label
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.repeater.integration import format_flow_as_raw_request
 from pwnproxy.services.repeater.tui.tab import RepeaterTab
 from pwnproxy.services.repeater.tui.viewer import ResponseViewer
+from pwnproxy.shared.models import Flow
 
 
 class RepeaterTable(DataTable):
@@ -46,7 +45,7 @@ class InlineRepeater(Vertical):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._requests: dict[str, dict] = {}
-        self._current_id: Optional[str] = None
+        self._current_id: str | None = None
         self._row_counter = 0
 
     def compose(self) -> ComposeResult:
@@ -105,7 +104,6 @@ class InlineRepeater(Vertical):
         status = req_data.get("status_code") or flow.status_code or ""
         resp_size = req_data.get("response_size")
         dur = req_data.get("duration_ms")
-        ts = ""
         parts = [method, path]
         if status:
             parts.append(f"[{status}]")
@@ -124,7 +122,7 @@ class InlineRepeater(Vertical):
 
         self._current_id = row_key
         req = self._requests[row_key]
-        flow = req["flow"]
+        req["flow"]
 
         tab = self.query_one("#rep-editor-viewer", RepeaterTab)
         tab.display = True

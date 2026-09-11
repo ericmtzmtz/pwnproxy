@@ -1,12 +1,11 @@
-import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from sqlalchemy import JSON, LargeBinary, Text, event
 from sqlalchemy.engine import Engine
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.sql import func
 
 
@@ -22,9 +21,9 @@ class FlowCommentORM(Base):
     body: Mapped[str] = mapped_column(Text)
     kind: Mapped[str] = mapped_column(default="note")
     resolved: Mapped[bool] = mapped_column(default=False)
-    author: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
-    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    author: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
 class FlowRecord(Base):
@@ -35,20 +34,20 @@ class FlowRecord(Base):
     # Request
     method: Mapped[str]
     url: Mapped[str]
-    request_headers: Mapped[Dict[str, Any]] = mapped_column(JSON)
-    request_body: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    request_headers: Mapped[dict[str, Any]] = mapped_column(JSON)
+    request_body: Mapped[bytes | None] = mapped_column(LargeBinary)
     request_body_truncated: Mapped[bool] = mapped_column(default=False)
     
     # Response
-    status_code: Mapped[Optional[int]]
-    response_headers: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON)
-    response_body: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    status_code: Mapped[int | None]
+    response_headers: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    response_body: Mapped[bytes | None] = mapped_column(LargeBinary)
     response_body_truncated: Mapped[bool] = mapped_column(default=False)
     
     # Metadata
     timestamp: Mapped[datetime] = mapped_column(default=func.now())
-    duration_ms: Mapped[Optional[float]]
-    error: Mapped[Optional[str]]
+    duration_ms: Mapped[float | None]
+    error: Mapped[str | None]
     tls: Mapped[bool] = mapped_column(default=False)
 
 
@@ -63,7 +62,7 @@ def ensure_db_dir(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def create_engine(db_path: Optional[str] = None, session_path: Optional[str] = None) -> AsyncEngine:
+def create_engine(db_path: str | None = None, session_path: str | None = None) -> AsyncEngine:
     if session_path is not None:
         db_path_obj = Path(session_path) / "traffic.db"
     elif db_path is None:
@@ -83,7 +82,7 @@ async def init_db(engine: AsyncEngine) -> None:
         await conn.run_sync(Base.metadata.create_all)
 
 
-def truncate_body(body: bytes | None, max_size: int = 1_048_576) -> Tuple[bytes | None, bool]:
+def truncate_body(body: bytes | None, max_size: int = 1_048_576) -> tuple[bytes | None, bool]:
     """Truncate body to max_size. Returns (truncated_body, is_truncated)."""
     if body is None:
         return None, False

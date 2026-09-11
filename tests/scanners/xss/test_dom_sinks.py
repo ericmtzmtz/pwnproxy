@@ -1,12 +1,10 @@
 """Tests for DOM sink detection (static, no JS execution)."""
-import pytest
 
 from pwnproxy.plugins.scanners.xss.dom_sinks import (
-    find_sinks,
-    find_sink_snippet,
     find_param_location_sinks,
+    find_sink_snippet,
+    find_sinks,
 )
-
 
 CANARY = "pwnxss-domtest"
 

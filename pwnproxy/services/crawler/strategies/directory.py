@@ -9,16 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
-from pwnproxy.services.crawler.fetcher import Fetcher as _DefaultFetcher, learn_baseline
+from pwnproxy.services.crawler.fetcher import Fetcher as _DefaultFetcher
+from pwnproxy.services.crawler.fetcher import learn_baseline
 from pwnproxy.shared.observability import gen_correlation_id, set_correlation_id
 
 if TYPE_CHECKING:
     from pwnproxy.services.crawler.events import EventPublisher
-    from pwnproxy.services.crawler.storage import DiscoveredURLStorage
     from pwnproxy.services.crawler.lifecycle import BruteforceStartConfig
+    from pwnproxy.services.crawler.storage import DiscoveredURLStorage
     from pwnproxy.services.jobs.lifecycle import JobLifecycle
     from pwnproxy.services.session.manager import ScopeConfig
 
@@ -27,13 +28,13 @@ logger = logging.getLogger(__name__)
 
 async def run_bruteforce(
     job_id: int | None,
-    config: "BruteforceStartConfig",
+    config: BruteforceStartConfig,
     *,
-    scope: "ScopeConfig",
+    scope: ScopeConfig,
     ssl_insecure: bool,
-    storage: "DiscoveredURLStorage | None",
-    lifecycle: "JobLifecycle | None",
-    events: "EventPublisher",
+    storage: DiscoveredURLStorage | None,
+    lifecycle: JobLifecycle | None,
+    events: EventPublisher,
     state: dict,
     fetcher_cls=None,
 ) -> None:
@@ -77,7 +78,7 @@ async def run_bruteforce(
             errors = 0
             skipped = 0
             soft404_filtered = 0
-            last_progress = datetime.now(timezone.utc)
+            last_progress = datetime.now(UTC)
 
             async def _probe_one(url: str) -> tuple[str, tuple[int, int, str] | None, str]:
                 async with sem:
@@ -101,7 +102,7 @@ async def run_bruteforce(
                 tasks = [asyncio.create_task(_probe_one(u)) for u, _b in batch]
                 results = await asyncio.gather(*tasks)
 
-                for (url, base), (_u, probe_result, reason) in zip(batch, results):
+                for (url, base), (_u, probe_result, reason) in zip(batch, results, strict=False):
                     if reason == "stopped":
                         stopped_cooperatively = True
                         skipped += 1
@@ -140,7 +141,7 @@ async def run_bruteforce(
                             "base_url": base + '/',
                         })
 
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 if (now - last_progress).total_seconds() >= 1.0:
                     await events.bruteforce_progress(job_id, {
                         "probed": probed, "found": found, "errors": errors,

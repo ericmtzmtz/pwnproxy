@@ -1,7 +1,7 @@
 """Pydantic models shared across the LLM layer."""
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class LLMMessage(BaseModel):

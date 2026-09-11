@@ -1,9 +1,10 @@
+from typing import Any
 from urllib.parse import urlparse
-from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete as sa_delete, select, func
+from sqlalchemy import delete as sa_delete
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
@@ -15,28 +16,28 @@ router = APIRouter(prefix="/api/v1", tags=["traffic"])
 class FlowOut(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    id: Optional[int] = None
-    method: Optional[str] = None
-    url: Optional[str] = None
-    request_headers: Optional[dict[str, Any]] = None
-    request_body: Optional[str] = None
-    request_body_truncated: Optional[bool] = None
-    status_code: Optional[int] = None
-    response_headers: Optional[dict[str, Any]] = None
-    response_body: Optional[str] = None
-    response_body_truncated: Optional[bool] = None
-    timestamp: Optional[str] = None
-    duration_ms: Optional[float] = None
-    error: Optional[str] = None
-    tls: Optional[bool] = None
-    comment_count: Optional[int] = None
+    id: int | None = None
+    method: str | None = None
+    url: str | None = None
+    request_headers: dict[str, Any] | None = None
+    request_body: str | None = None
+    request_body_truncated: bool | None = None
+    status_code: int | None = None
+    response_headers: dict[str, Any] | None = None
+    response_body: str | None = None
+    response_body_truncated: bool | None = None
+    timestamp: str | None = None
+    duration_ms: float | None = None
+    error: str | None = None
+    tls: bool | None = None
+    comment_count: int | None = None
 
 
 class OutscopeResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
-    message: Optional[str] = None
+    status: str | None = None
+    message: str | None = None
     out_of_scope: list[str] = Field(default_factory=list)
 
 
@@ -44,13 +45,13 @@ class CommentCreate(BaseModel):
     body: str = Field(..., min_length=1)
     kind: str = Field(default="note")
     resolved: bool = False
-    author: Optional[str] = None
+    author: str | None = None
 
 
 class CommentUpdate(BaseModel):
-    body: Optional[str] = None
-    kind: Optional[str] = None
-    resolved: Optional[bool] = None
+    body: str | None = None
+    kind: str | None = None
+    resolved: bool | None = None
 
 
 class CommentOut(BaseModel):
@@ -61,9 +62,9 @@ class CommentOut(BaseModel):
     body: str
     kind: str
     resolved: bool
-    author: Optional[str] = None
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    author: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
 
 
 def _flow_to_dict(f: FlowRecord, comment_count: int = 0) -> dict:
@@ -109,7 +110,7 @@ async def list_flows(
     request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    since_id: Optional[int] = Query(None, ge=0, description="Return only flows with id > since_id"),
+    since_id: int | None = Query(None, ge=0, description="Return only flows with id > since_id"),
 ):
     engine = request.app.state.session_manager.get_traffic_engine()
     factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

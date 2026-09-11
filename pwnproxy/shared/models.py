@@ -1,6 +1,5 @@
-import json
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
@@ -9,19 +8,19 @@ class Flow:
     id: str
     method: str
     url: str
-    request_headers: Dict[str, str]
-    request_body: Optional[bytes] = None
+    request_headers: dict[str, str]
+    request_body: bytes | None = None
     
-    status_code: Optional[int] = None
-    response_headers: Optional[Dict[str, str]] = None
-    response_body: Optional[bytes] = None
+    status_code: int | None = None
+    response_headers: dict[str, str] | None = None
+    response_body: bytes | None = None
     
-    duration_ms: Optional[float] = None
-    error: Optional[str] = None
+    duration_ms: float | None = None
+    error: str | None = None
     tls: bool = False
     request_body_truncated: bool = False
     response_body_truncated: bool = False
-    session_id: Optional[str] = None
+    session_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {

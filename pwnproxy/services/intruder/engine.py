@@ -1,7 +1,7 @@
 import asyncio
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from typing import AsyncIterator, Optional
 
 import httpx
 
@@ -15,7 +15,7 @@ class IntruderResult:
     timing_ms: float
     response_headers: dict[str, str] = field(default_factory=dict)
     response_body: str = ""
-    error: Optional[str] = None
+    error: str | None = None
 
 
 class IntruderEngine:
@@ -24,7 +24,7 @@ class IntruderEngine:
     def __init__(self, concurrency: int = 10):
         self._concurrency = concurrency
         self._semaphore = asyncio.Semaphore(concurrency)
-        self._client: Optional[httpx.AsyncClient] = None
+        self._client: httpx.AsyncClient | None = None
         self._request_id = 0
 
     async def _get_client(self) -> httpx.AsyncClient:

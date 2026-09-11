@@ -1,9 +1,7 @@
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
-
-from pwnproxy.shared.models import Flow
 
 router = APIRouter(prefix="/api/v1", tags=["interceptor"])
 
@@ -19,22 +17,22 @@ class PendingFlow(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     id: Any = None
-    method: Optional[str] = None
-    url: Optional[str] = None
-    status_code: Optional[int] = None
+    method: str | None = None
+    url: str | None = None
+    status_code: int | None = None
     timestamp: Any = None
 
 
 class InterceptorActionResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
+    status: str | None = None
 
 
 class InterceptorActionCountResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    status: Optional[str] = None
+    status: str | None = None
     count: int = 0
 
 

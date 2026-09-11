@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
+
 from pydantic import BaseModel, field_validator
 
 
@@ -28,10 +28,10 @@ class TaskStatusResponse(BaseModel):
     progress: int
     total: int
     config: dict[str, Any]
-    result: Optional[dict[str, Any]] = None
-    error: Optional[str] = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
     created_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
 
 
 class TaskSummary(BaseModel):
@@ -41,7 +41,7 @@ class TaskSummary(BaseModel):
     progress: int
     total: int
     created_at: str
-    completed_at: Optional[str] = None
+    completed_at: str | None = None
 
 
 class TaskListResponse(BaseModel):

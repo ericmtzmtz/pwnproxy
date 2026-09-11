@@ -8,7 +8,6 @@ Without --perf-record or --perf-check the test is skipped.
 max_rss is best-effort (recorded only where ``resource`` module is available, i.e. Linux).
 """
 
-import asyncio
 import json
 import time
 from pathlib import Path
@@ -43,7 +42,7 @@ def _build_app():
     routes = {}
 
     def _page(name, links=None):
-        hrefs = "".join(f'<a href="/{l}">{l}</a> ' for l in (links or []))
+        hrefs = "".join(f'<a href="/{link}">{link}</a> ' for link in (links or []))
         return web.Response(
             text=f"<html><body><h1>{name}</h1>{hrefs}</body></html>",
             content_type="text/html",
@@ -140,7 +139,7 @@ async def test_perf_baseline(request):
         print(f"  current : {result}")
 
         dur_ratio = result["duration_ms"] / max(baseline["duration_ms"], 1)
-        pages_diff = abs(result["pages_fetched"] - baseline["pages_fetched"])
+        abs(result["pages_fetched"] - baseline["pages_fetched"])
         pages_ratio = result["pages_fetched"] / max(baseline["pages_fetched"], 1)
 
         # Duration regression check

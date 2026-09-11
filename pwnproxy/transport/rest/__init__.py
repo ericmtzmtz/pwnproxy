@@ -14,3 +14,21 @@ from pwnproxy.transport.rest.tasks import router as tasks
 from pwnproxy.transport.rest.tokens import router as tokens
 from pwnproxy.transport.rest.traffic import router as traffic
 from pwnproxy.transport.rest.workers import router as workers
+
+__all__ = [
+    "crawler",
+    "findings",
+    "health",
+    "interceptor",
+    "intruder",
+    "plugins",
+    "proxy",
+    "repeater",
+    "reports",
+    "scanners",
+    "session",
+    "tasks",
+    "tokens",
+    "traffic",
+    "workers",
+]

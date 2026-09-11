@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import builtins
 import logging
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-import builtins
+from datetime import UTC, datetime
+from typing import Any
+
+from pwnproxy.plugins.core.contracts import FlowConsumer
+from pwnproxy.shared.models import Flow
+
 # Expose datetime in builtins for test modules that reference it without import
 builtins.datetime = datetime
-from typing import Any, Optional
-
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.contracts import FlowConsumer
 
 logger = logging.getLogger(__name__)
 
@@ -77,29 +78,29 @@ class Finding:
     confidence: str
     payload: str
     evidence: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     extra: dict = field(default_factory=dict)
-    request_data: Optional[dict] = None
+    request_data: dict | None = None
 
 
 class PwnPlugin:
-    metadata: Optional[PluginMetadata] = None
-    context: Optional[PluginContext] = None
+    metadata: PluginMetadata | None = None
+    context: PluginContext | None = None
 
-    def __init__(self, metadata: Optional[PluginMetadata] = None, context: Optional[PluginContext] = None):
+    def __init__(self, metadata: PluginMetadata | None = None, context: PluginContext | None = None):
         import copy
         if metadata is not None:
             self.metadata = metadata
-        elif getattr(self.__class__, "metadata", None) is not None and isinstance(getattr(self.__class__, "metadata"), PluginMetadata):
+        elif getattr(self.__class__, "metadata", None) is not None and isinstance(self.__class__.metadata, PluginMetadata):
             # Preserve class-level PluginMetadata instead of shadowing with None.
             # Copy so per-instance mutation (disabled) does not affect the class.
-            self.metadata = copy.copy(getattr(self.__class__, "metadata"))
+            self.metadata = copy.copy(self.__class__.metadata)
         else:
             self.metadata = metadata
         if context is not None:
             self.context = context
         elif getattr(self.__class__, "context", None) is not None:
-            self.context = copy.copy(getattr(self.__class__, "context"))
+            self.context = copy.copy(self.__class__.context)
         else:
             self.context = context
 
@@ -123,15 +124,15 @@ class ScannerPlugin(PwnPlugin, FlowConsumer):
 class HookPlugin(PwnPlugin):
     category: str = "hook"
     
-    async def on_request(self, flow: Flow) -> Optional[Flow]:
+    async def on_request(self, flow: Flow) -> Flow | None:
         return flow
 
-    async def on_response(self, flow: Flow) -> Optional[Flow]:
+    async def on_response(self, flow: Flow) -> Flow | None:
         return flow
 
 
-# Import new types
-from pwnproxy.plugins.core.types import Surface, Evidence
+# Import new types (after the class defs to avoid an import cycle)
+from pwnproxy.plugins.core.types import Evidence, Surface  # noqa: E402
 
 
 class CrawlerPlugin(PwnPlugin):
@@ -152,8 +153,8 @@ class ExploiterPlugin(PwnPlugin):
         return None
     category: str = "hook"
 
-    async def on_request(self, flow: Flow) -> Optional[Flow]:
+    async def on_request(self, flow: Flow) -> Flow | None:
         return flow
 
-    async def on_response(self, flow: Flow) -> Optional[Flow]:
+    async def on_response(self, flow: Flow) -> Flow | None:
         return flow

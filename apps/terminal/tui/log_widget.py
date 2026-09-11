@@ -1,5 +1,5 @@
+import contextlib
 from collections import deque
-from typing import Optional
 
 from textual.message import Message
 from textual.widgets import DataTable
@@ -13,7 +13,7 @@ STATUS_STYLES: dict[str, str] = {
 }
 
 
-def _color_status(code: Optional[int]) -> str:
+def _color_status(code: int | None) -> str:
     if code is None:
         return "---"
     s = str(code)
@@ -60,7 +60,5 @@ class LogTable(DataTable):
     def _trim(self) -> None:
         while len(self._row_keys) > MAX_LOG_ROWS:
             oldest = self._row_keys.popleft()
-            try:
+            with contextlib.suppress(Exception):
                 self.remove_row(oldest)
-            except Exception:
-                pass

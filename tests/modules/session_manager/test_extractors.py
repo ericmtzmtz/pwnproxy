@@ -1,7 +1,6 @@
-import pytest
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.session.extractors import cookies, csrf, jwt
+from pwnproxy.shared.models import Flow
 
 
 class TestJwtExtractor:

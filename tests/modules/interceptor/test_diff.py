@@ -1,12 +1,11 @@
-import pytest
 
-from pwnproxy.services.proxy.interceptor.diff import (
-    compute_body_diff,
-    compute_headers_diff,
-    compute_full_diff,
-    MAX_DIFF_SIZE,
-)
 from pwnproxy.services.proxy.interceptor.controller import FlowSnapshot
+from pwnproxy.services.proxy.interceptor.diff import (
+    MAX_DIFF_SIZE,
+    compute_body_diff,
+    compute_full_diff,
+    compute_headers_diff,
+)
 from pwnproxy.shared.models import Flow
 
 

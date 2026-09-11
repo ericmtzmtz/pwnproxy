@@ -1,12 +1,15 @@
 import logging
 
-from pwnproxy.plugins.core.chain import DetectionStage, StageResult, DetectionDepth
+from pwnproxy.plugins.core.base import Finding
+from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
+from pwnproxy.plugins.scanners.command_injection.payloads import Payload
+from pwnproxy.plugins.scanners.command_injection.signatures import (
+    get_evidence,
+    has_command_output,
+)
+from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.scanners.command_injection.payloads import Payload
-from pwnproxy.plugins.scanners.command_injection.signatures import has_command_output, get_evidence
 
 logger = logging.getLogger(__name__)
 

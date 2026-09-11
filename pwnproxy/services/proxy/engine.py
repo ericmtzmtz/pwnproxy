@@ -1,6 +1,7 @@
 import asyncio
+import contextlib
 import logging
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: Optional[str] = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True, flow_filter=None, session_name_fn: Optional[Callable[[], Optional[str]]] = None):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: str | None = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True, flow_filter=None, session_name_fn: Callable[[], str | None] | None = None):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog
@@ -22,8 +23,8 @@ class ProxyEngine:
         self._host = host
         self._port = port
         self._ssl_insecure = ssl_insecure
-        self._master: Optional[DumpMaster] = None
-        self._task: Optional[asyncio.Task] = None
+        self._master: DumpMaster | None = None
+        self._task: asyncio.Task | None = None
         self._extra_addons: list[object] = []
         self._capture_enabled = False
         # Shared scope filter applied to relay + storage addons (hot-swappable).
@@ -85,10 +86,8 @@ class ProxyEngine:
         self._task = asyncio.create_task(self._run_master())
 
     async def _run_master(self) -> None:
-        try:
+        with contextlib.suppress(SystemExit):
             await self._master.run()
-        except SystemExit:
-            pass
 
     def stop(self) -> None:
         """Stop the proxy server gracefully (sync wrapper)."""
@@ -113,12 +112,10 @@ class ProxyEngine:
         if self._task is not None:
             task = self._task
             self._task = None
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
-            except (asyncio.CancelledError, Exception):
-                pass
 
-    def configure(self, host: str = None, port: int = None, ssl_insecure: bool = None, upstream: Optional[str] = None, db_engine = None, capture_enabled: bool = None) -> None:
+    def configure(self, host: str = None, port: int = None, ssl_insecure: bool = None, upstream: str | None = None, db_engine = None, capture_enabled: bool = None) -> None:
         """Update proxy configuration. Requires a restart if the proxy is already running."""
         if host is not None:
             self._host = host

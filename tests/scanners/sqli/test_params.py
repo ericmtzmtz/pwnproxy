@@ -1,7 +1,6 @@
-import pytest
 
 from pwnproxy.shared.models import Flow
-from pwnproxy.shared.scan.params import extract, InjectionPoint
+from pwnproxy.shared.scan.params import extract
 
 
 def _flow(**overrides) -> Flow:
@@ -10,7 +9,7 @@ def _flow(**overrides) -> Flow:
         method=overrides.get("method", "GET"),
         url=overrides.get("url", "http://target.com/page?q=hello"),
         request_headers=overrides.get("request_headers", {"Host": "target.com"}),
-        request_body=overrides.get("request_body", None),
+        request_body=overrides.get("request_body"),
     )
 
 

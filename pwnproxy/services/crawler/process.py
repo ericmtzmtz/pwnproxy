@@ -13,9 +13,11 @@ Direction of the two bridges:
 """
 
 import asyncio
+import contextlib
 import logging
 import sys
-from typing import Any, Callable, Optional
+from collections.abc import Callable
+from typing import Any
 
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeClient, TcpBridgeServer
 
@@ -26,14 +28,14 @@ class CrawlerProcess:
     """Manages the passive crawler worker subprocess."""
 
     def __init__(self):
-        self._proc: Optional[asyncio.subprocess.Process] = None
+        self._proc: asyncio.subprocess.Process | None = None
         self._event_port: int = 0
-        self._results_bridge: Optional[TcpBridgeClient] = None
-        self._stderr_reader: Optional[asyncio.Task] = None
+        self._results_bridge: TcpBridgeClient | None = None
+        self._stderr_reader: asyncio.Task | None = None
         self._feed_server = TcpBridgeServer()
         self._feed_started = False
-        self._on_event: Optional[Callable[[str, Any], None]] = None
-        self._last_params: Optional[tuple[str, Optional[str]]] = None
+        self._on_event: Callable[[str, Any], None] | None = None
+        self._last_params: tuple[str, str | None] | None = None
 
     @property
     def running(self) -> bool:
@@ -51,7 +53,7 @@ class CrawlerProcess:
             "feed_port": self._feed_server.port if self._feed_started else 0,
         }
 
-    async def start(self, db_path: str, scope_json: Optional[str] = None, ssl_insecure: bool = True) -> None:
+    async def start(self, db_path: str, scope_json: str | None = None, ssl_insecure: bool = True) -> None:
         """Start the crawler worker (idempotent for identical parameters)."""
         params = (db_path, scope_json, ssl_insecure)
         if self.running and self._last_params == params:
@@ -118,7 +120,7 @@ class CrawlerProcess:
                     if not line:
                         break
                     logger.warning("[crawler stderr] %s", line.decode().strip())
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     continue
         except Exception as e:
             logger.debug("Crawler stderr reader stopped: %s", e)
@@ -145,10 +147,8 @@ class CrawlerProcess:
             self._results_bridge = None
         if self._stderr_reader:
             self._stderr_reader.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._stderr_reader
-            except (asyncio.CancelledError, Exception):
-                pass
             self._stderr_reader = None
 
         if self._proc and self._proc.returncode is None:
@@ -156,7 +156,7 @@ class CrawlerProcess:
             self._proc.terminate()
             try:
                 await asyncio.wait_for(self._proc.wait(), timeout=5)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("Crawler did not exit in time, killing")
                 self._proc.kill()
                 await self._proc.wait()
@@ -169,5 +169,5 @@ class CrawlerProcess:
         self._event_port = 0
         self._last_params = None
 
-    async def restart(self, db_path: str, scope_json: Optional[str] = None, ssl_insecure: bool = True) -> None:
+    async def restart(self, db_path: str, scope_json: str | None = None, ssl_insecure: bool = True) -> None:
         await self.start(db_path=db_path, scope_json=scope_json, ssl_insecure=ssl_insecure)

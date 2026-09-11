@@ -1,9 +1,8 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
-from sqlalchemy import select, text
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -15,7 +14,7 @@ _DEFAULT_DB = str(Path.home() / ".pwnproxy" / "scanner_results.db")
 
 
 class ScanLogStore:
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         path = Path(db_path or _DEFAULT_DB)
         path.parent.mkdir(parents=True, exist_ok=True)
         db_url = f"sqlite+aiosqlite:///{path.absolute()}"
@@ -35,7 +34,7 @@ class ScanLogStore:
         method: str,
         scanner_name: str,
         status: str,
-        duration_ms: Optional[float] = None,
+        duration_ms: float | None = None,
         finding_count: int = 0,
     ) -> None:
         now = datetime.utcnow()

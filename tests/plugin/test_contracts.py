@@ -1,11 +1,11 @@
+
 import pytest
-from unittest.mock import AsyncMock
 
 from pwnproxy.plugins.core.contracts import (
-    FlowConsumer,
-    FindingConsumer,
-    SurfaceConsumer,
     EvidenceConsumer,
+    FindingConsumer,
+    FlowConsumer,
+    SurfaceConsumer,
 )
 
 

@@ -1,9 +1,8 @@
 import logging
 import re
-from typing import Optional
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.services.session.models import TokenCandidate
+from pwnproxy.shared.models import Flow
 
 logger = logging.getLogger(__name__)
 

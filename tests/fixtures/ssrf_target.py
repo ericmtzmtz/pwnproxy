@@ -49,7 +49,7 @@ _EXCERPT_LEN = 500
 class _Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def do_GET(self):  # noqa: N802 (http.server API)
+    def do_GET(self):
         parsed = urlparse(self.path)
         if parsed.path != "/fetch":
             self._send(404, "not found")

@@ -1,4 +1,3 @@
-from typing import Optional
 
 from textual.message import Message
 from textual.widgets import DataTable

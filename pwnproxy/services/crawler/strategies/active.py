@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from pwnproxy.services.crawler.engine import CrawlConfig, CrawlEngine
@@ -19,8 +19,8 @@ from pwnproxy.shared.observability import gen_correlation_id, set_correlation_id
 
 if TYPE_CHECKING:
     from pwnproxy.services.crawler.events import EventPublisher
-    from pwnproxy.services.crawler.storage import DiscoveredURLStorage
     from pwnproxy.services.crawler.lifecycle import CrawlStartConfig
+    from pwnproxy.services.crawler.storage import DiscoveredURLStorage
     from pwnproxy.services.jobs.lifecycle import JobLifecycle
     from pwnproxy.services.session.manager import ScopeConfig
 
@@ -29,13 +29,13 @@ logger = logging.getLogger(__name__)
 
 async def run_crawl(
     job_id: int | None,
-    config: "CrawlStartConfig",
+    config: CrawlStartConfig,
     *,
-    scope: "ScopeConfig",
+    scope: ScopeConfig,
     ssl_insecure: bool,
-    storage: "DiscoveredURLStorage | None",
-    lifecycle: "JobLifecycle | None",
-    events: "EventPublisher",
+    storage: DiscoveredURLStorage | None,
+    lifecycle: JobLifecycle | None,
+    events: EventPublisher,
     state: dict,
     fetcher_cls=None,
 ) -> None:
@@ -75,7 +75,7 @@ async def run_crawl(
         fetcher = (fetcher_cls or _DefaultFetcher)(rate_limit=config.rate_limit, verify=not ssl_insecure)
         await fetcher.start()
         try:
-            last_progress = datetime.now(timezone.utc)
+            last_progress = datetime.now(UTC)
             async for flow_dict in engine.run(fetcher):
                 flow_dict["_scan_while_crawl"] = config.scan_while_crawl
                 await events.crawl_flow(flow_dict)
@@ -85,7 +85,7 @@ async def run_crawl(
                     await extract_and_persist(flow_dict, scope, storage, events)
 
                 # Emit progress every ~1s or 10 fetches.
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
                 elapsed = (now - last_progress).total_seconds()
                 if elapsed >= 1.0 or engine.stats.fetched % 10 == 0:
                     await events.crawl_progress(job_id, engine.stats.to_dict())

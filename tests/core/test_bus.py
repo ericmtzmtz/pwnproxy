@@ -1,7 +1,9 @@
 import asyncio
+import contextlib
+
 import pytest
 
-from pwnproxy.shared.bus import MessageBus, Envelope
+from pwnproxy.shared.bus import Envelope
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
 
 
@@ -117,10 +119,8 @@ async def test_publish_does_not_block_slow_consumer(bus):
     assert elapsed < 2.0, f"publish blocked too long: {elapsed:.2f}s"
 
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
 
     # The slow consumer may not have drained everything, but publish succeeded.
     assert len(received) <= 30
@@ -149,10 +149,8 @@ async def test_best_effort_topic_drops_under_pressure_without_blocking(bus):
         await asyncio.sleep(0)
 
     task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await task
-    except asyncio.CancelledError:
-        pass
     # BEST_EFFORT dropped most of the flood rather than blocking/growing.
     assert queues[0].dropped > 0
 
@@ -171,7 +169,10 @@ async def test_envelope_json_roundtrip():
 @pytest.mark.asyncio
 async def test_tcp_bridge_send_receive():
     """TcpBridgeServer should deliver messages to TcpBridgeClient."""
-    from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer, TcpBridgeClient
+    from pwnproxy.shared.bus.transports.tcp_bridge import (
+        TcpBridgeClient,
+        TcpBridgeServer,
+    )
 
     received = []
 

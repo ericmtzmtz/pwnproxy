@@ -1,17 +1,17 @@
 import asyncio
+import contextlib
 import json
 import logging
 import shutil
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine
-from sqlalchemy import create_engine as create_sync_engine
 
 from pwnproxy.services.session.storage import TokenStorage
-from pwnproxy.shared.task_model import create_task_engine, init_task_db
 from pwnproxy.services.session.store import TaskStore
+from pwnproxy.shared.task_model import create_task_engine, init_task_db
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +22,7 @@ AUTO_SAVE_INTERVAL = 60
 
 
 class ScopeConfig:
-    def __init__(self, data: Optional[dict] = None) -> None:
+    def __init__(self, data: dict | None = None) -> None:
         d = data or {}
         self.in_scope: list[str] = d.get("in_scope", [])
         self.out_of_scope: list[str] = d.get("out_of_scope", [])
@@ -46,9 +46,7 @@ class ScopeConfig:
         from fnmatch import fnmatch
         if fnmatch(target, pattern):
             return True
-        if pattern.startswith("*.") and fnmatch(target, pattern[2:]):
-            return True
-        return False
+        return bool(pattern.startswith("*.") and fnmatch(target, pattern[2:]))
 
     def _candidates(self, url: str) -> tuple[str, str, str]:
         """Return (netloc, hostname, full URL) candidates for scope matching.
@@ -73,19 +71,16 @@ class ScopeConfig:
         for pattern in self.out_of_scope:
             if any(self._match(pattern, t) for t in candidates):
                 return False
-        for pattern in self.in_scope:
-            if any(self._match(pattern, t) for t in candidates):
-                return True
-        return False
+        return any(any(self._match(pattern, t) for t in candidates) for pattern in self.in_scope)
 
 
 class ProxyConfig:
-    def __init__(self, data: Optional[dict] = None) -> None:
+    def __init__(self, data: dict | None = None) -> None:
         d = data or {}
         self.host: str = d.get("host", "127.0.0.1")
         self.port: int = d.get("port", 8080)
         self.ssl_insecure: bool = d.get("ssl_insecure", True)
-        self.upstream: Optional[str] = d.get("upstream", None)
+        self.upstream: str | None = d.get("upstream", None)
         self.capture_enabled: bool = d.get("capture_enabled", True)
 
     def to_dict(self) -> dict:
@@ -103,30 +98,30 @@ class SessionManager:
         traffic_engine: AsyncEngine,
         scanner_engine: AsyncEngine,
         token_storage: TokenStorage,
-        on_session_change: Optional[Callable] = None,
+        on_session_change: Callable | None = None,
     ):
         self._traffic_engine = traffic_engine
         self._scanner_engine = scanner_engine
         self._token_storage = token_storage
         self._on_session_change = on_session_change
 
-        self._active_name: Optional[str] = None
+        self._active_name: str | None = None
         self._active_path: Path = SESSIONS_ROOT / "default"
         self._unsaved: bool = False
         self._save_lock = asyncio.Lock()
-        self._auto_save_task: Optional[asyncio.Task] = None
+        self._auto_save_task: asyncio.Task | None = None
         self._running = False
 
         self.scope = ScopeConfig()
         self.proxy_config = ProxyConfig()
-        self.task_store: Optional[TaskStore] = None
+        self.task_store: TaskStore | None = None
 
-        self._plugin_loader: Optional[any] = None
-        self._interceptor_controller: Optional[any] = None
-        self._proxy_engine: Optional[any] = None
-        self._pending_module_state: Optional[dict] = None
+        self._plugin_loader: any | None = None
+        self._interceptor_controller: any | None = None
+        self._proxy_engine: any | None = None
+        self._pending_module_state: dict | None = None
         self._crawler_engine = None
-        self._on_scope_change: Optional[Callable] = None
+        self._on_scope_change: Callable | None = None
 
     def set_scope_change_handler(self, handler: Callable) -> None:
         """Register the callback fired after every scope update with the
@@ -181,7 +176,7 @@ class SessionManager:
             logger.error(f"Error restarting proxy: {e}")
 
     @property
-    def active_name(self) -> Optional[str]:
+    def active_name(self) -> str | None:
         return self._active_name
 
     @property
@@ -208,10 +203,8 @@ class SessionManager:
         self._running = False
         if self._auto_save_task:
             self._auto_save_task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._auto_save_task
-            except (asyncio.CancelledError, Exception):
-                pass
         if self._unsaved and self._active_name:
             await self.save()
 
@@ -462,7 +455,7 @@ class SessionManager:
         SESSIONS_ROOT.mkdir(parents=True, exist_ok=True)
         (LAST_SESSION_FILE).write_text(name)
 
-    async def _read_last_session(self) -> Optional[str]:
+    async def _read_last_session(self) -> str | None:
         if LAST_SESSION_FILE.exists():
             return LAST_SESSION_FILE.read_text().strip()
         return None

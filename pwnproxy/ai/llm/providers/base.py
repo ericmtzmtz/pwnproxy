@@ -1,7 +1,7 @@
 """Provider contract: turn an LLMRequest into an LLMResponse via httpx."""
 import time
 from abc import ABC, abstractmethod
-from typing import ClassVar, Optional
+from typing import ClassVar
 
 import httpx
 
@@ -17,9 +17,9 @@ class Provider(ABC):
 
     def __init__(
         self,
-        model: Optional[str] = None,
-        api_key: Optional[str] = None,
-        base_url: Optional[str] = None,
+        model: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
         timeout_s: float = 30.0,
     ):
         self.model = model or self.default_model

@@ -1,13 +1,12 @@
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class Payload:
     value: str
     technique: str
-    dbms: Optional[str] = None
-    expected_evidence: Optional[str] = None
+    dbms: str | None = None
+    expected_evidence: str | None = None
 
 
 ERROR_PAYLOADS: list[Payload] = [

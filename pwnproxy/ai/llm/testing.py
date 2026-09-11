@@ -1,5 +1,5 @@
 """Test doubles for the LLM layer: FakeLLMClient for future consumers (triage, reports)."""
-from typing import Optional, TypeVar
+from typing import TypeVar
 
 from pydantic import BaseModel
 
@@ -16,7 +16,7 @@ class FakeLLMClient:
     Records every request in .calls and every structured call in .structured_calls.
     """
 
-    def __init__(self, queue: Optional[list] = None):
+    def __init__(self, queue: list | None = None):
         self.queue: list = list(queue or [])
         self.calls: list[LLMRequest] = []
         self.structured_calls: list[tuple[LLMRequest, type]] = []
@@ -55,7 +55,7 @@ class RecordingProvider(Provider):
     def default_base_url(self) -> str:
         return "http://recording.invalid"
 
-    def __init__(self, outcomes: Optional[list] = None, **kwargs):
+    def __init__(self, outcomes: list | None = None, **kwargs):
         super().__init__(**kwargs)
         self.outcomes = list(outcomes or [])
         self.requests: list[LLMRequest] = []

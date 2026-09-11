@@ -1,13 +1,12 @@
 import asyncio
-from typing import Optional
 
+from pwnproxy.plugins.scanners.xss.models import XssFinding
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Header, Static
 
-from pwnproxy.plugins.scanners.xss.models import XssFinding
 from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
 
 
@@ -17,7 +16,7 @@ class XssScannerScreen(Screen[None]):
         Binding("space", "toggle_scanner", "Start/Stop"),
     ]
 
-    def __init__(self, scanner: XSSScanner, name: Optional[str] = None):
+    def __init__(self, scanner: XSSScanner, name: str | None = None):
         super().__init__(name=name)
         self._scanner = scanner
         self._findings: list[XssFinding] = []

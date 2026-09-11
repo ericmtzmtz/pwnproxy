@@ -1,9 +1,7 @@
 import asyncio
 from pathlib import Path
-from typing import Optional
 
 import httpx
-
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -50,7 +48,7 @@ class IntruderScreen(Screen[None]):
     }
     """
 
-    def __init__(self, engine: Optional[IntruderEngine] = None, initial_request: str = "", api_host: str = "127.0.0.1", api_port: int = 8000):
+    def __init__(self, engine: IntruderEngine | None = None, initial_request: str = "", api_host: str = "127.0.0.1", api_port: int = 8000):
         super().__init__()
         self._engine = engine or IntruderEngine()
         self._initial_request = initial_request

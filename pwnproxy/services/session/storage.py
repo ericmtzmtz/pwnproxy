@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -13,11 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class TokenStorage:
-    def __init__(self, db_path: Optional[str] = None):
-        if db_path is None:
-            db_path_obj = Path.home() / ".pwnproxy" / "sessions.db"
-        else:
-            db_path_obj = Path(db_path)
+    def __init__(self, db_path: str | None = None):
+        db_path_obj = Path.home() / ".pwnproxy" / "sessions.db" if db_path is None else Path(db_path)
         db_path_obj.parent.mkdir(parents=True, exist_ok=True)
         db_url = f"sqlite+aiosqlite:///{db_path_obj.absolute()}"
         self.engine: AsyncEngine = create_async_engine(db_url, echo=False)
@@ -69,8 +65,8 @@ class TokenStorage:
 
     async def query(
         self,
-        token_type: Optional[str] = None,
-        search: Optional[str] = None,
+        token_type: str | None = None,
+        search: str | None = None,
     ) -> list[SessionToken]:
         async with self.session_factory() as session:
             stmt = select(SessionToken).order_by(SessionToken.last_seen.desc())
@@ -85,7 +81,7 @@ class TokenStorage:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_by_id(self, token_id: int) -> Optional[SessionToken]:
+    async def get_by_id(self, token_id: int) -> SessionToken | None:
         async with self.session_factory() as session:
             result = await session.execute(
                 select(SessionToken).where(SessionToken.id == token_id)

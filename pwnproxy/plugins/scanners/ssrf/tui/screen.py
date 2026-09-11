@@ -1,13 +1,12 @@
 import asyncio
-from typing import Optional
 
+from pwnproxy.plugins.scanners.ssrf.models import SsrfFinding
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal
-from textual.screen import Screen, ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, DataTable, Header, Input, Label, Static
 
-from pwnproxy.plugins.scanners.ssrf.models import SsrfFinding
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 
 
@@ -51,7 +50,7 @@ class SsrfScannerScreen(Screen[None]):
         Binding("space", "toggle_scanner", "Start/Stop"),
     ]
 
-    def __init__(self, scanner: SSRFScanner, name: Optional[str] = None):
+    def __init__(self, scanner: SSRFScanner, name: str | None = None):
         super().__init__(name=name)
         self._scanner = scanner
         self._findings: list[SsrfFinding] = []

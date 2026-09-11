@@ -3,7 +3,6 @@ import logging
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +14,9 @@ class CanaryToken:
     scan_id: str
     created_at: float = field(default_factory=time.time)
     callback_received: bool = False
-    callback_ip: Optional[str] = None
+    callback_ip: str | None = None
     callback_headers: dict = field(default_factory=dict)
-    callback_at: Optional[float] = None
+    callback_at: float | None = None
     
     @property
     def is_expired(self) -> bool:
@@ -52,7 +51,7 @@ class CanaryRegistry:
         logger.debug("Created canary token %s for scan %s", token, scan_id)
         return canary
     
-    def get(self, token: str) -> Optional[CanaryToken]:
+    def get(self, token: str) -> CanaryToken | None:
         """Get a canary token by its value.
         
         Args:
@@ -67,7 +66,7 @@ class CanaryRegistry:
         self,
         token: str,
         ip: str,
-        headers: Optional[dict] = None,
+        headers: dict | None = None,
     ) -> bool:
         """Mark a canary as having received a callback.
         
@@ -127,7 +126,7 @@ class CanaryRegistry:
 
 
 # Global registry instance
-_registry: Optional[CanaryRegistry] = None
+_registry: CanaryRegistry | None = None
 
 
 def get_registry() -> CanaryRegistry:

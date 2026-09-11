@@ -1,13 +1,12 @@
 """Privacy: without cloud keys configured, zero requests leave the host."""
-import json
 
 import httpx
 import pytest
 
 from pwnproxy.ai.llm.config import LLMSettings, ProviderSettings
-from pwnproxy.ai.llm.providers import create_client_from_config
 from pwnproxy.ai.llm.errors import LLMTimeout
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest
+from pwnproxy.ai.llm.providers import create_client_from_config
 
 
 def _local_only_settings() -> LLMSettings:

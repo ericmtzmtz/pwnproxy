@@ -1,12 +1,9 @@
 import json
 import logging
-import sys
-from pathlib import Path
 
 import pytest
 
 from pwnproxy.services.session.manager import ScopeConfig
-from pwnproxy.shared.hooks import HookBus
 
 
 class TestScopeConfigSanitization:
@@ -53,8 +50,9 @@ class TestScopeConfigSanitization:
 class TestProxyWorkerScope:
     @pytest.mark.asyncio
     async def test_reload_scope(self, tmp_path):
-        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
         import argparse
+
+        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
         scope_file = tmp_path / "scope.json"
         scope_file.write_text(json.dumps({"in_scope": [], "out_of_scope": [], "enabled": False}))
         args = argparse.Namespace(
@@ -77,8 +75,9 @@ class TestProxyWorkerScope:
 
     def test_scope_filter_accepts_url_string(self):
         """_scope_filter accepts string URL and matches via ScopeConfig."""
-        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
         import argparse
+
+        from pwnproxy.services.proxy.proxy_worker import ProxyWorker
         args = argparse.Namespace(
             scope_enabled=True, scope_pattern=["*.example.com"], scope_json=None,
             listen_host="127.0.0.1", listen_port=8080,

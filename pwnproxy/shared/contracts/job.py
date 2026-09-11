@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime, timezone
-from typing import Annotated, Any, Literal, Optional, Union
+from datetime import UTC, datetime
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
 
 # ── JobState ────────────────────────────────────────────────────────────
 
@@ -66,11 +65,11 @@ def _resolve_state(v: Any) -> JobState:
             mapped = _LEGACY_MAP.get(v)
             if mapped is not None:
                 return mapped
-            raise ValueError(f"Invalid job state: {v!r}")
+            raise ValueError(f"Invalid job state: {v!r}") from None
     raise ValueError(f"Invalid job state: {v!r}")
 
 
-def transition(job: "Job", new_state: JobState) -> JobState:
+def transition(job: Job, new_state: JobState) -> JobState:
     """Validate and apply a state transition. Returns the new state.
 
     Raises ``InvalidJobTransition`` if the transition is illegal.
@@ -83,7 +82,7 @@ def transition(job: "Job", new_state: JobState) -> JobState:
             f"Cannot transition from {current.value!r} to {new_state.value!r}"
         )
     job.state = new_state
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if new_state == JobState.RUNNING and job.started_at is None:
         job.started_at = now
     if new_state in TERMINAL_STATES:
@@ -114,7 +113,7 @@ class BruteforceStats(BaseModel):
 
 # Union of all stat types, discriminated by job type.
 JobStats = Annotated[
-    Union[CrawlStats, BruteforceStats],
+    CrawlStats | BruteforceStats,
     Field(discriminator="fetched", default_factory=CrawlStats),
 ]
 
@@ -137,10 +136,10 @@ class Job(BaseModel):
     state: JobState = JobState.CREATED
     config: dict[str, Any] = Field(default_factory=dict)
     stats: CrawlStats | BruteforceStats = Field(default_factory=CrawlStats)
-    error: Optional[str] = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    started_at: Optional[datetime] = None
-    finished_at: Optional[datetime] = None
+    error: str | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
     @field_validator("state", mode="before")
     @classmethod

@@ -1,8 +1,6 @@
 """Tests for OOB canary registry."""
 import time
 
-import pytest
-
 from pwnproxy.shared.canary import CanaryRegistry, CanaryToken
 
 

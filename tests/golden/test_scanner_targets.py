@@ -15,6 +15,7 @@ Marked ``@pytest.mark.golden``:
     poetry run pytest -m golden
 """
 
+import contextlib
 import importlib.util
 from pathlib import Path
 
@@ -50,10 +51,8 @@ async def _run_scanner(plugin_cls, config: dict, url: str, flow_id: str) -> list
         try:
             await loader.unload(plugin.metadata.name)
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 await plugin.on_unload()
-            except Exception:
-                pass
 
 
 # ── SQLi golden targets ────────────────────────────────────────────────────

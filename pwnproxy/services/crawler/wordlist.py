@@ -1,12 +1,11 @@
 import importlib.resources
-from typing import List, Union
 
 BUILTIN_NAMES = ("small", "medium", "large")
 
 _sizes_cache: dict[str, int] | None = None
 
 
-def _load_builtin(name: str) -> List[str]:
+def _load_builtin(name: str) -> list[str]:
     """Load a built-in wordlist from the package data."""
     try:
         files = importlib.resources.files("pwnproxy.services.crawler.wordlists")
@@ -25,7 +24,7 @@ def builtin_sizes() -> dict[str, int]:
     return _sizes_cache
 
 
-def resolve_wordlist(source: Union[str, List[str]]) -> List[str]:
+def resolve_wordlist(source: str | list[str]) -> list[str]:
     """
     Resolve a wordlist source to a list of strings.
     If source is a string and matches a built-in name, load that file.
@@ -45,7 +44,7 @@ def resolve_wordlist(source: Union[str, List[str]]) -> List[str]:
     raise TypeError("Source must be a builtin name string or a list of strings")
 
 
-def estimate_requests(words: List[str], extensions: List[str], base_urls: List[str]) -> int:
+def estimate_requests(words: list[str], extensions: list[str], base_urls: list[str]) -> int:
     """
     Estimate number of HTTP requests for directory bruteforce.
     Formula: len(words) * (1 + len(extensions)) * len(base_urls)

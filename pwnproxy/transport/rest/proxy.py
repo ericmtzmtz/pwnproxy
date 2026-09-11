@@ -1,5 +1,4 @@
 import json
-from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict
@@ -12,10 +11,10 @@ class ProxyStatusResponse(BaseModel):
 
     capture_enabled: bool = False
     running: bool = False
-    host: Optional[str] = None
-    port: Optional[int] = None
-    ssl_insecure: Optional[bool] = None
-    upstream: Optional[str] = None
+    host: str | None = None
+    port: int | None = None
+    ssl_insecure: bool | None = None
+    upstream: str | None = None
 
 
 class ProxyToggleResponse(BaseModel):

@@ -1,6 +1,6 @@
-import asyncio
 import logging
-from typing import Any, Callable, Dict, List, Optional, Set
+from collections.abc import Callable
+from typing import Any
 
 from pwnproxy.shared.bus.qos import QoSClassifiedQueue
 from pwnproxy.shared.bus.topics import DEFAULT_QOS, HOOKBUS_QOS
@@ -47,7 +47,7 @@ class _HookChannelQueue:
             try:
                 _topic, data = await self._q.get()
                 return data
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # Empty period — QoS get raises periodically; keep blocking.
                 continue
 
@@ -78,13 +78,13 @@ class HookBus:
     """
 
     def __init__(self):
-        self._subscribers: Dict[str, List[_HookChannelQueue]] = {}
-        self._subscriber_counts: Dict[str, int] = {}
-        self._pending: Dict[str, List[Any]] = {}
-        self._warned_channels: Set[str] = set()
+        self._subscribers: dict[str, list[_HookChannelQueue]] = {}
+        self._subscriber_counts: dict[str, int] = {}
+        self._pending: dict[str, list[Any]] = {}
+        self._warned_channels: set[str] = set()
 
 
-    def set_scope_filter(self, filter_fn: Optional[Callable[[Any], bool]]) -> None:
+    def set_scope_filter(self, filter_fn: Callable[[Any], bool] | None) -> None:
         import warnings
         warnings.warn("HookBus.set_scope_filter() is deprecated. Use FlowFilter instead.", DeprecationWarning, stacklevel=2)
 
@@ -151,7 +151,7 @@ class HookBus:
     def get_subscriber_count(self, channel_name: str) -> int:
         return self._subscriber_counts.get(channel_name, 0)
 
-    def get_channel_stats(self) -> Dict[str, int]:
+    def get_channel_stats(self) -> dict[str, int]:
         return dict(self._subscriber_counts)
 
     def has_subscribers(self, channel_name: str) -> bool:

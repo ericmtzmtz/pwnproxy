@@ -1,14 +1,12 @@
 """Tests for LLM telemetry: ledger fields, fallback tracking, schema_retry, aggregation."""
 
-import asyncio
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from pwnproxy.ai.llm.client import CircuitBreaker, UnifiedLLMClient
 from pwnproxy.ai.llm.errors import LLMUnavailable
 from pwnproxy.ai.llm.models import LLMMessage, LLMRequest, LLMResponse
-from pwnproxy.ai.llm.usage import UsageBase, UsageLedger
 from pwnproxy.ai.llm.testing import RecordingProvider
+from pwnproxy.ai.llm.usage import UsageLedger
 
 
 def _req(text: str = "hello") -> LLMRequest:

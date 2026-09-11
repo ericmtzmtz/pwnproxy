@@ -1,7 +1,6 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Optional
 from urllib.parse import parse_qs, urlparse
 
 from pwnproxy.shared.models import Flow
@@ -44,7 +43,7 @@ class InjectionPoint:
     host: str
     path: str
     original_headers: dict[str, str]
-    original_body: Optional[str]
+    original_body: str | None
 
     @property
     def key(self) -> tuple:
@@ -65,7 +64,7 @@ def extract(flow: Flow) -> list[InjectionPoint]:
     return points
 
 
-def _get_body_text(flow: Flow) -> Optional[str]:
+def _get_body_text(flow: Flow) -> str | None:
     if flow.request_body is None:
         return None
     ct = _header(flow.request_headers, "content-type")
@@ -84,7 +83,7 @@ def _header(headers: dict[str, str], name: str) -> str:
 
 
 def _extract_query(
-    flow: Flow, host: str, path: str, body_text: Optional[str]
+    flow: Flow, host: str, path: str, body_text: str | None
 ) -> list[InjectionPoint]:
     points = []
     parsed = urlparse(flow.url)
@@ -102,7 +101,7 @@ def _extract_query(
 
 
 def _extract_body(
-    flow: Flow, host: str, path: str, body_text: Optional[str]
+    flow: Flow, host: str, path: str, body_text: str | None
 ) -> list[InjectionPoint]:
     points = []
     if body_text is None:
@@ -146,7 +145,7 @@ def _looks_like_xml(body_text: str) -> bool:
 
 def _extract_json_keys(
     prefix: str, data, points: list[InjectionPoint],
-    flow: Flow, host: str, path: str, body_text: Optional[str],
+    flow: Flow, host: str, path: str, body_text: str | None,
 ) -> None:
     if isinstance(data, dict):
         for k, v in data.items():
@@ -168,7 +167,7 @@ def _extract_json_keys(
 
 
 def _extract_cookies(
-    flow: Flow, host: str, path: str, body_text: Optional[str]
+    flow: Flow, host: str, path: str, body_text: str | None
 ) -> list[InjectionPoint]:
     points = []
     raw = flow.request_headers.get("cookie", "")
@@ -189,7 +188,7 @@ def _extract_cookies(
 
 
 def _extract_headers(
-    flow: Flow, host: str, path: str, body_text: Optional[str]
+    flow: Flow, host: str, path: str, body_text: str | None
 ) -> list[InjectionPoint]:
     points = []
     for key, val in flow.request_headers.items():

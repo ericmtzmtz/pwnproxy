@@ -13,9 +13,9 @@ import pytest
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(_REPO_ROOT / "tests/fixtures"))
 
-from ssrf_target import SsrfTargetServer  # noqa: E402
+from ssrf_target import SsrfTargetServer  # noqa: E402  (after sys.path setup)
 
-from apps.terminal.cli.scan import _scan_target  # noqa: E402
+from apps.terminal.cli.scan import _scan_target  # noqa: E402  (after sys.path setup)
 
 
 @pytest.fixture(scope="module")

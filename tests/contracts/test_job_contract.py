@@ -104,6 +104,7 @@ class TestJobStorageValidation:
     @pytest.mark.asyncio
     async def test_update_status_rejects_invalid(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
+
         from pwnproxy.services.crawler.storage import JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
@@ -120,7 +121,8 @@ class TestJobStorageValidation:
     @pytest.mark.asyncio
     async def test_update_status_accepts_valid(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         js = JobStorage(engine)
@@ -168,7 +170,7 @@ class TestFullTransitionTable:
         for current, targets in illegal_table.items():
             for target in targets:
                 j = Job(id=1, type="active", state=current)
-                with pytest.raises(InvalidJobTransition, match=f"Cannot transition"):
+                with pytest.raises(InvalidJobTransition, match="Cannot transition"):
                     transition(j, target)
                 # Job state must remain unchanged after illegal transition
                 assert j.state == current.value
@@ -205,9 +207,9 @@ class TestTerminalImmutables:
             assert j.state == JobState.CANCELLED.value
 
     def test_all_terminal_states_covered(self):
-        assert TERMINAL_STATES == frozenset({
+        assert frozenset({
             JobState.COMPLETED, JobState.FAILED, JobState.CANCELLED,
-        })
+        }) == TERMINAL_STATES
 
 
 class TestRetryCloneJob:
@@ -216,7 +218,8 @@ class TestRetryCloneJob:
     @pytest.mark.asyncio
     async def test_clone_creates_new_job(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -247,7 +250,8 @@ class TestRetryCloneJob:
     @pytest.mark.asyncio
     async def test_clone_nonexistent_raises(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -265,7 +269,8 @@ class TestStopIdempotent:
     @pytest.mark.asyncio
     async def test_transition_cancelled_is_idempotent(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -288,7 +293,8 @@ class TestStopIdempotent:
     @pytest.mark.asyncio
     async def test_transition_failed_is_idempotent(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -316,7 +322,8 @@ class TestTerminalTransitionRejection:
     @pytest.mark.asyncio
     async def test_failed_to_completed_raises(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -337,7 +344,8 @@ class TestTerminalTransitionRejection:
     @pytest.mark.asyncio
     async def test_cancelled_to_failed_raises(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -355,7 +363,8 @@ class TestTerminalTransitionRejection:
     @pytest.mark.asyncio
     async def test_completed_to_running_raises(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -379,7 +388,8 @@ class TestExpectedStateGuard:
     @pytest.mark.asyncio
     async def test_expected_state_match_transitions(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -396,7 +406,8 @@ class TestExpectedStateGuard:
     @pytest.mark.asyncio
     async def test_expected_state_mismatch_skips(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -428,7 +439,8 @@ class TestConcurrentTransitionRace:
         import asyncio
 
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -465,7 +477,8 @@ class TestConcurrentTransitionRace:
         import asyncio
 
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -498,7 +511,8 @@ class TestConcurrentTransitionRace:
         import asyncio
 
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -531,7 +545,8 @@ class TestCrashRecovery:
     @pytest.mark.asyncio
     async def test_single_stale_job(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -552,7 +567,8 @@ class TestCrashRecovery:
     @pytest.mark.asyncio
     async def test_mixed_jobs_only_running_affected(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)
@@ -577,7 +593,8 @@ class TestCrashRecovery:
     @pytest.mark.asyncio
     async def test_no_stale_jobs(self, tmp_path):
         from sqlalchemy.ext.asyncio import create_async_engine
-        from pwnproxy.services.crawler.storage import JobStorage, DiscoveredURLStorage
+
+        from pwnproxy.services.crawler.storage import DiscoveredURLStorage, JobStorage
 
         engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'test.db'}", echo=False)
         ds = DiscoveredURLStorage(engine)

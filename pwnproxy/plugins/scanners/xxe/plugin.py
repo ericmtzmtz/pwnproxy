@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 
-from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.shared.scan.replayers.xxe import XxeReplayer
-from pwnproxy.shared.scan.params import extract as extract_params
-from pwnproxy.shared.models import Flow
-from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.xxe.payloads import (
+    OOB_PARAM_ENTITY_TEMPLATE,
     STAGE_ERROR_XML,
     STAGE_JSON_XML_TEMPLATE,
-    OOB_PARAM_ENTITY_TEMPLATE,
 )
+from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.params import extract as extract_params
+from pwnproxy.shared.scan.replayers.xxe import XxeReplayer
 
 
 class XXEScannerPlugin(ScannerPlugin):

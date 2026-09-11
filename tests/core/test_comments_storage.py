@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from pwnproxy.shared.db import Base, FlowCommentORM
 from pwnproxy.shared.comments.storage import FlowCommentStorage
+from pwnproxy.shared.db import Base
 
 
 @pytest.fixture

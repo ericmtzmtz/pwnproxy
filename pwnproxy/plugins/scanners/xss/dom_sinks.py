@@ -118,7 +118,7 @@ _PARAM_READ_TEMPLATES = [
 def _script_blocks(html: str) -> list[str]:
     """Extract inline ``<script>...</script>`` blocks (no src)."""
     blocks: list[str] = []
-    for m in re.finditer(r"<script\b[^>]*>(.*?)</script>", html, re.I | re.S):
+    for m in re.finditer(r"<script\b[^>]*>(.*?)</script\b[^>]*>", html, re.IGNORECASE | re.DOTALL):
         tag = m.group(0)
         if r"src=" not in tag.lower():
             blocks.append(m.group(1))
@@ -138,7 +138,7 @@ def find_sinks(html: str, canary: str) -> list[DomSink]:
     for block in _script_blocks(html):
         for sink in DOM_SINKS:
             pattern = sink.pattern.replace(r"\{canary\}", escaped)
-            if re.search(pattern, block, re.I):
+            if re.search(pattern, block, re.IGNORECASE):
                 hits.append(sink)
     return hits
 
@@ -148,7 +148,7 @@ def find_sink_snippet(html: str, canary: str, sink: DomSink) -> str:
     escaped = re.escape(canary)
     pattern = sink.pattern.replace(r"\{canary\}", escaped)
     for block in _script_blocks(html):
-        m = re.search(pattern, block, re.I)
+        m = re.search(pattern, block, re.IGNORECASE)
         if m:
             start = max(0, m.start() - 20)
             end = min(len(block), m.end() + 30)
@@ -173,14 +173,14 @@ def find_param_location_sinks(html: str, param_name: str) -> list[DomSink]:
         read = False
         for tmpl in _PARAM_READ_TEMPLATES:
             pattern = tmpl.replace(r"\{param\}", escaped)
-            if re.search(pattern, block, re.I):
+            if re.search(pattern, block, re.IGNORECASE):
                 read = True
                 break
         if not read:
             continue
         # The same block writes to a DOM sink
         for sink in DOM_SINKS:
-            if re.search(sink.presence, block, re.I):
+            if re.search(sink.presence, block, re.IGNORECASE):
                 hits.append(sink)
     return hits
 
@@ -192,13 +192,13 @@ def find_param_location_snippet(html: str, param_name: str, sink: DomSink) -> st
         read_pos = None
         for tmpl in _PARAM_READ_TEMPLATES:
             pattern = tmpl.replace(r"\{param\}", escaped)
-            m = re.search(pattern, block, re.I)
+            m = re.search(pattern, block, re.IGNORECASE)
             if m:
                 read_pos = m.start()
                 break
         if read_pos is None:
             continue
-        if not re.search(sink.presence, block, re.I):
+        if not re.search(sink.presence, block, re.IGNORECASE):
             continue
         start = max(0, read_pos - 30)
         end = min(len(block), read_pos + 100)

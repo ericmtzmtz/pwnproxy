@@ -8,6 +8,7 @@ Run with::
     $env:PWNPROXY_LIVE=1; poetry run pytest -m live -v
 """
 
+import contextlib
 import os
 
 import httpx
@@ -68,7 +69,8 @@ async def _bwapp_cookie() -> str:
 
     cookies_txt = os.path.join(os.path.dirname(__file__), "..", "..", "cookies.txt")
     if os.path.exists(cookies_txt):
-        value = open(cookies_txt, encoding="utf-8").read().strip()
+        with open(cookies_txt, encoding="utf-8") as fh:
+            value = fh.read().strip()
         if value:
             return value
     pytest.skip("bWAPP login failed and no cookies.txt fallback available")
@@ -102,10 +104,8 @@ async def _scan_xss_get(session_cookie: str) -> list:
         try:
             await loader.unload(plugin.metadata.name)
         except Exception:
-            try:
+            with contextlib.suppress(Exception):
                 await plugin.on_unload()
-            except Exception:
-                pass
 
 
 # ── Live: bWAPP XSS ──────────────────────────────────────────────────────
