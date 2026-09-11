@@ -59,7 +59,7 @@ jobs:
         run: poetry run pytest tests/perf -m "perf and not live" --perf-check -q
       - name: Upload perf result
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-check-output
           path: tests/perf/
@@ -90,7 +90,7 @@ jobs:
       - name: Record baseline on this Linux runner
         run: poetry run pytest tests/perf -m "perf and not live" --perf-record -q
       - name: Upload baseline.json for human merge
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: perf-baseline
           path: tests/perf/baseline.json
