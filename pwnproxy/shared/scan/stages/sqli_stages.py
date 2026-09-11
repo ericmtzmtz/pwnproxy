@@ -3,7 +3,6 @@ import logging
 import time
 from typing import Optional
 
-import httpx
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -121,6 +120,8 @@ class ErrorBasedStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             # Baseline check: if the clean response already carries a DBMS error
             # signature (e.g. the session/state is poisoned by another request),
             # the error is NOT induced by this parameter — skip the point.
@@ -346,6 +347,8 @@ class TimeBlindStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             start = time.monotonic()
             clean = await self._replayer.send_clean(point, timeout=10.0)
             baseline_ms = (time.monotonic() - start) * 1000
@@ -378,6 +381,8 @@ class OOBStage(DetectionStage):
         registry = get_registry()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             scan_id = f"sqli-oob-{flow.id}-{point.name}"
             canary = registry.create(scan_id)
             callback_url = f"http://oob.pwnproxy/{canary.token}"
@@ -426,7 +431,6 @@ def _point_key(point: InjectionPoint) -> tuple:
 
 
 def _check_error_signatures(body: str, signatures: dict[str, list]) -> Optional[tuple[str, str]]:
-    import re
     for dbms, patterns in signatures.items():
         for pat in patterns:
             m = pat.search(body)

@@ -1,13 +1,11 @@
 import logging
-from collections.abc import AsyncGenerator
-from typing import Optional
 
 from pwnproxy.plugins.core.chain import DetectionStage, StageResult, DetectionDepth
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.scanners.command_injection.payloads import Payload, COMMAND_PAYLOADS, WINDOWS_PAYLOADS
+from pwnproxy.plugins.scanners.command_injection.payloads import Payload
 from pwnproxy.plugins.scanners.command_injection.signatures import has_command_output, get_evidence
 
 logger = logging.getLogger(__name__)
@@ -31,6 +29,8 @@ class CommandInjectionStage(DetectionStage):
         confirmed = set()
         
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             for payload in self._payloads:
                 try:
                     resp = await self._replayer.replay(

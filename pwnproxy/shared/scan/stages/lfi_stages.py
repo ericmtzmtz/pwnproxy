@@ -8,8 +8,6 @@ LfiOOBStage: Out-of-Band LFI detection via callback canary.
 from __future__ import annotations
 
 import logging
-import time
-from typing import Optional
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -17,7 +15,7 @@ from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.canary import get_registry
-from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
+from pwnproxy.shared.scan.replayer import _serialize_request
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +38,8 @@ class SimpleStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             for payload in self._payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=5.0, evasion_level=self._evasion)
                 if resp is None:
@@ -85,6 +85,8 @@ class PHPWrapperStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             for payload in self._payloads:
                 resp = await self._replayer.replay(point, payload.value, timeout=5.0, evasion_level=self._evasion)
                 if resp is None:
@@ -130,6 +132,8 @@ class LfiOOBStage(DetectionStage):
         registry = get_registry()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             # Use canary to trigger OOB callback
             scan_id = f"lfi-oob-{flow.id}-{point.name}"
             canary = registry.create(scan_id)
