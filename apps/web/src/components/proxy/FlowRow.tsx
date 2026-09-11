@@ -94,13 +94,20 @@ export function FlowRow({ flow, findingCount, onDeleted }: FlowRowProps) {
           {formatTimeOnly(flow.timestamp)}
         </td>
         <td class="px-3 py-2 text-xs">
-          {findingCount > 0 ? (
-            <span class="inline-flex items-center gap-1 rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-400">
-              🛡 {findingCount}
-            </span>
-          ) : (
-            <span class="text-neutral-600">—</span>
-          )}
+          <span class="inline-flex items-center gap-1">
+            {findingCount > 0 ? (
+              <span class="inline-flex items-center gap-1 rounded-full bg-red-900/40 px-2 py-0.5 text-[11px] font-semibold text-red-400">
+                🛡 {findingCount}
+              </span>
+            ) : (
+              <span class="text-neutral-600">—</span>
+            )}
+            {(flow.comment_count ?? 0) > 0 && (
+              <span class="inline-flex items-center gap-1 rounded-full bg-blue-900/40 px-2 py-0.5 text-[11px] font-semibold text-blue-400">
+                💬 {flow.comment_count}
+              </span>
+            )}
+          </span>
         </td>
       </tr>
       {expanded && (

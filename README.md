@@ -537,6 +537,7 @@ See the contribution documentation for architecture and development details.
 | Scanners | `docs/scanners.md` |
 | Directory Discovery | `docs/directory-bruteforce.md` |
 | Burp Migration | `docs/burp-migration.md` |
+| Flow Comments | `docs/comments-on-flows.md` |
 | Development | `docs/development.md` |
 
 ## Contributing

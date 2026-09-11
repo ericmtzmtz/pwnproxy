@@ -3,6 +3,8 @@ import { getFlow, deleteFlow, outscopeFlow } from "@/api/traffic/calls";
 import { createTab } from "@/api/repeater/calls";
 import { buildScanTargetQuery } from "@/utils/scanTarget";
 import type { FlowRecord } from "@/api/traffic/types";
+import { listComments, createComment, updateComment, deleteComment } from "@/api/comments/calls";
+import type { Comment } from "@/api/comments/types";
 
 interface FlowRequestData {
   method: string;
@@ -86,6 +88,120 @@ function BodyBlock({ body, contentType }: { body: string | null; contentType?: s
     <pre class="max-h-96 overflow-auto rounded bg-neutral-950 p-3 text-xs leading-relaxed"><code class={
       isHtml ? "language-html" : isJson ? "language-json" : ""
     }>{body.length > 10000 ? body.slice(0, 10000) + "\n… (truncated)" : body}</code></pre>
+  );
+}
+
+const kindColors: Record<string, string> = {
+  note: "bg-neutral-800 text-neutral-300",
+  flag: "bg-red-900/40 text-red-400",
+  todo: "bg-yellow-900/40 text-yellow-400",
+};
+
+function CommentsPanel({ flowId }: { flowId: number }) {
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [body, setBody] = useState("");
+  const [kind, setKind] = useState<"note" | "flag" | "todo">("note");
+  const [submitting, setSubmitting] = useState(false);
+
+  const refresh = async () => {
+    try {
+      const list = await listComments(flowId);
+      setComments(list);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, [flowId]);
+
+  const handleCreate = async () => {
+    if (!body.trim()) return;
+    setSubmitting(true);
+    try {
+      await createComment(flowId, { body: body.trim(), kind });
+      setBody("");
+      await refresh();
+      toast("success", "Comment added");
+    } catch (e: any) {
+      toast("error", e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleResolved = async (c: Comment) => {
+    try {
+      await updateComment(flowId, c.id, { resolved: !c.resolved });
+      await refresh();
+    } catch (e: any) {
+      toast("error", e.message);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    try {
+      await deleteComment(flowId, id);
+      await refresh();
+      toast("success", "Comment deleted");
+    } catch (e: any) {
+      toast("error", e.message);
+    }
+  };
+
+  return (
+    <div class="mt-4 rounded border border-neutral-800 bg-neutral-900/50 p-3">
+      <h4 class="mb-2 text-xs font-semibold uppercase tracking-wider text-neutral-400">
+        Comments ({comments.length})
+      </h4>
+      {loading ? (
+        <p class="text-xs text-neutral-500">Loading…</p>
+      ) : comments.length === 0 ? (
+        <p class="text-xs text-neutral-500">No comments yet</p>
+      ) : (
+        <ul class="mb-3 space-y-2">
+          {comments.map((c) => (
+            <li key={c.id} class={`flex items-start justify-between gap-2 rounded bg-neutral-950 p-2 text-xs ${c.resolved ? "opacity-60" : ""}`}>
+              <div class="flex-1">
+                <div class="mb-1 flex items-center gap-2">
+                  <span class={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${kindColors[c.kind] ?? kindColors.note}`}>{c.kind}</span>
+                  {c.resolved && <span class="rounded bg-green-900/40 px-1.5 py-0.5 text-[10px] font-semibold text-green-400">resolved</span>}
+                  <span class="text-[11px] text-neutral-500">{c.created_at ? new Date(c.created_at).toLocaleString() : ""}</span>
+                </div>
+                <p class="whitespace-pre-wrap text-neutral-300">{c.body}</p>
+              </div>
+              <span class="flex gap-1">
+                <button onClick={() => handleToggleResolved(c)} class="rounded bg-neutral-800 px-1.5 py-0.5 text-[11px] text-neutral-300 hover:bg-neutral-700">
+                  {c.resolved ? "Unresolve" : "Resolve"}
+                </button>
+                <button onClick={() => handleDelete(c.id)} class="rounded bg-red-900/30 px-1.5 py-0.5 text-[11px] text-red-400 hover:bg-red-800/40">Delete</button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div class="flex gap-2">
+        <select value={kind} onChange={(e) => setKind((e.target as HTMLSelectElement).value as any)} class="rounded bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300 border border-neutral-800">
+          <option value="note">note</option>
+          <option value="flag">flag</option>
+          <option value="todo">todo</option>
+        </select>
+        <input
+          value={body}
+          onInput={(e) => setBody((e.target as HTMLInputElement).value)}
+          placeholder="Add a comment…"
+          class="flex-1 rounded bg-neutral-950 px-2 py-1.5 text-xs text-neutral-300 border border-neutral-800 placeholder-neutral-600"
+          onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleCreate(); } }}
+        />
+        <button onClick={handleCreate} disabled={submitting || !body.trim()} class="rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50">
+          {submitting ? "…" : "Add"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -250,6 +366,7 @@ export function FlowDetail({ flowId, onDeleted, onSendToRepeater }: FlowDetailPr
           </CollapsibleSection>
         </div>
       </div>
+      <CommentsPanel flowId={flowId} />
     </div>
   );
 }

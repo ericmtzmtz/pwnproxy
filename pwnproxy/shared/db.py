@@ -1,9 +1,9 @@
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import JSON, LargeBinary, event
+from sqlalchemy import JSON, LargeBinary, Text, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
@@ -14,9 +14,24 @@ class Base(DeclarativeBase):
     pass
 
 
+class FlowCommentORM(Base):
+    __tablename__ = "flow_comments"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    flow_id: Mapped[int] = mapped_column(index=True)
+    body: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(default="note")
+    resolved: Mapped[bool] = mapped_column(default=False)
+    author: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
+    created_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    
+
+
 class FlowRecord(Base):
     __tablename__ = "flows"
-
+    
     id: Mapped[int] = mapped_column(primary_key=True)
     
     # Request
@@ -38,12 +53,6 @@ class FlowRecord(Base):
     error: Mapped[Optional[str]]
     tls: Mapped[bool] = mapped_column(default=False)
 
-
-@event.listens_for(Engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA journal_mode=WAL")
-    cursor.close()
 
 
 def ensure_db_dir(db_path: Path) -> None:
