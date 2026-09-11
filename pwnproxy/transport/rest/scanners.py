@@ -1,9 +1,8 @@
-import asyncio
 import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -40,20 +39,6 @@ class TriggerResponse(BaseModel):
 
     status: Optional[str] = None
     flow_id: Any = None
-
-
-class SecondOrderStartResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    status: Optional[str] = None
-    stats: dict[str, Any] = Field(default_factory=dict)
-
-
-class SecondOrderStatusResponse(BaseModel):
-    model_config = ConfigDict(extra="allow")
-
-    running: bool = False
-    stats: dict[str, Any] = Field(default_factory=dict)
 
 
 @router.post("/scanners/trigger-flow", response_model=TriggerResponse)
@@ -125,32 +110,3 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
                 await bus.publish(topic, f)
 
     return {"status": "triggered", "flow_id": body.flow_id}
-
-
-@router.post("/scanners/second-order/start", response_model=SecondOrderStartResponse)
-async def start_second_order(request: Request):
-    """Start the second-order detection background task."""
-    from pwnproxy.shared.scan.payload_store import get_store
-
-    store = get_store()
-    store._running = True
-    return {"status": "started", "stats": store.stats()}
-
-
-@router.post("/scanners/second-order/stop", response_model=SecondOrderStartResponse)
-async def stop_second_order(request: Request):
-    """Stop the second-order detection background task."""
-    from pwnproxy.shared.scan.payload_store import get_store
-
-    store = get_store()
-    store._running = False
-    return {"status": "stopped", "stats": store.stats()}
-
-
-@router.get("/scanners/second-order/status", response_model=SecondOrderStatusResponse)
-async def second_order_status(request: Request):
-    """Get second-order detection status."""
-    from pwnproxy.shared.scan.payload_store import get_store
-
-    store = get_store()
-    return {"running": store._running, "stats": store.stats()}
