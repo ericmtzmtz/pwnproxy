@@ -1,6 +1,10 @@
 # Scanners
 
-All scanners are HookBus consumers: they listen for `"done"` events published by the proxy addon pipeline, extract injection points (query params, form body, JSON body, cookies, headers), and perform automated testing with per-host rate limiting and result dedup.
+> Plugin contracts, configuration, depth semantics, and the build guide are defined in
+> [`plugin-architecture.md`](./plugin-architecture.md). That document is the source of
+> truth; this page covers scanner capabilities only.
+
+All scanners consume flows from the message bus, extract injection points (query params, form body, JSON body, cookies, headers), and perform automated testing with per-host rate limiting and result dedup.
 
 | Scanner | Detection Methods | Injection Points | Key Features |
 |---------|------------------|------------------|--------------|
