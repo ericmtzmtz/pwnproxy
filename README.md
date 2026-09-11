@@ -540,6 +540,42 @@ See the contribution documentation for architecture and development details.
 | Flow Comments | `docs/comments-on-flows.md` |
 | Development | `docs/development.md` |
 
+## Security
+
+> [!WARNING]
+> **Security disclaimer — dependency advisories.** pwnproxy's proxy engine is built on `mitmproxy`, which pins several transitive dependencies to exact upper bounds. Some Dependabot advisories therefore **cannot be fixed from this repository** and stay open until upstream `mitmproxy` widens those constraints. They are documented below and re-evaluated on every `mitmproxy` upgrade. Everything else is kept on the latest patched release.
+
+### Open advisories blocked upstream (`mitmproxy 12.2.x`)
+
+These are transitive runtime dependencies whose installable version is capped by mitmproxy:
+
+| Package | Advisories | Allowed by mitmproxy | Fixed in |
+|---|---|---|---|
+| `tornado` | 7 — DoS, credential leak, gzip bomb, OOB read | `>=6.5.0,<=6.5.5` | `6.5.8` |
+| `h2` | 1 — duplicate `Host` request smuggling | `=4.3.0` | `4.4.1` |
+| `cryptography` | 1 — PKCS#7 Bleichenbacher oracle | `>=42.0,<=48.1` | `50.0.0` |
+| `msgpack` | 1 — OOB read on `Unpacker` reuse | `>=1.0.0,<=1.1.2` | `1.2.1` |
+
+**Impact & mitigation:** these paths handle HTTP controlled by the target being tested. As with any interception proxy, only run pwnproxy against systems you are authorized to test, keep it bound to loopback by default, and treat captured traffic as untrusted. Tracking: GitHub Dependabot alerts, reviewed on every `mitmproxy` release.
+
+### Fixed in this release
+
+- **npm** (`apps/web`): `astro` remote code execution (critical), `sharp`, `svgo` (×2), `js-yaml`, `smol-toml`.
+- **pip**: `weasyprint` SSRF (both variants) in the optional `reports-pdf` extra, now `^70`.
+
+### Residual
+
+- `weasyprint` CSS injection (`GHSA-jhhc-3hcp-qhm5`) has **no upstream patch** yet. The `reports-pdf` extra is optional and not installed by default, so it does not affect the core install.
+
+### Checking locally
+
+```bash
+npm audit --prefix apps/web
+poetry run pip-audit        # if pip-audit is installed
+```
+
+To report a security issue, contact [info@nextechsolutions.mx](mailto:info@nextechsolutions.mx).
+
 ## Contributing
 
 Contributions are welcome.
