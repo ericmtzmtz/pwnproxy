@@ -10,10 +10,10 @@ readme = "README.md"
 python = "^3.12"
 mitmproxy = "^12.2"
 textual = "^8.2.7"
-typer = "^0.25"
+typer = ">=0.25,<0.28"
 httpx = "^0.28"
-fastapi = "^0.136"
-uvicorn = {extras = ["standard"], version = "^0.47"}
+fastapi = ">=0.136,<0.142"
+uvicorn = {extras = ["standard"], version = ">=0.47,<0.53"}
 sqlalchemy = "^2.0"
 aiosqlite = "^0.22"
 pyjwt = "^2.13"
