@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+import types
 from typing import (
     Any,
     Literal,
@@ -69,7 +70,7 @@ def _type_label(annotation: Any, *, flatten_nested: bool = True) -> str:
     if origin is Literal:
         choices = ", ".join(repr(a) for a in get_args(annotation))
         return f"one of: {choices}"
-    if origin is Union:
+    if origin is Union or origin is types.UnionType:
         parts = [_type_label(a, flatten_nested=flatten_nested) for a in get_args(annotation)]
         if type(None) in get_args(annotation):
             non_none = [

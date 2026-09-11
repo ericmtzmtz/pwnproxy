@@ -118,7 +118,7 @@ _PARAM_READ_TEMPLATES = [
 def _script_blocks(html: str) -> list[str]:
     """Extract inline ``<script>...</script>`` blocks (no src)."""
     blocks: list[str] = []
-    for m in re.finditer(r"<script\b[^>]*>(.*?)</script>", html, re.IGNORECASE | re.DOTALL):
+    for m in re.finditer(r"<script\b[^>]*>(.*?)</script\b[^>]*>", html, re.IGNORECASE | re.DOTALL):
         tag = m.group(0)
         if r"src=" not in tag.lower():
             blocks.append(m.group(1))

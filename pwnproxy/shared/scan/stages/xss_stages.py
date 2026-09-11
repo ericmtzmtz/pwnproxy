@@ -330,7 +330,7 @@ class DomStage(DetectionStage):
         """True if the canary appears in the HTML outside of <script> blocks."""
         if canary not in body:
             return False
-        stripped = re.sub(r"<script\b[^>]*>.*?</script>", "", body, flags=re.IGNORECASE | re.DOTALL)
+        stripped = re.sub(r"<script\b[^>]*>.*?</script\b[^>]*>", "", body, flags=re.IGNORECASE | re.DOTALL)
         return canary in stripped
 
     @staticmethod
