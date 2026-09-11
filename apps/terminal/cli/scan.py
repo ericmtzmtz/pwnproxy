@@ -1,9 +1,7 @@
 import asyncio
 import logging
-import tempfile
 import time
 import uuid
-from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -14,7 +12,6 @@ from pwnproxy.shared.models import Flow
 from pwnproxy.services.findings.engine import ExportEngine
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.loader import PluginLoader
-from pwnproxy.plugins.core.config import load_config
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -34,9 +31,12 @@ def url(
     method: str = typer.Option("GET", "--method", "-m", help="HTTP method for the target request (GET, POST, PUT, PATCH)"),
     data: Optional[str] = typer.Option(None, "--data", "-d", help="Raw request body (e.g. XML or JSON payload)"),
     content_type: Optional[str] = typer.Option(None, "--content-type", help="Content-Type header for the body (e.g. text/xml, application/json)"),
+    detection_depth: str = typer.Option("fast", "--depth", help="Detection depth: fast, standard, deep"),
+    evasion_level: str = typer.Option("none", "--evasion", help="Evasion level: none, light, aggressive"),
 ):
     async def _run():
-        loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None)
+        _cfg = _resolve_scanner_config(detection_depth, evasion_level)
+        loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None, config=_cfg)
         extra_headers: dict[str, str] = {}
         if cookies:
             joined = "; ".join(c.strip().rstrip(";") for c in cookies if c and c.strip())
@@ -59,7 +59,7 @@ def url(
         findings = await _scan_target(
             loader, target, timeout,
             method=req_method, body=body, extra_headers=extra_headers,
-        )
+        )  # config is baked into loader; _scan_target no longer takes depth/evasion
         _output_findings(findings, output, output_file)
         if findings:
             raise typer.Exit(1)
@@ -76,12 +76,22 @@ def url(
         raise typer.Exit(2)
 
 
-async def _build_scan_loader(scanners: Optional[set[str]] = None, disabled_plugins: Optional[list[str]] = None) -> PluginLoader:
+def _resolve_scanner_config(detection_depth: str = "fast", evasion_level: str = "none") -> dict:
+    """Map request params to the plugin config keys used in on_load()."""
+    return {"depth": detection_depth, "evasion_level": evasion_level}
+
+
+async def _build_scan_loader(
+    scanners: Optional[set[str]] = None,
+    disabled_plugins: Optional[list[str]] = None,
+    config: Optional[dict] = None,
+) -> PluginLoader:
     from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
     from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
     from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
     from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
+    from pwnproxy.plugins.scanners.command_injection.plugin import CommandInjectionScannerPlugin
     from pwnproxy.plugins.core.loader import PluginLoader
 
     loader = PluginLoader()
@@ -91,18 +101,23 @@ async def _build_scan_loader(scanners: Optional[set[str]] = None, disabled_plugi
         "lfi": LFIScannerPlugin,
         "xxe": XXEScannerPlugin,
         "ssrf": SSRFScannerPlugin,
+        "command-injection": CommandInjectionScannerPlugin,
     }
+    # Allow both "command_injection" and "command-injection" as input
+    alias = {"command_injection": "command-injection"}
     disabled_set = set(disabled_plugins or [])
+    cfg = config or {}
     if scanners:
-        for name in scanners:
+        for raw in scanners:
+            name = alias.get(raw, raw)
             if name not in builtin_plugins:
-                raise ValueError(f"Unknown scanner: {name}")
+                raise ValueError(f"Unknown scanner: {raw}")
             if name not in disabled_set:
-                await loader.load_builtin(builtin_plugins[name]())
+                await loader.load_builtin(builtin_plugins[name](), config=cfg)
     else:
         for name, plugin_cls in builtin_plugins.items():
             if name not in disabled_set:
-                await loader.load_builtin(plugin_cls())
+                await loader.load_builtin(plugin_cls(), config=cfg)
     return loader
 
 
@@ -110,8 +125,6 @@ async def _scan_target(
     loader: PluginLoader,
     target: str,
     timeout: int,
-    detection_depth: str = "fast",
-    evasion_level: str = "none",
     extra_headers: Optional[dict[str, str]] = None,
     method: str = "GET",
     body: Optional[str] = None,
@@ -131,7 +144,6 @@ async def _scan_target(
             console.print(f"[red]Request failed:[/red] {e}")
             raise
 
-    parsed = httpx.URL(target)
     flow = Flow(
         id=str(uuid.uuid4()),
         method=method,
@@ -145,7 +157,7 @@ async def _scan_target(
         tls=target.startswith("https"),
     )
 
-    all_findings = await loader.run_scan(flow, depth=detection_depth, evasion_level=evasion_level)
+    all_findings = await loader.run_scan(flow)
     elapsed = time.monotonic() - start
     console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(all_findings)}[/bold] finding(s)")
     _print_xss_scope_note(all_findings)

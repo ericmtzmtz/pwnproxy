@@ -1,5 +1,4 @@
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass
 
 
 @dataclass
@@ -7,9 +6,6 @@ class XssPayload:
     value: str
     context: str
     description: str
-
-
-PROBE_PAYLOAD = "pwnxss-probe"
 
 
 HTML_BODY_PAYLOADS: list[XssPayload] = [
@@ -73,3 +69,11 @@ def get_payloads_for_context(context: str) -> list[XssPayload]:
         "svg_namespace": SVG_NAMESPACE_PAYLOADS,
     }
     return mapping.get(context, [])
+
+
+# Stored XSS payloads — single source for shared/scan/stages/xss_stages.py:StoredStage
+STORED_PAYLOADS: list[str] = [
+    "<script>alert(1)</script>",
+    "<img src=x onerror=alert(1)>",
+    "{{constructor.constructor('alert(1)')()}}",
+]

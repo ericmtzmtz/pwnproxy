@@ -9,6 +9,11 @@ from pwnproxy.shared.scan.replayers.xxe import XxeReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.scanners.xxe.scanner import XXEScanner
+from pwnproxy.plugins.scanners.xxe.payloads import (
+    STAGE_ERROR_XML,
+    STAGE_JSON_XML_TEMPLATE,
+    OOB_PARAM_ENTITY_TEMPLATE,
+)
 
 
 class XXEScannerPlugin(ScannerPlugin):
@@ -25,8 +30,17 @@ class XXEScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        if depth not in ("fast", "standard", "deep"):
+            raise ValueError(f"invalid depth '{depth}' — expected fast|standard|deep")
+        if evasion_level not in ("none", "light", "aggressive"):
+            raise ValueError(f"invalid evasion_level '{evasion_level}'")
         self._replayer = XxeReplayer()
-        self._scanner = XXEScanner(self._replayer, depth=depth, evasion=evasion_level)
+        self._scanner = XXEScanner(
+            self._replayer, depth=depth, evasion=evasion_level,
+            error_template=STAGE_ERROR_XML,
+            json_template=STAGE_JSON_XML_TEMPLATE,
+            oob_template=OOB_PARAM_ENTITY_TEMPLATE,
+        )
 
     async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
         self._replayer.flow = flow

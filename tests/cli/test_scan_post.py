@@ -3,7 +3,6 @@
 import asyncio
 
 import httpx
-import pytest
 
 from apps.terminal.cli import scan as scan_mod
 from apps.terminal.cli.scan import _scan_target
@@ -15,7 +14,7 @@ class _NullLoader:
     def __init__(self):
         self.seen_flow = None
 
-    async def run_scan(self, flow, depth="fast", evasion_level="none"):
+    async def run_scan(self, flow):
         self.seen_flow = flow
         return []
 

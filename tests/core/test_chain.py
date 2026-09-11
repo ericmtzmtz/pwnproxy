@@ -1,10 +1,9 @@
-import asyncio
 import pytest
 from unittest.mock import MagicMock
 
 from pwnproxy.plugins.core.chain import (
     DetectionDepth, DetectionStage, StageResult,
-    DetectionChain, BudgetChain, chain_from_depth,
+    BudgetChain, chain_from_depth,
 )
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
@@ -163,6 +162,42 @@ async def test_chain_from_depth_defaults_to_deep_budget_on_unknown():
     chain = chain_from_depth([stage], depth="fast")
     # fast must NOT receive deep budget (regression for the DEEP-hardcoded bug)
     assert chain._budget_ms != BudgetChain.WAVE_BUDGET_MS[DetectionDepth.DEEP]
+
+@pytest.mark.asyncio
+async def test_chain_from_depth_ceiling_not_floor(flow, points):
+    """chain_from_depth depth is a ceiling: chain always starts at FAST and escalates to requested depth."""
+    stage = MagicMock(spec=DetectionStage)
+    stage.min_depth = DetectionDepth.FAST
+    stage.should_run.return_value = True
+    stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain = chain_from_depth([stage], depth="deep")
+    assert chain.depth == DetectionDepth.FAST
+    assert chain._max_depth == DetectionDepth.DEEP
+    assert chain._budget_ms == BudgetChain.BUDGET_MS[DetectionDepth.DEEP]
+
+    chain_std = chain_from_depth([stage], depth="standard")
+    assert chain_std.depth == DetectionDepth.FAST
+    assert chain_std._max_depth == DetectionDepth.STANDARD
+    assert chain_std._budget_ms == BudgetChain.BUDGET_MS[DetectionDepth.STANDARD]
+
+    # Verify DEEP still runs FAST wave (would fail if depth were a floor)
+    fast_stage = MagicMock(spec=DetectionStage)
+    fast_stage.order = 0
+    fast_stage.min_depth = DetectionDepth.FAST
+    fast_stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+    deep_stage = MagicMock(spec=DetectionStage)
+    deep_stage.order = 2
+    deep_stage.min_depth = DetectionDepth.DEEP
+    deep_stage.execute.return_value = StageResult(findings=[], confirmed_points=set())
+
+    chain_deep = chain_from_depth([fast_stage, deep_stage], depth="deep")
+    results = []
+    async for _ in chain_deep.run(flow, points):
+        results.append(_)
+    fast_stage.execute.assert_called_once()
+    deep_stage.execute.assert_called_once()
+
 
 @pytest.mark.asyncio
 async def test_budget_chain_depth_limits_waves():

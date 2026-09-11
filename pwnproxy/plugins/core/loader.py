@@ -3,12 +3,11 @@ import importlib
 import importlib.util
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional
 from collections.abc import AsyncGenerator
 
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.core.base import Finding, PwnPlugin, PluginMetadata, PluginContext, ScannerPlugin
-from pwnproxy.plugins.core.contracts import FlowConsumer, FindingConsumer
 from pwnproxy.shared.hooks import HookBus
 
 logger = logging.getLogger(__name__)
@@ -83,13 +82,9 @@ class UniversalPluginLoader:
         if channel_mapping is None:
             channel_mapping = {}
         
-        # Register channels that the plugin consumes from, including implicit handlers
-        implicit_consumes = _implicit_consumes(plugin)
-        # Combine explicit and implicit consumes
-        all_consumes = list(plugin.metadata.consumes) + implicit_consumes
-        # Register consume channels (tasks will be started in start())
-        
-        # Register channels that the plugin produces to
+        # Consume channels are wired when consumer tasks start in start().
+        # Register the channels that the plugin produces to.
+
         for produce_type in plugin.metadata.produces:
             channel_name = channel_mapping.get(produce_type, produce_type)
             self.hook_bus.register_channel(channel_name)
@@ -108,7 +103,7 @@ class UniversalPluginLoader:
         if self.bus is not None:
             async for envelope in self.bus.subscribe(channel_name):
                 data = envelope.data
-                if consume_type == "flow" and (hasattr(plugin, "on_flow") or hasattr(plugin, "scan")):
+                if consume_type == "flow" and hasattr(plugin, "on_flow"):
                     async for result in self._handle_flow(plugin, data):
                         if result is not None:
                             await self._publish_results(plugin, result)
@@ -119,7 +114,7 @@ class UniversalPluginLoader:
                 elif consume_type == "surface" and hasattr(plugin, "on_surface"):
                     result = await plugin.on_surface(data)
                     if result is not None:
-                        await _publish_results(plugin, result)
+                        await self._publish_results(plugin, result)
                 elif consume_type == "evidence" and hasattr(plugin, "on_evidence"):
                     result = await plugin.on_evidence(data)
                     if result is not None:
@@ -136,7 +131,7 @@ class UniversalPluginLoader:
                         # Wait for data with a timeout to allow graceful shutdown
                         data = await asyncio.wait_for(queue.get(), timeout=self._timeout)
                         
-                        if consume_type == "flow" and (hasattr(plugin, "on_flow") or hasattr(plugin, "scan")):
+                        if consume_type == "flow" and hasattr(plugin, "on_flow"):
                             async for result in self._handle_flow(plugin, data):
                                 if result is not None:
                                     await self._publish_results(plugin, result)
@@ -182,17 +177,8 @@ class UniversalPluginLoader:
             except Exception:
                 logger.debug("autoscan report_flow failed", exc_info=True)
         if hasattr(plugin, "on_flow"):
-            # New-style plugin
             async for result in plugin.on_flow(flow):
                 yield result
-        elif hasattr(plugin, "scan"):
-            # Legacy plugin - migrate scan() to on_flow()
-            try:
-                async for result in plugin.scan(flow):
-                    yield result
-            except Exception as e:
-                logger.error("Legacy scan() failed for %s: %s", plugin.metadata.name, e)
-                # skip erroneous result
 
     async def _publish_results(self, plugin: PwnPlugin, result: Any) -> None:
         """Publish plugin results to appropriate channels."""
@@ -377,19 +363,12 @@ class PluginLoader(UniversalPluginLoader):
             hook_bus = HookBus()
         super().__init__(hook_bus, bus=bus)
     
-    async def load_builtin(self, plugin: PwnPlugin) -> None:
+    async def load_builtin(self, plugin: PwnPlugin, config: Optional[dict] = None) -> None:
         """Load a builtin plugin and call its on_load hook."""
         await self.load(plugin)
-        ctx = PluginContext(config={}, hook_bus=self.hook_bus)
+        ctx = PluginContext(config=config or {}, hook_bus=self.hook_bus)
         plugin.context = ctx
         await plugin.on_load()
-    
-    async def load_from_package(self, package_name: str) -> Optional[str]:
-        """Load plugin from package (placeholder for backward compatibility)."""
-        import warnings
-        warnings.warn("load_from_package not implemented in new PluginLoader", UserWarning)
-        logger.warning("load_from_package not implemented in new PluginLoader")
-        return None
     
     async def activate(self, name: str) -> bool:
         plugin = self._plugins.get(name)
@@ -429,11 +408,6 @@ class PluginLoader(UniversalPluginLoader):
         return [self.get_plugin_info(name) for name in self.list_plugins()
                 if self.get_plugin_info(name) and not self._plugins[name].metadata.disabled]
     
-    def list_available(self) -> List[Dict[str, Any]]:
-        """List available plugins (placeholder for backward compatibility)."""
-        logger.warning("list_available not implemented in new PluginLoader")
-        return []
-    
     def watchdog_stats(self) -> Dict[str, Any]:
         disabled = [name for name, p in self._plugins.items() if p.metadata.disabled]
         return {"disabled": disabled}
@@ -444,17 +418,12 @@ class PluginLoader(UniversalPluginLoader):
     
     def get_all_scanners(self) -> Dict[str, PwnPlugin]:
         """Get all scanner plugins (backward compatibility)."""
-        return {name: plugin for name, plugin in self._plugins.items() 
-                if hasattr(plugin, 'on_flow') or hasattr(plugin, 'scan')}
+        return {name: plugin for name, plugin in self._plugins.items() if hasattr(plugin, 'on_flow')}
     
-    async def run_scan(self, flow: Flow, depth: str = "fast", evasion_level: str = "none") -> List[Finding]:
+    async def run_scan(self, flow: Flow) -> List[Finding]:
         """Run a scan across loaded scanner plugins.
 
-        This method iterates over all loaded plugins that are instances of
-        ``ScannerPlugin`` and invokes their ``on_flow`` method if available,
-        otherwise falls back to ``scan`` with the provided ``depth`` and
-        ``evasion_level`` arguments. Findings are collected and returned as a
-        list.
+        Depth and evasion are load-time properties baked into the chain.
         """
         results: List[Finding] = []
         for plugin in self._plugins.values():
@@ -464,22 +433,6 @@ class PluginLoader(UniversalPluginLoader):
                         async for finding in plugin.on_flow(flow):
                             if finding:
                                 results.append(finding)
-                    elif hasattr(plugin, "scan"):
-                        async for finding in plugin.scan(flow, depth, evasion_level):
-                            if finding:
-                                results.append(finding)
                 except Exception as e:
                     logger.error("Scan error for %s: %s", plugin.metadata.name, e)
         return results
-    
-    async def run_hooks_request(self, flow: Flow) -> Flow:
-        """Run request hooks (placeholder for backward compatibility)."""
-        logger.warning("run_hooks_request not implemented in new PluginLoader - use hook bus instead")
-        return flow
-    
-    async def run_hooks_response(self, flow: Flow) -> Flow:
-        """Run response hooks (placeholder for backward compatibility)."""
-        import warnings
-        warnings.warn("run_hooks_response not implemented in new PluginLoader - use hook bus instead", UserWarning)
-        logger.warning("run_hooks_response not implemented in new PluginLoader - use hook bus instead")
-        return flow

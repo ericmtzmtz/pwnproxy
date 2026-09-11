@@ -8,8 +8,6 @@ SsrfOOBStage: Out-of-Band SSRF detection via callback canary.
 from __future__ import annotations
 
 import logging
-import time
-from typing import Optional
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
@@ -71,6 +69,8 @@ class SsrfSimpleStage(DetectionStage):
         registry = get_registry()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             canary = registry.create(f"ssrf-simple-{flow.id}-{point.name}")
             callback_url = server.get_callback_url(canary.token)
 
@@ -135,6 +135,8 @@ class RedirectStage(DetectionStage):
         confirmed: set[tuple] = set()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             # Use a probe that would cause a redirect if the server is fetching URLs
             probe_url = f"http://{point.host}:{point.path}/redirect?target=http://127.0.0.1:9999/"
             from pwnproxy.shared.scan.params import InjectionPoint as IP
@@ -199,6 +201,8 @@ class SsrfOOBStage(DetectionStage):
         server = await get_server()
 
         for point in injection_points:
+            if self._deadline_exceeded():
+                break
             scan_id = f"ssrf-oob-{flow.id}-{point.name}"
             canary = registry.create(scan_id)
             callback_url = server.get_callback_url(canary.token)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionChain, create_chain, DetectionDepth
+from pwnproxy.plugins.core.chain import create_chain, DetectionDepth
 from pwnproxy.shared.scan.stages.xxe_stages import (
     XxeErrorBasedStage,
     JSONMutateStage,
@@ -30,6 +30,9 @@ class XXEScanner:
         replayer: XxeReplayer,
         depth: DetectionDepth = DetectionDepth.FAST,
         evasion: str = "none",
+        error_template: str = "",
+        json_template: str = "",
+        oob_template: str = "",
     ):
         self._replayer = replayer
         self._depth = depth
@@ -37,9 +40,9 @@ class XXEScanner:
 
         self.chain = create_chain(
             stages=[
-                XxeErrorBasedStage(self._replayer, evasion_level=self._evasion),
-                JSONMutateStage(self._replayer, evasion_level=self._evasion),
-                XxeOOBStage(self._replayer, evasion_level=self._evasion),
+                XxeErrorBasedStage(self._replayer, evasion_level=self._evasion, entity_xml=error_template),
+                JSONMutateStage(self._replayer, evasion_level=self._evasion, xml_template=json_template),
+                XxeOOBStage(self._replayer, evasion_level=self._evasion, oob_template=oob_template),
             ],
             depth=self._depth,
         )

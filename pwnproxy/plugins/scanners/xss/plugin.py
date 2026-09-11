@@ -7,6 +7,7 @@ from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.scanners.xss.scanner import XSSScanner
+from pwnproxy.plugins.scanners.xss.payloads import STORED_PAYLOADS
 
 
 class XSSScannerPlugin(ScannerPlugin):
@@ -23,8 +24,15 @@ class XSSScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        if depth not in ("fast", "standard", "deep"):
+            raise ValueError(f"invalid depth '{depth}' — expected fast|standard|deep")
+        if evasion_level not in ("none", "light", "aggressive"):
+            raise ValueError(f"invalid evasion_level '{evasion_level}'")
         self._replayer = RequestReplayer()
-        self._scanner = XSSScanner(self._replayer, depth=depth, evasion=evasion_level)
+        self._scanner = XSSScanner(
+            self._replayer, depth=depth, evasion=evasion_level,
+            stored_payloads=STORED_PAYLOADS,
+        )
 
     async def on_flow(self, flow: Flow) -> AsyncGenerator[Finding, None]:
         points = extract_params(flow)

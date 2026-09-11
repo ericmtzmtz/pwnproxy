@@ -30,8 +30,8 @@ class RequestReplayer:
         Protected hook — subclasses override this for specialised mutation
         (e.g. ``XxeReplayer`` mutates the XML body instead of parameters).
 
-        Base implementation: inject *payload* as the parameter value using
-        ``point.inject()``, then build the request with ``build_request()``.
+        Base implementation: apply evasion, then inject the payload at
+        ``point.location`` using the module-level ``_inject_*`` helpers.
         """
         method = point.method.upper()
         headers = dict(point.original_headers)

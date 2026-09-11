@@ -87,8 +87,21 @@ class PwnPlugin:
     context: Optional[PluginContext] = None
 
     def __init__(self, metadata: Optional[PluginMetadata] = None, context: Optional[PluginContext] = None):
-        self.metadata = metadata
-        self.context = context
+        import copy
+        if metadata is not None:
+            self.metadata = metadata
+        elif getattr(self.__class__, "metadata", None) is not None and isinstance(getattr(self.__class__, "metadata"), PluginMetadata):
+            # Preserve class-level PluginMetadata instead of shadowing with None.
+            # Copy so per-instance mutation (disabled) does not affect the class.
+            self.metadata = copy.copy(getattr(self.__class__, "metadata"))
+        else:
+            self.metadata = metadata
+        if context is not None:
+            self.context = context
+        elif getattr(self.__class__, "context", None) is not None:
+            self.context = copy.copy(getattr(self.__class__, "context"))
+        else:
+            self.context = context
 
     async def on_load(self) -> None:
         pass

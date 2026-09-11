@@ -18,7 +18,7 @@ from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Optional
 
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
@@ -85,9 +85,16 @@ class DetectionStage(ABC):
 
         ``BudgetChain`` calls this before each stage runs so stages that test
         many injection points can stop early once the wave budget is spent.
-        The default is a no-op; stages that support it (e.g. BooleanBlindStage)
-        override this to cut their point loop.
+        Stores the deadline on the instance; ``_deadline_exceeded()`` checks it.
         """
+        self._deadline = deadline  # type: ignore[attr-defined]
+
+    def _deadline_exceeded(self) -> bool:
+        """Return True if an absolute deadline is set and has passed."""
+        deadline = getattr(self, "_deadline", None)
+        if deadline is None:
+            return False
+        return time.monotonic() > deadline
 
 
 class DetectionChain:
@@ -198,11 +205,13 @@ class BudgetChain(DetectionChain):
     as long as the time budget has not been exhausted.
     """
 
-    WAVE_BUDGET_MS = {
+    BUDGET_MS = {
         DetectionDepth.FAST: 3000,
         DetectionDepth.STANDARD: 15000,
         DetectionDepth.DEEP: 30000,
     }
+    # Deprecated alias — keep for backward compat
+    WAVE_BUDGET_MS = BUDGET_MS
 
     def __init__(
         self,
@@ -275,13 +284,14 @@ class BudgetChain(DetectionChain):
 
 def chain_from_depth(stages: list[DetectionStage], depth: str = "fast", budget_ms: int | None = None) -> BudgetChain:
     """Create a BudgetChain from depth string.
-    
-    Starts at configured depth, escalates up to DEEP if budget permits.
-    Maps depth to default budget if no explicit budget_ms provided.
+
+    Depth is a ceiling: the chain always starts at FAST and escalates
+    toward the requested depth. ``budget_ms`` is a single whole-chain
+    budget tiered by the requested depth.
     """
     if isinstance(depth, str):
         depth = DetectionDepth(depth)
     if budget_ms is None:
-        budget_ms = BudgetChain.WAVE_BUDGET_MS.get(depth, 30000)
-    return BudgetChain(stages, depth=depth, max_depth=DetectionDepth.DEEP, budget_ms=budget_ms)
+        budget_ms = BudgetChain.BUDGET_MS.get(depth, 30000)
+    return BudgetChain(stages, depth=DetectionDepth.FAST, max_depth=depth, budget_ms=budget_ms)
 

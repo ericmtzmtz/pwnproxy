@@ -21,6 +21,10 @@ class CommandInjectionScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion = self.context.config.get("evasion_level", "none")
+        if depth not in ("fast", "standard", "deep"):
+            raise ValueError(f"invalid depth '{depth}' — expected fast|standard|deep")
+        if evasion not in ("none", "light", "aggressive"):
+            raise ValueError(f"invalid evasion_level '{evasion}'")
         self._replayer = RequestReplayer()
         self._scanner = CommandInjectionScanner(self._replayer, depth, evasion)
     
