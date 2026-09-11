@@ -1,11 +1,8 @@
 """Tests for plugin interface - async generators and compatibility shim."""
-import asyncio
 from collections.abc import AsyncGenerator
-from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.core.base import Finding, ScannerPlugin
 from pwnproxy.plugins.core.loader import PluginLoader
 
@@ -159,7 +156,7 @@ async def test_plugin_loader_handles_new_style():
 
 @pytest.mark.asyncio
 async def test_plugin_loader_passes_depth_and_evasion():
-    """PluginLoader should pass depth and evasion_level to plugins."""
+    """PluginLoader should pass depth and evasion_level to plugins via load_builtin config."""
     finding = Finding(
         scanner="test",
         url="http://example.com",
@@ -172,17 +169,37 @@ async def test_plugin_loader_passes_depth_and_evasion():
         payload="' OR 1=1--",
         evidence="Test evidence",
     )
-    plugin = NewStyleScannerPlugin([finding])
-    
+
+    class ConfigAwarePlugin(ScannerPlugin):
+        def __init__(self, findings):
+            self._findings = findings
+            self.seen_config = None
+
+        async def on_load(self):
+            self.seen_config = dict(self.context.config)
+
+        async def on_flow(self, flow):
+            for f in self._findings:
+                yield f
+
+    plugin = ConfigAwarePlugin([finding])
     loader = PluginLoader()
-    await loader.load_builtin(plugin)
-    
+    await loader.load_builtin(plugin, config={"depth": "deep", "evasion_level": "aggressive"})
+
+    assert plugin.seen_config["depth"] == "deep"
+    assert plugin.seen_config["evasion_level"] == "aggressive"
+
     flow = MockFlow()
-    # Test with different depth and evasion_level
-    results = await loader.run_scan(flow, depth="deep", evasion_level="aggressive")
-    
+    results = await loader.run_scan(flow)
+
     assert len(results) == 1
     assert results[0].scanner == "test"
+
+    # Without config, defaults to {}
+    plugin2 = ConfigAwarePlugin([])
+    loader2 = PluginLoader()
+    await loader2.load_builtin(plugin2)
+    assert plugin2.seen_config == {}
 
 
 @pytest.mark.asyncio

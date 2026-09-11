@@ -85,12 +85,15 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     disabled = []
     if main_loader is not None:
         disabled = main_loader.watchdog_stats().get("disabled", [])
-    loader = await _build_scan_loader(scanners, disabled_plugins=disabled)
+    detection_depth = config.get("detection_depth", "fast")
+    evasion_level = config.get("evasion_level", "none")
+    from apps.terminal.cli.scan import _resolve_scanner_config
+
+    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level)
+    loader = await _build_scan_loader(scanners, disabled_plugins=disabled, config=scanner_cfg)
 
     await store.update(task_id, status="running", total=1)
     url = config.get("url", "")
-    detection_depth = config.get("detection_depth", "fast")
-    evasion_level = config.get("evasion_level", "none")
     method = config.get("method", "GET")
     body = config.get("body") or None
     extra_headers: dict[str, str] = {}
@@ -117,8 +120,6 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     try:
         findings = await _scan_target(
             loader, url, 60,
-            detection_depth=detection_depth,
-            evasion_level=evasion_level,
             extra_headers=extra_headers or None,
             method=method,
             body=body,

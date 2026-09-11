@@ -4,7 +4,7 @@ from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.params import extract as extract_params
 from pwnproxy.plugins.core.base import PluginMetadata, Finding, ScannerPlugin
-from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth, chain_from_depth
+from pwnproxy.plugins.core.chain import chain_from_depth
 from pwnproxy.shared.scan.stages.sqli_stages import (
     ErrorBasedStage,
     BooleanBlindStage,
@@ -12,7 +12,7 @@ from pwnproxy.shared.scan.stages.sqli_stages import (
     OOBStage,
 )
 from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
-from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads, TIME_PAYLOADS
+from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads, get_time_payloads
 from pwnproxy.plugins.scanners.sqli.scanner import SQLiScanner
 
 
@@ -30,6 +30,10 @@ class SQLiScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        if depth not in ("fast", "standard", "deep"):
+            raise ValueError(f"invalid depth '{depth}' — expected fast|standard|deep")
+        if evasion_level not in ("none", "light", "aggressive"):
+            raise ValueError(f"invalid evasion_level '{evasion_level}'")
         aggressive_status = bool(self.context.config.get("aggressive_status", False))
         self._replayer = RequestReplayer()
         chain = chain_from_depth([
@@ -38,7 +42,7 @@ class SQLiScannerPlugin(ScannerPlugin):
                 aggressive_status=aggressive_status,
             ),
             BooleanBlindStage(self._replayer, evasion_level),
-            TimeBlindStage(self._replayer, TIME_PAYLOADS, evasion_level),
+            TimeBlindStage(self._replayer, get_time_payloads(), evasion_level),
             OOBStage(self._replayer, evasion_level),
         ], depth=depth)
         self._scanner = SQLiScanner(chain)

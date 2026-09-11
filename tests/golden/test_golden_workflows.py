@@ -7,9 +7,7 @@ Each golden test uses in-process components (FakeFetcher, in-memory engines,
 FakeLLMClient) to guarantee determinism.
 """
 
-import asyncio
 import json
-from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -140,7 +138,7 @@ class TestGoldenDiscovery:
             scope=scope,
         )
 
-        flows = await _collect_crawl(engine, fetcher)
+        await _collect_crawl(engine, fetcher)
         # Only one /page fetch (path dedup)
         page_fetches = [u for u in fetcher.fetch_log if "/page" in u]
         assert len(page_fetches) == 1
@@ -233,15 +231,16 @@ class TestGoldenFinding:
 
     async def _scan(self, base_url: str, path: str) -> list:
         """Run the real XSS scanner plugin against one target path."""
-        from pwnproxy.plugins.core.base import PluginContext
+        from pwnproxy.plugins.core.loader import PluginLoader
         from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
         from pwnproxy.shared.models import Flow
 
-        plugin = XSSScannerPlugin(context=PluginContext(config={
+        loader = PluginLoader()
+        plugin = XSSScannerPlugin()
+        await loader.load_builtin(plugin, config={
             "depth": "fast",
             "evasion_level": "none",
-        }))
-        await plugin.on_load()
+        })
         try:
             flow = Flow(
                 id=f"golden-xss-{path.strip('/')}",
@@ -250,9 +249,15 @@ class TestGoldenFinding:
                 request_headers={},
                 request_body=None,
             )
-            return [f async for f in plugin.on_flow(flow)]
+            return await loader.run_scan(flow)
         finally:
-            await plugin.on_unload()
+            try:
+                await loader.unload(plugin.metadata.name)
+            except Exception:
+                try:
+                    await plugin.on_unload()
+                except Exception:
+                    pass
 
     def _make_storage(self):
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -673,7 +678,7 @@ class TestGoldenFullPipeline:
             config=CrawlConfig(seeds=[f"{self.BASE}/"], depth=2),
             scope=scope,
         )
-        flows = await _collect_crawl(engine, fetcher)
+        await _collect_crawl(engine, fetcher)
 
         stats = engine.stats
         assert stats.fetched == 3  # /, /a, /b

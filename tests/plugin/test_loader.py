@@ -3,11 +3,10 @@ import pytest
 import pytest_asyncio
 import asyncio
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
 
 from pwnproxy.shared.models import Flow
 from pwnproxy.plugins.core.base import PluginMetadata, PluginContext, PwnPlugin, Finding
-from pwnproxy.plugins.core.loader import UniversalPluginLoader, PluginLoader, PluginLoadError
+from pwnproxy.plugins.core.loader import UniversalPluginLoader, PluginLoader
 from pwnproxy.shared.hooks import HookBus
 
 
@@ -177,20 +176,14 @@ class TestUniversalPluginLoader:
 
     @pytest.mark.asyncio
     async def test_legacy_plugin_migration(self, loader, legacy_plugin):
-        """Test that legacy scan() method is migrated to on_flow()."""
-        # Load the plugin
+        """Legacy scan() plugins are no longer supported — they are ignored."""
         await loader.load(legacy_plugin)
         await loader.start()
-        
-        # Publish some flow data
         test_flow = Flow(id="test", method="GET", url="http://test.com", request_headers={})
         loader.hook_bus.publish("flow", test_flow)
-        
-        # Wait a bit for the consumer to process
         await asyncio.sleep(0.3)
-        
-        # Legacy plugin should have processed the flow via scan()
-        assert legacy_plugin.scan_count > 0
+        # Legacy plugin without on_flow is ignored
+        assert legacy_plugin.scan_count == 0
 
     @pytest.mark.asyncio
     async def test_unload_plugin(self, loader, flow_plugin):
@@ -276,25 +269,17 @@ class TestBackwardCompatibility:
     async def test_plugin_loader_interface(self):
         """Test that PluginLoader interface works for backward compatibility."""
         from pwnproxy.plugins.core.loader import PluginLoader
-        
+
         loader = PluginLoader()
-        
-        # These methods should exist and not crash
+
         assert loader.list_plugins() == []
         assert loader.list_active() == []
         assert loader.watchdog_stats() == {"disabled": []}
         assert loader.get_scanner("nonexistent") is None
         assert loader.get_all_scanners() == {}
-        
-        # These are placeholders and should log warnings
-        with pytest.warns(UserWarning):
-            await loader.load_from_package("test")
-        
+
         result = await loader.activate("test")
         assert result is False  # Unknown plugin
-        
-        with pytest.warns(UserWarning):
-            await loader.run_hooks_response(Flow(id="test", method="GET", url="http://test.com", request_headers={}))
 
 
 class TestPerScannerTopics:
@@ -391,15 +376,10 @@ class TestPluginToggle:
 
         # Flow still reaches the plugin after reactivation
         flow = Flow(id="t1", method="GET", url="http://test.com/t1", request_headers={})
-        hook_bus = loader._hook_bus if hasattr(loader, "_hook_bus") else None
-        import pwnproxy.shared.hooks as hooks_mod
-        # publish on the hook bus used by the loader
         await asyncio.sleep(0.05)
-        loader_hook = getattr(loader, "_hook_bus", None)
-        if loader_hook:
-            loader_hook.publish("flow", flow)
-            await asyncio.sleep(0.3)
-            assert plugin.flow_count >= 1
+        loader.hook_bus.publish("flow", flow)
+        await asyncio.sleep(0.3)
+        assert plugin.flow_count >= 1
 
     @pytest.mark.asyncio
     async def test_deactivate_cancels_tasks_and_sets_disabled(self, toggled_loader):

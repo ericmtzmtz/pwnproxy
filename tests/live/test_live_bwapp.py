@@ -8,7 +8,6 @@ Run with::
     $env:PWNPROXY_LIVE=1; poetry run pytest -m live -v
 """
 
-import json
 import os
 
 import httpx
@@ -77,15 +76,16 @@ async def _bwapp_cookie() -> str:
 
 async def _scan_xss_get(session_cookie: str) -> list:
     """Run the real XSS scanner plugin against /bWAPP/xss_get.php."""
-    from pwnproxy.plugins.core.base import PluginContext
+    from pwnproxy.plugins.core.loader import PluginLoader
     from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
     from pwnproxy.shared.models import Flow
 
-    plugin = XSSScannerPlugin(context=PluginContext(config={
+    loader = PluginLoader()
+    plugin = XSSScannerPlugin()
+    await loader.load_builtin(plugin, config={
         "depth": "fast",
         "evasion_level": "none",
-    }))
-    await plugin.on_load()
+    })
     try:
         flow = Flow(
             id="live-bwapp-xss",
@@ -97,9 +97,15 @@ async def _scan_xss_get(session_cookie: str) -> list:
             },
             request_body=None,
         )
-        return [f async for f in plugin.on_flow(flow)]
+        return await loader.run_scan(flow)
     finally:
-        await plugin.on_unload()
+        try:
+            await loader.unload(plugin.metadata.name)
+        except Exception:
+            try:
+                await plugin.on_unload()
+            except Exception:
+                pass
 
 
 # ── Live: bWAPP XSS ──────────────────────────────────────────────────────

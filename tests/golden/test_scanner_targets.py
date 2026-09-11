@@ -31,11 +31,12 @@ def _load_target_module(name: str, filename: str):
 
 
 async def _run_scanner(plugin_cls, config: dict, url: str, flow_id: str) -> list:
-    from pwnproxy.plugins.core.base import PluginContext
+    from pwnproxy.plugins.core.loader import PluginLoader
     from pwnproxy.shared.models import Flow
 
-    plugin = plugin_cls(context=PluginContext(config=config))
-    await plugin.on_load()
+    loader = PluginLoader()
+    plugin = plugin_cls()
+    await loader.load_builtin(plugin, config=config)
     try:
         flow = Flow(
             id=flow_id,
@@ -44,9 +45,15 @@ async def _run_scanner(plugin_cls, config: dict, url: str, flow_id: str) -> list
             request_headers={},
             request_body=None,
         )
-        return [f async for f in plugin.on_flow(flow)]
+        return await loader.run_scan(flow)
     finally:
-        await plugin.on_unload()
+        try:
+            await loader.unload(plugin.metadata.name)
+        except Exception:
+            try:
+                await plugin.on_unload()
+            except Exception:
+                pass
 
 
 # ── SQLi golden targets ────────────────────────────────────────────────────

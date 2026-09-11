@@ -25,6 +25,10 @@ class SSRFScannerPlugin(ScannerPlugin):
     async def on_load(self) -> None:
         depth = self.context.config.get("depth", "fast")
         evasion_level = self.context.config.get("evasion_level", "none")
+        if depth not in ("fast", "standard", "deep"):
+            raise ValueError(f"invalid depth '{depth}' — expected fast|standard|deep")
+        if evasion_level not in ("none", "light", "aggressive"):
+            raise ValueError(f"invalid evasion_level '{evasion_level}'")
         callback_host = self.context.config.get("callback_host", "127.0.0.1")
         callback_port = int(self.context.config.get("callback_port", 18080))
         self._replayer = RequestReplayer()
