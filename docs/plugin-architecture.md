@@ -398,8 +398,6 @@ inside `_build_request()`; a scanner just passes `evasion_level` through.
 Related helpers:
 
 - `shared/scan/params.py` — injection-point extraction (not a payload source).
-- `shared/scan/payload_store.py` — second-order payload tracking (see §12 for its
-  current status).
 
 ---
 
@@ -439,21 +437,21 @@ These are **known deviations** from the contract above. Each is a fix task track
 
 | # | Contract broken | Evidence | Status |
 |---|---|---|---|
-| C1 | Loader must inject config at load time | `load_builtin` hardcodes `config={}` — `loader.py:383` | to fix |
-| C2 | `on_flow` must carry no depth/evasion | `run_scan(flow, depth, evasion)` accepts and discards them — `loader.py:450` | to fix |
-| C3 | `run_scan` signature = flow only | legacy `elif hasattr(plugin,"scan")` branch (3-arg) is dead — `loader.py:467` | to fix |
-| C4 | depth is a ceiling | `BudgetChain._depth_allows` treats depth as a floor → `deep` skips error-based — `chain.py:267` | to fix |
-| C5 | `budget_ms` is whole-chain | `WAVE_BUDGET_MS` name implies per-wave — `chain.py:201` | to fix (rename) |
-| C6 | Every looping stage honors the deadline | only `BooleanBlindStage` overrides `set_deadline` — `sqli_stages.py:246` | to fix |
-| C7 | Standalone == discovery set | `_build_scan_loader` hardcodes 5 scanners; `command_injection` is discovered live but never loaded standalone — `scan.py:88` | to fix |
-| C8 | `payloads.py` is the single source | unused getters: XXE `get_error/oob/xinclude_payloads` (`xxe/payloads.py:81-98`), LFI `get_payloads` (`lfi/payloads.py:40`), SQLi `get_time_payloads` (`sqli/payloads.py:90`), SSRF `PayloadGenerator` (`ssrf/payloads.py:12`); stages inline lists instead | to fix |
-| C9 | Stages must not own payload lists | `xxe_stages`/`ssrf_stages`/xss `StoredStage` inline payloads — `xxe_stages.py:50`, `ssrf_stages.py`, `xss_stages.py:25` | to fix |
-| C10 | Injection helpers must work | `shared/scan/utils.py` query branch is a silent no-op (`:56`) and form branch raises `NameError` (`:83`); `XxeReplayer` fallback calls the nonexistent `point.inject()` — `xxe.py:58` | to fix |
-| C11 | Test path == production path | golden tests construct `PluginContext(config=...)` directly and use `depth="standard"` — `tests/golden/test_scanner_targets.py:37,86,98,110` | to fix |
-| C12 | Dead contracts removed | warn-only placeholders `load_from_package`, `list_available`, `run_hooks_request/response` — `loader.py:387,432,475` | to fix |
-| C13 | No phantom subsystems | second-order `PayloadStore` is never written by any scanner; REST endpoints only report empty stats — `shared/scan/payload_store.py`, `transport/rest/scanners.py:130` | to fix |
+| C1 | Loader must inject config at load time | `load_builtin` hardcodes `config={}` — `loader.py:383` | ✅ fixed — `load_builtin(plugin, config=None)` |
+| C2 | `on_flow` must carry no depth/evasion | `run_scan(flow, depth, evasion)` accepts and discards them — `loader.py:450` | ✅ fixed — `run_scan(flow)` only |
+| C3 | `run_scan` signature = flow only | legacy `elif hasattr(plugin,"scan")` branch (3-arg) is dead — `loader.py:467` | ✅ fixed — branch removed |
+| C4 | depth is a ceiling | `BudgetChain._depth_allows` treats depth as a floor → `deep` skips error-based — `chain.py:267` | ✅ fixed — `chain_from_depth` starts at FAST, `max_depth=<requested>` |
+| C5 | `budget_ms` is whole-chain | `WAVE_BUDGET_MS` name implies per-wave — `chain.py:201` | ✅ fixed — renamed to `BUDGET_MS` (alias kept) |
+| C6 | Every looping stage honors the deadline | only `BooleanBlindStage` overrides `set_deadline` — `sqli_stages.py:246` | ✅ fixed — base stores deadline, all stages check `_deadline_exceeded()` |
+| C7 | Standalone == discovery set | `_build_scan_loader` hardcodes 5 scanners; `command_injection` is discovered live but never loaded standalone — `scan.py:88` | ✅ fixed — both use discovery, `command-injection` included |
+| C8 | `payloads.py` is the single source | unused getters: XXE `get_error/oob/xinclude_payloads` (`xxe/payloads.py:81-98`), LFI `get_payloads` (`lfi/payloads.py:40`), SQLi `get_time_payloads` (`sqli/payloads.py:90`), SSRF `PayloadGenerator` (`ssrf/payloads.py:12`); stages inline lists instead | ✅ fixed — getters wired/removed, `STORED_PAYLOADS` moved, SSRF generator removed |
+| C9 | Stages must not own payload lists | `xxe_stages`/`ssrf_stages`/xss `StoredStage` inline payloads — `xxe_stages.py:50`, `ssrf_stages.py`, `xss_stages.py:25` | ✅ fixed — templates moved to `payloads.py` |
+| C10 | Injection helpers must work | `shared/scan/utils.py` query branch is a silent no-op (`:56`) and form branch raises `NameError` (`:83`); `XxeReplayer` fallback calls the nonexistent `point.inject()` — `xxe.py:58` | ✅ fixed — query/form branches corrected, `XxeReplayer` uses `super()._build_request()` |
+| C11 | Test path == production path | golden tests construct `PluginContext(config=...)` directly and use `depth="standard"` — `tests/golden/test_scanner_targets.py:37,86,98,110` | ✅ fixed — converged to `load_builtin(plugin, config=...)` |
+| C12 | Dead contracts removed | warn-only placeholders `load_from_package`, `list_available`, `run_hooks_request/response` — `loader.py:387,432,475` | ✅ fixed — removed |
+| C13 | No phantom subsystems | second-order `PayloadStore` is never written by any scanner; REST endpoints only report empty stats — `shared/scan/payload_store.py`, `transport/rest/scanners.py:130` | ✅ fixed — store and endpoints removed |
 
-Items C1–C3, C7, C11 are the P0 path-integrity fix; C4–C6, C8–C10, C12–C13 follow.
+All C-items resolved on `fix/scanner-depth-integrity`; §12 remains as the audit record.
 
 ---
 
@@ -572,7 +570,6 @@ pwnproxy/shared/scan/
   replayers/xxe.py              XxeReplayer (XML body mutation)
   evasion.py                    EvasionLevel + transforms
   stages/<name>_stages.py       DetectionStage implementations
-  payload_store.py              second-order tracker (currently unconsumed — C13)
 
 pwnproxy/shared/                canary.py, http_server.py, dns_server.py, hooks.py, findings/
 ```

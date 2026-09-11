@@ -8,11 +8,12 @@ All scanners consume flows from the message bus, extract injection points (query
 
 | Scanner | Detection Methods | Injection Points | Key Features |
 |---------|------------------|------------------|--------------|
-| **SQLi** | Error-based (5 DBMS), Time-based blind | Query, Form, JSON, Cookies, Headers | DBMS fingerprinting, confirmed/tentative confidence |
+| **SQLi** | Error-based (5 DBMS), Boolean-blind (4-round), Time-based blind | Query, Form, JSON, Cookies, Headers | DBMS fingerprinting, 3-level confidence, depth-aware escalation |
 | **XSS** | Reflected (probe + canary + context analysis), Stored (canary DB) | Query, Form, JSON, Cookies, Headers | 7 reflection contexts, stored XSS across requests |
 | **LFI** | Content-based (OS file signatures) | Query, Form, JSON, Cookies, Headers | OS fingerprinting, PHP wrappers, null byte |
 | **XXE** | Error-based, XInclude bypass, JSON mutation, OOB callback | Query, Form, JSON, Cookies, Headers | XML/JSON filtering, DOCTYPE bypass, OOB exfil |
 | **SSRF** | OOB callback (internal callback server) | URL-like params, Redirect params | Smart param extraction, redirect detection |
+| **Command Injection** | Error/time-based OS command injection | Query, Form, JSON, Cookies, Headers | Time-delay + error signatures |
 
 ## SQLi Scanner
 
