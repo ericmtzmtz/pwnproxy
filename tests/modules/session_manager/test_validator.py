@@ -12,6 +12,19 @@ class TestJwtDecode:
         assert result["payload"] == {"sub": "1234"}
         assert result["status"] == "valid"
 
+    def test_decode_tolerates_corrupt_signature(self):
+        """A bad/truncated signature must not hide the readable header/payload."""
+        result = jwt_decode("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.!!!not-base64!!!")
+        assert result["header"] == {"alg": "HS256"}
+        assert result["payload"] == {"sub": "1234"}
+        assert result["status"] == "valid"
+
+    def test_decode_no_padding_segments(self):
+        """Header/payload without base64 padding still decode."""
+        result = jwt_decode("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0")
+        assert result["header"] == {"alg": "HS256"}
+        assert result["payload"] == {"sub": "1234"}
+
     def test_decode_expired_jwt(self):
         import time
 
