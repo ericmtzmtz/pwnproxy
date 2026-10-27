@@ -10,10 +10,10 @@ readme = "README.md"
 python = "^3.12"
 mitmproxy = "^12.2"
 textual = "^8.2.7"
-typer = "^0.25"
+typer = ">=0.25,<0.28"
 httpx = "^0.28"
-fastapi = "^0.136"
-uvicorn = {extras = ["standard"], version = "^0.47"}
+fastapi = ">=0.136,<0.163"
+uvicorn = {extras = ["standard"], version = ">=0.47,<0.55"}
 # greenlet is required by SQLAlchemy's asyncio support (aiosqlite engine).
 # Declared explicitly so the dependency never depends on transitive luck.
 sqlalchemy = {version = "^2.0", extras = ["asyncio"]}
