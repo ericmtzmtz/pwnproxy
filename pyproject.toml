@@ -14,7 +14,9 @@ typer = "^0.25"
 httpx = "^0.28"
 fastapi = "^0.136"
 uvicorn = {extras = ["standard"], version = "^0.47"}
-sqlalchemy = "^2.0"
+# greenlet is required by SQLAlchemy's asyncio support (aiosqlite engine).
+# Declared explicitly so the dependency never depends on transitive luck.
+sqlalchemy = {version = "^2.0", extras = ["asyncio"]}
 aiosqlite = "^0.22"
 pyjwt = "^2.13"
 rich = "^15.0"
