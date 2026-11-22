@@ -163,17 +163,17 @@
 
   /* JSON keys */
   pre code.language-json .json-key,
-  pre code.language-json span:first-child:matches([style*="color"]) {
+  pre code.language-json span:first-child:is([style*="color"]) {
     color: var(--color-primary-300);
   }
   /* JSON strings */
   pre code.language-json .json-string,
-  pre code.language-json span:matches([style*="string"]) {
+  pre code.language-json span:is([style*="string"]) {
     color: var(--color-success-400);
   }
   /* JSON numbers */
   pre code.language-json .json-number,
-  pre code.language-json span:matches([style*="number"]) {
+  pre code.language-json span:is([style*="number"]) {
     color: var(--color-warning-400);
   }
   /* JSON booleans/null */
