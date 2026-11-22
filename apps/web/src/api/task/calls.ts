@@ -1,5 +1,5 @@
 import { API_BASE } from "@/core";
-import type { TaskListResponse, TaskStatus } from "./types";
+import type { TaskListDetailResponse, TaskListResponse, TaskStatus } from "./types";
 
 export async function pollTask(taskId: string): Promise<TaskStatus> {
   const res = await fetch(`${API_BASE}/tasks/${taskId}`);
@@ -7,10 +7,29 @@ export async function pollTask(taskId: string): Promise<TaskStatus> {
   return res.json();
 }
 
-export async function listTasks(type?: string, limit = 50): Promise<TaskListResponse> {
+export interface ListTasksOptions {
+  type?: string;
+  limit?: number;
+  /** Inline each task's `config`/`result` (one request for the whole list). */
+  detail?: boolean;
+}
+
+/** One request for the whole list, each item carrying its config and result. */
+export function listTasks(options: { type?: string; limit?: number; detail: true }): Promise<TaskListDetailResponse>;
+export function listTasks(options?: { type?: string; limit?: number; detail?: false }): Promise<TaskListResponse>;
+export function listTasks(type?: string, limit?: number): Promise<TaskListResponse>;
+export async function listTasks(
+  typeOrOptions?: string | ListTasksOptions,
+  limit = 50,
+): Promise<TaskListResponse | TaskListDetailResponse> {
+  const opts: ListTasksOptions =
+    typeof typeOrOptions === "string" || typeOrOptions === undefined
+      ? { type: typeOrOptions, limit }
+      : typeOrOptions;
   const params = new URLSearchParams();
-  if (type) params.set("type", type);
-  params.set("limit", String(limit));
+  if (opts.type) params.set("type", opts.type);
+  params.set("limit", String(opts.limit ?? 50));
+  if (opts.detail) params.set("detail", "true");
   const res = await fetch(`${API_BASE}/tasks?${params}`);
   if (!res.ok) throw new Error("Failed to list tasks");
   return res.json();

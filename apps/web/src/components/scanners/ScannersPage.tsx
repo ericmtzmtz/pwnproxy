@@ -34,13 +34,14 @@ function readScanParams() {
   }
   const p = new URLSearchParams(location.search);
   const method = (p.get("method") ?? "GET").toUpperCase();
+  const scannerParam = p.get("scanners") ?? "";
   return {
     url: p.get("url") ?? "",
     method: HTTP_METHODS.includes(method) ? method : "GET",
     body: p.get("body") ?? "",
     content_type: p.get("content_type") ?? "",
     cookies: p.get("cookies") ?? "",
-    scanners: SCANNER_NAMES.includes(p.get("scanners") ?? "") ? p.get("scanners") ?? "" : "",
+    scanners: SCANNER_NAMES.some((name) => name === scannerParam) ? scannerParam : "",
   };
 }
 

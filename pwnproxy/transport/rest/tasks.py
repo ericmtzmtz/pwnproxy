@@ -6,9 +6,11 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from pwnproxy.services.session.store import TaskStore
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.schemas import (
     TaskCreateRequest,
     TaskCreateResponse,
+    TaskDetailSummary,
     TaskListResponse,
     TaskStatusResponse,
     TaskSummary,
@@ -89,7 +91,10 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     evasion_level = config.get("evasion_level", "none")
     from apps.terminal.cli.scan import _resolve_scanner_config
 
-    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level)
+    # The OOB listener lives in this API process; its port was fixed at start
+    # (``pwnproxy start --callback-port``) and stored on app.state.
+    callback_port = getattr(request.app.state, "callback_port", DEFAULT_CALLBACK_PORT)
+    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level, callback_port)
     loader = await _build_scan_loader(scanners, disabled_plugins=disabled, config=scanner_cfg)
 
     await store.update(task_id, status="running", total=1)
@@ -220,6 +225,7 @@ async def _run_intruder(config: dict, task_id: str, store: TaskStore, request: R
             "response_headers": result.response_headers,
             "response_body": result.response_body,
             "error": result.error,
+            "raw_request": result.raw_request,
         })
         await store.update(task_id, progress=len(results))
 
@@ -231,14 +237,21 @@ async def list_tasks(
     request: Request,
     type: str = Query(None, alias="type"),
     limit: int = Query(50, ge=1, le=200),
+    detail: bool = Query(False),
 ):
+    """List the active session's tasks.
+
+    ``detail=true`` inlines each task's ``config`` and ``result`` (same payload
+    as ``GET /tasks/{id}``); without it the items are plain summaries.
+    """
     store = _get_store(request)
     session_mgr = getattr(request.app.state, "session_manager", None)
     session_name = session_mgr.active_name if session_mgr else ""
 
     tasks = await store.list(task_type=type, limit=limit, session_name=session_name)
     total = await store.count(task_type=type, session_name=session_name)
-    summaries = [TaskSummary(**{k: t[k] for k in TaskSummary.model_fields if k in t}) for t in tasks]
+    model = TaskDetailSummary if detail else TaskSummary
+    summaries = [model(**{k: t[k] for k in model.model_fields if k in t}) for t in tasks]
     return TaskListResponse(tasks=summaries, total=total)
 
 

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "preact/hooks";
 import { sendRequest, listTabs, createTab, updateTab, deleteTab } from "@/api/repeater/calls";
 import type { RepeaterTab } from "@/api/repeater/types";
 import { pollTask, listTasks } from "@/api/task/calls";
+import { repeaterResult } from "@/api/task/result";
 import { RequestEditor } from "./RequestEditor";
 import { ResponseViewer } from "./ResponseViewer";
 import type { HttpResponse } from "./ResponseViewer";
@@ -87,13 +88,13 @@ export function RepeaterPage() {
             if (t.last_task_id) {
               try {
                 const task = await pollTask(t.last_task_id);
-                const r = task.result;
-                if (r && r.status_code !== undefined) {
+                const r = repeaterResult(task.result);
+                if (r) {
                   resp = {
                     status_code: r.status_code,
-                    headers: r.headers ?? {},
-                    body: r.body ?? "",
-                    timing_ms: r.duration_ms ?? 0,
+                    headers: r.headers,
+                    body: r.body,
+                    timing_ms: r.duration_ms,
                   };
                 }
               } catch { /* task gone */ }
@@ -187,9 +188,9 @@ export function RepeaterPage() {
       };
       try {
         const task = await pollTask(data.task_id);
-        const r = task.result;
-        if (r && r.body !== undefined) {
-          full = { status_code: r.status_code, headers: r.headers ?? {}, body: r.body ?? "", timing_ms: r.duration_ms ?? 0 };
+        const r = repeaterResult(task.result);
+        if (r) {
+          full = { status_code: r.status_code, headers: r.headers, body: r.body, timing_ms: r.duration_ms };
         }
       } catch { /* use preview */ }
       setTabs((prev) =>
