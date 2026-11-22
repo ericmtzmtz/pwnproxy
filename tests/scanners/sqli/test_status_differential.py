@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads
+from pwnproxy.plugins.scanners.sqli.payloads import get_control_payloads, get_error_payloads
 from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.sqli_stages import ErrorBasedStage
@@ -64,7 +64,7 @@ async def test_two_error_payloads_induce_5xx_tentative_default():
         "'": (500, "<html>bWAPP - SQL Injection</html>"),
         "' UNION SELECT 1,2,3-- ": (500, "<html>bWAPP</html>"),
     })
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     f = result.findings[0]
@@ -83,7 +83,7 @@ async def test_two_error_payloads_induce_5xx_inferred_in_aggressive_mode():
         "'": (500, "<html>bWAPP - SQL Injection</html>"),
         "' UNION SELECT 1,2,3-- ": (500, "<html>bWAPP</html>"),
     })
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), aggressive_status=True)
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads, aggressive_status=True)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     f = result.findings[0]
@@ -94,7 +94,7 @@ async def test_two_error_payloads_induce_5xx_inferred_in_aggressive_mode():
 @pytest.mark.asyncio
 async def test_single_error_payload_5xx_tentative():
     replayer = ScriptedReplayer(clean_status=200, payload_map={"'": (500, "<html>err</html>")})
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     f = result.findings[0]
@@ -109,7 +109,7 @@ async def test_sql_valid_payload_no_5xx_no_finding():
         "' OR 1=1-- ": (200, "<html>result</html>"),
         "' OR 1=1": (200, "<html>result</html>"),
     })
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -117,7 +117,7 @@ async def test_sql_valid_payload_no_5xx_no_finding():
 @pytest.mark.asyncio
 async def test_baseline_5xx_skips_point():
     replayer = ScriptedReplayer(clean_status=500, payload_map={"'": (500, "<html>err</html>")})
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
     assert replayer.payload_calls == 0
@@ -129,7 +129,7 @@ async def test_textual_signature_still_confirms():
     replayer = ScriptedReplayer(clean_status=200, payload_map={
         "'": (200, f"<html>{MYSQL_ERR}</html>"),
     })
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     assert result.findings[0].confidence == "confirmed"

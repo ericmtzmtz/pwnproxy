@@ -2,15 +2,9 @@ import logging
 import re
 import time
 
-from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
-from pwnproxy.plugins.scanners.sqli.payloads import (
-    CANONICAL_BOOLEAN_PAIR,
-    ESCALATION_BOOLEAN_PAIRS,
-    get_control_payloads,
-)
 from pwnproxy.shared.canary import get_registry
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.finding import Finding
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
 from pwnproxy.shared.scan.response_compare import (
@@ -18,6 +12,7 @@ from pwnproxy.shared.scan.response_compare import (
     is_boolean_differentiable,
     similarity,
 )
+from pwnproxy.shared.scan.stage import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.scan.waf import is_intermediary_status, looks_like_block_page
 
 logger = logging.getLogger(__name__)
@@ -69,12 +64,16 @@ class ErrorBasedStage(DetectionStage):
         replayer: RequestReplayer,
         signatures: dict[str, list[re.Pattern]],
         error_payloads: list,
+        control_payloads,
         evasion_level: str = "none",
         aggressive_status: bool = False,
     ):
         self._replayer = replayer
         self._signatures = signatures
         self._error_payloads = error_payloads
+        # Injected by the scanner plugin: non-SQL negative controls used to
+        # decide whether a 5xx is attributable to SQL (see _control_passes).
+        self._control_payloads = control_payloads
         self._evasion = evasion_level
         # Opt-in: treat >=2 bare 5xx payloads as inferred/high (pre-WAF ladder).
         # Off by default: bare status differential is tentative/medium because a
@@ -88,7 +87,7 @@ class ErrorBasedStage(DetectionStage):
         change is not attributable to SQL injection (WAF by pattern / fragile
         app error handler) and no error-based finding should be emitted.
         """
-        for control in get_control_payloads():
+        for control in self._control_payloads():
             resp = await self._replayer.replay(
                 point, control.value, timeout=3.0, evasion_level=self._evasion
             )
@@ -235,8 +234,18 @@ class BooleanBlindStage(DetectionStage):
     min_depth = DetectionDepth.STANDARD
     capability = "boolean-blind-sqli"
 
-    def __init__(self, replayer: RequestReplayer, evasion_level: str = "none", deadline: float | None = None):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        canonical_pair: tuple[str, str],
+        escalation_pairs,
+        evasion_level: str = "none",
+        deadline: float | None = None,
+    ):
         self._replayer = replayer
+        # Injected by the scanner plugin: (TRUE, FALSE) payload pairs.
+        self._canonical_pair = canonical_pair
+        self._escalation_pairs = escalation_pairs
         self._evasion = evasion_level
         self._deadline = deadline
 
@@ -258,7 +267,7 @@ class BooleanBlindStage(DetectionStage):
             baseline_before = Fingerprint.build(clean_before.status_code, clean_before.text)
 
             # 1. Canonical pair pre-check (one request per payload).
-            canonical_true, canonical_false = CANONICAL_BOOLEAN_PAIR
+            canonical_true, canonical_false = self._canonical_pair
             true1 = await self._replayer.replay(point, canonical_true, timeout=5.0, evasion_level=self._evasion)
             false1 = await self._replayer.replay(point, canonical_false, timeout=5.0, evasion_level=self._evasion)
 
@@ -270,7 +279,7 @@ class BooleanBlindStage(DetectionStage):
                 pair = (canonical_true, canonical_false)
             else:
                 # 2. Escalate to remaining pairs, 2 requests each.
-                for t_p, f_p in ESCALATION_BOOLEAN_PAIRS:
+                for t_p, f_p in self._escalation_pairs:
                     rt = await self._replayer.replay(point, t_p, timeout=5.0, evasion_level=self._evasion)
                     rf = await self._replayer.replay(point, f_p, timeout=5.0, evasion_level=self._evasion)
                     if _pair_differentiable(rt, rf):

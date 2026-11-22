@@ -3,6 +3,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from pwnproxy.plugins.scanners.xss.dom_sinks import (
+    find_param_location_sinks,
+    find_param_location_snippet,
+    find_sink_snippet,
+    find_sinks,
+)
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.xss_stages import DomStage
 
@@ -40,7 +46,14 @@ def _flow():
 
 
 def _stage(html: str) -> DomStage:
-    return DomStage(FakeReplayer(html), canary_provider=lambda: CANARY)
+    return DomStage(
+        FakeReplayer(html),
+        find_sinks,
+        find_sink_snippet,
+        find_param_location_sinks,
+        find_param_location_snippet,
+        canary_provider=lambda: CANARY,
+    )
 
 
 @pytest.mark.asyncio
