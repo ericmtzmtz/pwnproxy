@@ -11,21 +11,20 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/preact": "^5.1.5",
+    "@astrojs/preact": "^6.1.6",
     "@types/react": "^19.3.0",
     "astro": "^7.4.5",
-    "preact": "^10.29.2"
+    "preact": "^11.2.0"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4.3.4",
-    "tailwindcss": "^4.0.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "tailwindcss": "^4.3.5",
     "typescript": "^5.7.0"
   },
   "overrides": {
     "vite": "^8.0.0",
     "sharp": "^0.35.4",
     "svgo": "^4.1.0",
-    "js-yaml": "^4.3.2",
     "smol-toml": "^1.8.0"
   }
 }

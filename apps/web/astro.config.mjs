@@ -13,17 +13,6 @@ export default defineConfig({
       },
     },
     plugins: [
-      {
-        name: "fix-preact-virtual-module",
-        transform(code, id) {
-          if (id.includes("@astrojs/preact/dist/server.js") && code.includes('astro:preact:opts')) {
-            return code.replace(
-              'import opts from "astro:preact:opts"',
-              "const opts = {};",
-            );
-          }
-        },
-      },
       tailwindcss(),
     ],
     optimizeDeps: {
