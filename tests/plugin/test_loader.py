@@ -188,13 +188,24 @@ class TestUniversalPluginLoader:
 
     @pytest.mark.asyncio
     async def test_unload_plugin(self, loader, flow_plugin):
-        """Test unloading a plugin."""
+        """Unload removes exactly that plugin and leaves discovery-loaded ones."""
         await loader.load(flow_plugin)
         await loader.start()
-        assert len(loader.list_plugins()) == 1
-        
+        # start() auto-discovers the built-in scanners (base class now owns
+        # load_builtin), so the loaded set is the test plugin plus all of them.
+        loaded = set(loader.list_plugins())
+        assert loaded - {"test_plugin"} == {
+            "command-injection",
+            "lfi",
+            "sqli",
+            "ssrf",
+            "xss",
+            "xxe",
+        }
+
         await loader.unload("test_plugin")
-        assert len(loader.list_plugins()) == 0
+        assert set(loader.list_plugins()) == loaded - {"test_plugin"}
+        await loader.shutdown()
 
     @pytest.mark.asyncio
     async def test_get_plugin_info(self, loader, flow_plugin):
@@ -340,6 +351,27 @@ class TestPerScannerTopics:
         await asyncio.sleep(0.3)
         assert p1.flow_count >= 1
         assert p2.flow_count >= 1
+
+
+class TestDiscoverScannersBuiltin:
+    """``discover_scanners`` must work on the base class, not only on PluginLoader."""
+
+    @pytest.mark.asyncio
+    async def test_base_loader_discovers_builtin_scanners(self):
+        """A bare UniversalPluginLoader loads every built-in scanner plugin."""
+        loader = UniversalPluginLoader(HookBus())
+
+        await loader.discover_scanners()
+
+        assert set(loader.list_plugins()) == {
+            "command-injection",
+            "lfi",
+            "sqli",
+            "ssrf",
+            "xss",
+            "xxe",
+        }
+
 
 class TestPluginToggle:
     """Tests for plugin activate/deactivate (fix-plugin-toggle 5.1-5.4)."""
