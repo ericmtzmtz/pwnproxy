@@ -4,8 +4,8 @@ import asyncio
 
 import httpx
 
-from apps.terminal.cli import scan as scan_mod
 from apps.terminal.cli.scan import _scan_target
+from pwnproxy.services.scan import runner as runner_mod
 
 
 class _NullLoader:
@@ -42,7 +42,7 @@ def test_post_flow_carries_method_body_content_type(monkeypatch):
         kwargs["transport"] = T()
         return RealAsyncClient(*args, **kwargs)
 
-    monkeypatch.setattr(scan_mod.httpx, "AsyncClient", fake_client)
+    monkeypatch.setattr(runner_mod.httpx, "AsyncClient", fake_client)
 
     loader = _NullLoader()
     asyncio.run(

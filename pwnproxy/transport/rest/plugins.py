@@ -7,7 +7,13 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from pwnproxy.plugins.core.loader import PluginLoader
+from pwnproxy.plugins.core.catalog import PluginRecord
+from pwnproxy.plugins.core.config import ActivationConfigError
+from pwnproxy.plugins.core.loader import (
+    PluginLoader,
+    PluginNotFoundError,
+    PluginUnavailableError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,35 +66,97 @@ class BurpImportResponse(BaseModel):
     detail: str | None = None
 
 
-@router.get("/plugins", response_model=PluginsListResponse)
+def _plugin_payload(loader: PluginLoader, record: PluginRecord) -> dict[str, Any]:
+    """Render one catalog record as a ``GET /plugins`` entry.
+
+    Obligatory fields (always present): ``name``, ``source``, ``package``,
+    ``version``, ``enabled``, ``error``. Optional ones (``category``,
+    ``description``, ``author``, ``consumes``, ``produces``) come from the
+    metadata the *catalog* captured at discovery, so they are also available for
+    a plugin that is disabled (and therefore never instantiated); ``loaded`` says
+    whether the process has it loaded right now.
+
+    The record's metadata is preferred over the live plugin's on purpose: it is
+    the normalized copy (``category`` filled in from the class default), while
+    the instance shares the raw class attribute and would report an empty
+    category.
+
+    ``enabled`` is the *effective* state: an installed package is off until the
+    user turns it on, and a plugin whose discovery/``on_load`` failed reports
+    ``false`` even when the configuration says otherwise — reporting it as
+    enabled would promise scanning that is not happening.
+    """
+    metadata = record.metadata
+    plugin = loader.get_plugin(record.name)
+    payload: dict[str, Any] = {
+        "name": record.name,
+        "source": record.source,
+        "package": record.package,
+        "version": record.version,
+        "enabled": loader.plugin_enabled(record.name),
+        "error": record.error,
+        "loaded": plugin is not None,
+    }
+    if metadata is not None:
+        payload.update({
+            "category": metadata.category,
+            "description": metadata.description,
+            "author": metadata.author,
+            "consumes": list(metadata.consumes),
+            "produces": list(metadata.produces),
+        })
+    return payload
+
+
+@router.get(
+    "/plugins",
+    response_model=PluginsListResponse,
+    summary="List every plugin in the catalog (built-in and installed)",
+)
 async def list_plugins(request: Request):
+    """List every plugin in the catalog, disabled and broken ones included.
+
+    Never fails because of a plugin: a broken package shows up with its
+    ``error``. Order is stable (built-ins first, then ``name`` ascending) so
+    clients do not sort. Without a loader the answer is an empty list plus the
+    reason, still ``200``.
+    """
     loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
-        return {"error": "plugin_loader not available", "plugins": []}
-    return {"plugins": loader.list_active()}
+        return {"plugins": [], "error": "plugin_loader not available"}
+    return {"plugins": [_plugin_payload(loader, record) for record in loader.catalog()], "error": None}
 
 
-@router.post("/plugins/{name}/toggle", response_model=PluginToggleResponse)
+@router.post(
+    "/plugins/{name}/toggle",
+    response_model=PluginToggleResponse,
+    summary="Enable or disable a plugin (machine-wide, persisted)",
+    responses={
+        404: {"description": "The name is not in the plugin catalog"},
+        409: {"description": "The plugin exists but cannot run (broken or failing on_load)"},
+        500: {"description": "The config file cannot be written; in-memory state unchanged"},
+        503: {"description": "No plugin loader in this process"},
+    },
+)
 async def toggle_plugin(name: str, request: Request):
+    """Enable or disable a plugin and persist the decision.
+
+    ``404`` when the name is not in the catalog, ``409`` when it exists but
+    cannot run (broken package or failing ``on_load``), ``500`` when the config
+    cannot be written (the in-memory state is left untouched). The session is
+    never marked as modified: activation is a machine-level setting.
+    """
     loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
         raise HTTPException(status_code=503, detail="plugin_loader not available")
-    plugin = loader.get_plugin(name)
-    if plugin is None:
-        raise HTTPException(status_code=404, detail=f"Plugin '{name}' not found")
-
-    stats = loader.watchdog_stats()
-    if name in stats.get("disabled", []):
-        await loader.activate(name)
-        status = "enabled"
-    else:
-        loader.deactivate(name)
-        status = "disabled"
-
-    mgr = getattr(request.app.state, "session_manager", None)
-    if mgr:
-        mgr.mark_unsaved()
-
+    try:
+        status = await loader.toggle(name)
+    except PluginNotFoundError:
+        raise HTTPException(status_code=404, detail=f"plugin '{name}' not found") from None
+    except PluginUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+    except ActivationConfigError as exc:
+        raise HTTPException(status_code=500, detail=f"could not persist plugin state: {exc}") from None
     return {"status": status, "name": name}
 
 

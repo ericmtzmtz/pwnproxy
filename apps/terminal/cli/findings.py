@@ -10,9 +10,10 @@ from sqlalchemy.orm import sessionmaker
 
 from pwnproxy.shared.findings.storage import FindingORM
 
-VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
-
 console = Console()
+
+#: Column width used to print the scanner names present in the database.
+_HELP_SCANNER_LIMIT = 10
 
 
 def _get_engine():
@@ -21,14 +22,30 @@ def _get_engine():
 
 
 def findings(
-    scanner: str = typer.Option(None, "--scanner", "-s", help="Filter by scanner type"),
+    scanner: str = typer.Option(
+        None, "--scanner", "-s",
+        help="Filter by scanner name (free text; see the names present in the database)",
+    ),
     limit: int = typer.Option(20, "--limit", "-n", help="Max findings to show"),
 ):
-    if scanner and scanner not in VALID_SCANNERS:
-        console.print(f"[red]Unknown scanner:[/] {scanner}")
-        console.print(f"[yellow]Available:[/] {', '.join(VALID_SCANNERS)}")
-        raise typer.Exit(1)
+    """List findings, optionally filtered by a scanner name.
+
+    ``--scanner`` is free text on purpose: the set of scanners comes from the
+    plugin catalog (built-ins plus installed plugins), so validating against a
+    hardcoded list here would hide every third-party finding.
+    """
     asyncio.run(_list_findings(scanner, limit))
+
+
+async def _present_scanners(engine) -> list[str]:
+    """Return the distinct ``scanner`` values stored in the database."""
+    factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        try:
+            result = await session.execute(select(FindingORM.scanner).distinct())
+            return sorted(row[0] for row in result.all() if row[0])
+        except Exception:
+            return []
 
 
 async def _list_findings(scanner: str | None, limit: int):
@@ -51,11 +68,16 @@ async def _list_findings(scanner: str | None, limit: int):
         except Exception:
             pass
 
+    present = await _present_scanners(engine)
     await engine.dispose()
 
     if not all_findings:
         if scanner:
             console.print(f"[yellow]No findings for scanner:[/] {scanner}")
+            if present:
+                console.print(
+                    f"[dim]Scanners present in this database: {', '.join(present[:_HELP_SCANNER_LIMIT])}[/dim]"
+                )
         else:
             console.print("[yellow]No findings found.[/]")
         return

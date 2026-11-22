@@ -43,3 +43,17 @@ enrich_fp_threshold = 0.85
 # detailed_evidence = 0.10
 # payload_in_evidence = 0.15
 # request_context = 0.05
+
+# Which plugins are enabled. This is machine-wide, not per session: there is one
+# plugin loader per process.
+#
+#   name absent + built-in   -> enabled  (an install that never touched this
+#                                         file keeps scanning as before)
+#   name absent + installed  -> disabled (a `pip install` must not start
+#                                         scanning a client's traffic on its own)
+#
+# Written by POST /api/v1/plugins/{name}/toggle; edit it by hand only when the
+# API is not running (the running process keeps its own copy until restart).
+# [plugin.activation]
+# sqli = false
+# authorization-matrix = true

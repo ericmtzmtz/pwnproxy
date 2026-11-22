@@ -71,8 +71,9 @@ async def _launch_task_runner(
 
 
 async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Request) -> None:
-    from apps.terminal.cli.scan import _build_scan_loader, _scan_target
+    from pwnproxy.plugins.core.catalog import build_scan_loader, scan_config
     from pwnproxy.services.findings.engine import ExportEngine
+    from pwnproxy.services.scan.runner import scan_target
 
     main_loader = getattr(request.app.state, "plugin_loader", None)
     scanners = config.get("scanners")
@@ -84,18 +85,17 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
             scanners = set(scanners)
         else:
             scanners = None
-    disabled = []
-    if main_loader is not None:
-        disabled = main_loader.watchdog_stats().get("disabled", [])
+    # The live loader knows the effective activation state (config file plus
+    # runtime toggles). Without it, ``build_scan_loader`` reads the config itself.
+    disabled = main_loader.disabled_names() if main_loader is not None else None
     detection_depth = config.get("detection_depth", "fast")
     evasion_level = config.get("evasion_level", "none")
-    from apps.terminal.cli.scan import _resolve_scanner_config
 
     # The OOB listener lives in this API process; its port was fixed at start
     # (``pwnproxy start --callback-port``) and stored on app.state.
     callback_port = getattr(request.app.state, "callback_port", DEFAULT_CALLBACK_PORT)
-    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level, callback_port)
-    loader = await _build_scan_loader(scanners, disabled_plugins=disabled, config=scanner_cfg)
+    scanner_cfg = scan_config(detection_depth, evasion_level, callback_port)
+    loader = await build_scan_loader(scanners, disabled_plugins=disabled, config=scanner_cfg)
 
     await store.update(task_id, status="running", total=1)
     url = config.get("url", "")
@@ -121,7 +121,7 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
         with contextlib.suppress(Exception):
             loader._current_scan_session = scan_session
     try:
-        findings = await _scan_target(
+        findings = await scan_target(
             loader, url, 60,
             extra_headers=extra_headers or None,
             method=method,

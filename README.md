@@ -207,7 +207,14 @@ Plugins can be:
 - installed locally
 - distributed as Python packages
 
-The same plugin interface is used for built-in and third-party scanners.
+A Python package becomes a plugin by declaring an entry point in the
+`pwnproxy.plugins` group; after `pip install`, activate it with the toggle in Settings
+(`POST /api/v1/plugins/{name}/toggle`) — installed plugins start **disabled**. The same
+plugin interface is used for built-in and third-party scanners; `GET /api/v1/plugins`
+is the single list of what exists, where it came from and whether it is enabled.
+
+A plugin runs **inside the proxy process**, with your permissions and no sandbox:
+activating one is a trust decision, not a toggle you flip for an untrusted package.
 
 A watchdog tracks plugin failures and can automatically disable repeatedly failing plugins.
 

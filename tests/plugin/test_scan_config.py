@@ -6,9 +6,10 @@ from pwnproxy.plugins.core.chain import BudgetChain, DetectionDepth
 
 @pytest.mark.asyncio
 async def test_build_scan_loader_injects_config():
-    """_build_scan_loader with config builds plugins that see the config."""
-    from apps.terminal.cli.scan import _build_scan_loader
-    loader = await _build_scan_loader(config={"depth": "standard", "evasion_level": "light"})
+    """build_scan_loader with config builds plugins that see the config."""
+    from pwnproxy.plugins.core.catalog import build_scan_loader
+
+    loader = await build_scan_loader(config={"depth": "standard", "evasion_level": "light"})
     # sqli has BudgetChain; check depth ceiling
     sqli = loader.get_plugin("sqli")
     assert sqli is not None
@@ -27,8 +28,9 @@ async def test_build_scan_loader_injects_config():
 @pytest.mark.asyncio
 async def test_build_scan_loader_default_is_fast():
     """Without config the loader defaults to fast/none."""
-    from apps.terminal.cli.scan import _build_scan_loader
-    loader = await _build_scan_loader(config={})
+    from pwnproxy.plugins.core.catalog import build_scan_loader
+
+    loader = await build_scan_loader(config={})
     sqli = loader.get_plugin("sqli")
     chain = getattr(sqli._scanner, "_chain", getattr(sqli._scanner, "chain", None))
     assert chain._max_depth == DetectionDepth.FAST
@@ -40,8 +42,9 @@ async def test_build_scan_loader_default_is_fast():
 @pytest.mark.asyncio
 async def test_discover_vs_standalone_parity():
     """Live discovery and standalone loader must expose the same scanner names."""
-    from apps.terminal.cli.scan import _build_scan_loader
+    from pwnproxy.plugins.core.catalog import build_scan_loader
     from pwnproxy.plugins.core.loader import PluginLoader
+
     # discovered via loader.discover_scanners()
     loader_disc = PluginLoader()
     await loader_disc.discover_scanners()
@@ -49,7 +52,7 @@ async def test_discover_vs_standalone_parity():
     for n in list(loader_disc.list_plugins()):
         await loader_disc.unload(n)
 
-    loader_standalone = await _build_scan_loader()
+    loader_standalone = await build_scan_loader()
     stand_names = set(loader_standalone.list_plugins())
     for n in list(loader_standalone.list_plugins()):
         await loader_standalone.unload(n)

@@ -56,7 +56,69 @@ curl http://127.0.0.1:17171/api/v1/findings
 curl http://127.0.0.1:17171/api/v1/findings/sqli?limit=100
 ```
 
-Available scanners: `sqli`, `xss`, `lfi`, `xxe`, `ssrf`.
+`scanner` is free text: the names come from the plugin catalog (built-ins plus any
+installed plugin), so `GET /api/v1/plugins` is the list of valid values.
+
+#### Publish a finding (external producers)
+
+For a plugin, premium module or script that runs outside the proxy process. The body
+takes the fields of `Finding`; unknown fields are rejected.
+
+```bash
+curl -X POST http://127.0.0.1:17171/api/v1/findings \
+  -H "Content-Type: application/json" \
+  --data @- <<'JSON'
+{
+  "scanner": "sqli",
+  "url": "https://target.local/item?id=1",
+  "method": "get",
+  "param_name": "id",
+  "param_location": "query",
+  "technique": "error-based",
+  "severity": "high",
+  "confidence": "confirmed",
+  "payload": "1' OR 1=1-- -",
+  "evidence": "SQL syntax error in the response body"
+}
+JSON
+```
+
+Response `201`:
+
+```json
+{"id": 17, "scanner": "sqli", "session_id": "acme"}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `scanner` | yes | 1-255 chars, must exist in the plugin catalog (enabled or not) |
+| `url` | yes | 1-8192 chars |
+| `method` | yes | 1-10 chars, stored upper-cased |
+| `param_name` | yes | 1-255 chars |
+| `param_location` | yes | 1-50 chars, free text (`query`, `body`, `path`, `header`, ...) |
+| `technique` | yes | free text |
+| `severity` | yes | `low` \| `medium` \| `high` \| `critical` |
+| `confidence` | yes | `tentative` \| `inferred` \| `confirmed` |
+| `payload` | yes | up to 65 536 chars |
+| `evidence` | yes | up to 65 536 chars |
+| `timestamp` | no | defaults to now (UTC) |
+| `extra` | no | JSON object, up to 65 536 serialized bytes |
+| `request_data` | no | JSON object (the triggering request), same size cap |
+
+Codes: `201` saved; `422` invalid field, unknown field, out-of-range size or a
+`scanner` that is not in the catalog (the message names it and points at
+`GET /api/v1/plugins`); `409` no active session; `500` the storage write failed.
+
+The finding is persisted with the same `FindingStorage.save` the internal scanners use
+(so the triage callback runs) and only then published on the `finding` channel, which
+means it shows up in `/ws/findings` and `/ws/events` like any other finding. **There is
+no deduplication:** two identical POSTs create two findings.
+
+**Security.** This endpoint shares the API's lack of authentication. The service binds
+to `127.0.0.1` by default; exposing the port outside the machine turns this endpoint
+into a way to inject findings into a session (and to read the API). Body and catalog
+validation keep garbage out, they are **not** access control: any local process can
+publish whatever it wants.
 
 ## Plugins
 
@@ -66,11 +128,42 @@ Available scanners: `sqli`, `xss`, `lfi`, `xxe`, `ssrf`.
 curl http://127.0.0.1:17171/api/v1/plugins
 ```
 
+```json
+{
+  "plugins": [
+    {"name": "sqli", "source": "builtin", "package": "pwnproxy", "version": "0.3.0",
+     "enabled": true, "error": null, "loaded": true, "category": "scanner",
+     "description": "", "author": "pwnproxy", "consumes": ["flow"], "produces": ["finding"]},
+    {"name": "authorization-matrix", "source": "installed", "package": "pwnproxy-pro",
+     "version": "2.0.0", "enabled": false, "error": null, "loaded": false,
+     "category": "scanner", "description": "...", "author": "...",
+     "consumes": ["flow"], "produces": ["finding"]}
+  ],
+  "error": null
+}
+```
+
+- Always `200`; a plugin that failed to import/load is listed with `error` (string) and
+  `enabled: false`, never omitted.
+- Obligatory fields: `name`, `source` (`builtin` | `installed`), `package`, `version`,
+  `enabled`, `error`. Optional: `category`, `description`, `author`, `consumes`,
+  `produces`, `loaded`.
+- `enabled` is the effective state (config **and** ability to run). Order is stable:
+  built-ins first, then `name`.
+- Without a live loader the answer is `{"plugins": [], "error": "<reason>"}`.
+
 #### Toggle plugin (enable/disable)
 
 ```bash
 curl -X POST http://127.0.0.1:17171/api/v1/plugins/sqli/toggle
+# {"status": "disabled", "name": "sqli"}
 ```
+
+The state is **machine-wide** and persisted in `[plugin.activation]` of
+`~/.pwnproxy/config.toml` before the call returns; it does not depend on the session.
+Codes: `404` the name is not in the catalog; `409` the plugin exists but cannot run
+(broken package or failing `on_load`), with the reason; `500` the config file cannot be
+written, in which case the in-memory state is left untouched.
 
 ## Headless Scan (API)
 
