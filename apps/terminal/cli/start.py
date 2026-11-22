@@ -356,6 +356,7 @@ def start(
             host=host,
             port=api_port,
             proxy_port=proxy_port,
+            callback_port=callback_port,
         )
 
         # Ensure crawler is running for the initial session (idempotent if already started via callback).

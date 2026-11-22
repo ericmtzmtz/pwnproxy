@@ -11,6 +11,7 @@ from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.loader import PluginLoader
 from pwnproxy.services.findings.engine import ExportEngine
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -75,9 +76,23 @@ def url(
         raise typer.Exit(2) from e
 
 
-def _resolve_scanner_config(detection_depth: str = "fast", evasion_level: str = "none") -> dict:
-    """Map request params to the plugin config keys used in on_load()."""
-    return {"depth": detection_depth, "evasion_level": evasion_level}
+def _resolve_scanner_config(
+    detection_depth: str = "fast",
+    evasion_level: str = "none",
+    callback_port: int = DEFAULT_CALLBACK_PORT,
+) -> dict:
+    """Map request params to the plugin config keys used in on_load().
+
+    ``callback_port`` is the port this process' OOB callback listener is bound
+    to; only the SSRF plugin reads it (it goes into the OOB payloads), the rest
+    ignore the extra key. Without it the SSRF payloads would knock on the
+    default port while the listener sits elsewhere.
+    """
+    return {
+        "depth": detection_depth,
+        "evasion_level": evasion_level,
+        "callback_port": callback_port,
+    }
 
 
 async def _build_scan_loader(

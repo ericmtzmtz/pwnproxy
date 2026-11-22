@@ -31,6 +31,32 @@ class SSRFScanner:
         self._callback_host = callback_host
         self._callback_port = callback_port
 
+    @property
+    def callback_host(self) -> str:
+        """Host the OOB payloads point at."""
+        return self._callback_host
+
+    @property
+    def callback_port(self) -> int:
+        """Port the OOB payloads point at (must match the callback listener)."""
+        return self._callback_port
+
+    def configure(
+        self,
+        callback_host: str | None = None,
+        callback_port: int | None = None,
+    ) -> None:
+        """Apply runtime callback config.
+
+        Same values ``SSRFScannerPlugin.on_load`` injects through the
+        constructor; exposed publicly so the TUI config modal can update them
+        without reaching into private attributes.
+        """
+        if callback_host is not None:
+            self._callback_host = callback_host
+        if callback_port is not None:
+            self._callback_port = int(callback_port)
+
     async def _scan_point(self, point: InjectionPoint) -> AsyncGenerator[Finding, None]:
         stages = [
             SsrfSimpleStage(

@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from pwnproxy.services.session.store import TaskStore
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.schemas import (
     TaskCreateRequest,
     TaskCreateResponse,
@@ -89,7 +90,10 @@ async def _run_scan(config: dict, task_id: str, store: TaskStore, request: Reque
     evasion_level = config.get("evasion_level", "none")
     from apps.terminal.cli.scan import _resolve_scanner_config
 
-    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level)
+    # The OOB listener lives in this API process; its port was fixed at start
+    # (``pwnproxy start --callback-port``) and stored on app.state.
+    callback_port = getattr(request.app.state, "callback_port", DEFAULT_CALLBACK_PORT)
+    scanner_cfg = _resolve_scanner_config(detection_depth, evasion_level, callback_port)
     loader = await _build_scan_loader(scanners, disabled_plugins=disabled, config=scanner_cfg)
 
     await store.update(task_id, status="running", total=1)
