@@ -1,12 +1,13 @@
 /** @jsxImportSource preact */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { FlowTable } from "./FlowTable";
+import { API_BASE, API_HOST } from "@/core";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { listFlows, clearFlows } from "@/api/traffic/calls";
+import { getHealth } from "@/api/health/calls";
 import { getProxyStatus, startProxy, stopProxy } from "@/api/proxy/calls";
 import type { FlowRecord } from "@/api/traffic/types";
 
-const API_BASE = import.meta.env.PUBLIC_API_BASE ?? "http://127.0.0.1:8000/api/v1";
 const PAGE_SIZE = 20;
 const METHODS = ["", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
 
@@ -26,6 +27,7 @@ export function ProxyPage() {
   const [findingsMap, setFindingsMap] = useState<Record<number, number>>({});
   const [captureEnabled, setCaptureEnabled] = useState(true);
   const [proxyRunning, setProxyRunning] = useState<boolean | null>(null);
+  const [proxyPort, setProxyPort] = useState<number | null>(null);
   const [page, setPage] = useState(0);
   const [methodFilter, setMethodFilter] = useState("");
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -138,7 +140,7 @@ const onWsMessage = useCallback(
   );
 
   const { connected } = useWebSocket({
-    url: `ws://${new URL(API_BASE).host}/ws/events`,
+    url: `ws://${API_HOST}/ws/events`,
     onMessage: onWsMessage,
   });
 
@@ -170,6 +172,15 @@ const onWsMessage = useCallback(
         setCaptureEnabled(status.capture_enabled);
         setProxyRunning(status.running);
       } catch { /* silent */ }
+      try {
+        const health = await getHealth();
+        const port = health.checks.proxy?.port;
+        setProxyPort(typeof port === "number" ? port : null);
+      } catch {
+        // No real port to show: fall back to "Running" without a number
+        // instead of inventing one.
+        setProxyPort(null);
+      }
     }, 5000);
     return () => clearInterval(t);
   }, []);
@@ -189,7 +200,7 @@ const onWsMessage = useCallback(
         <div class="flex items-center gap-3">
           <span class="flex items-center gap-1.5 text-xs text-neutral-500">
             <span class={`inline-flex h-2 w-2 rounded-full ${connected ? "bg-success-500" : "bg-yellow-500"}`} />
-            API connected to 127.0.0.1:8000
+            API connected to {API_HOST}
           </span>
         </div>
       </div>
@@ -201,7 +212,11 @@ const onWsMessage = useCallback(
             Proxy
           </span>
           <span class="text-sm text-neutral-400">
-            {proxyRunning === null ? "Checking..." : proxyRunning ? "Running on 127.0.0.1:8080" : "Stopped"}
+            {proxyRunning === null
+              ? "Checking..."
+              : proxyRunning
+                ? (proxyPort === null ? "Running" : `Running on 127.0.0.1:${proxyPort}`)
+                : "Stopped"}
           </span>
         </div>
         <div class="flex items-center gap-2">

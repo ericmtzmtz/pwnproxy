@@ -105,7 +105,7 @@ Used for: proxy subprocess → main process event forwarding.
 
 ## Data Flow (Step by Step)
 
-1. Browser sends request through proxy at `127.0.0.1:8080`
+1. Browser sends request through proxy at `127.0.0.1:17170`
 2. mitmproxy (in `proxy_worker.py`) processes the HTTP flow
 3. `BridgeRelay.response(f)` is called — converts mitmproxy flow to pwnproxy `Flow` via `Flow.from_mitmproxy(f)`, then serializes to dict via `flow.to_dict()`
 4. `TcpBridgeServer.publish("proxy.flow", flow_dict)` sends the dict as JSON line over TCP

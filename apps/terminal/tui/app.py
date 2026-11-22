@@ -27,6 +27,7 @@ from apps.terminal.tui.ws_client import stream_findings, stream_traffic
 from pwnproxy.services.proxy.interceptor.controller import InterceptorController
 from pwnproxy.services.repeater.tui.inline import InlineRepeater
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.ports import DEFAULT_API_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -213,7 +214,7 @@ class DashboardApp(App):
     def __init__(
         self,
         host: str = "127.0.0.1",
-        api_port: int = 8000,
+        api_port: int = DEFAULT_API_PORT,
         hook_bus: HookBus | None = None,
         interceptor_controller: InterceptorController | None = None,
         scan_manager: Any = None,

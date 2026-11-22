@@ -20,9 +20,20 @@ from pwnproxy.shared.db import init_db
 from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_API_PORT, DEFAULT_CALLBACK_PORT, DEFAULT_PROXY_PORT, DEFAULT_WEB_PORT
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+def _plugin_configs(callback_port: int) -> dict[str, dict]:
+    """Per-plugin config handed to the scanners ``PluginLoader`` auto-discovers.
+
+    The SSRF plugin builds its OOB payloads from ``callback_port``, so it has to
+    be the same port the callback server in ``start`` listens on. Without this
+    the scanner probed a hardcoded port and every blind SSRF stayed silent.
+    """
+    return {"ssrf": {"callback_port": callback_port}}
 
 
 async def _interactive_session_prompt(session_manager) -> str | None:
@@ -98,15 +109,15 @@ async def _interactive_session_prompt(session_manager) -> str | None:
 
 def start(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address for both proxy and API"),
-    proxy_port: int = typer.Option(8080, "--proxy-port", help="Proxy listen port"),
-    api_port: int = typer.Option(8000, "--api-port", help="API server port"),
+    proxy_port: int = typer.Option(DEFAULT_PROXY_PORT, "--proxy-port", help="Proxy listen port"),
+    api_port: int = typer.Option(DEFAULT_API_PORT, "--api-port", help="API server port"),
     tui: bool = typer.Option(False, "--tui", help="Launch TUI dashboard"),
     no_tui: bool = typer.Option(False, "--no-tui", help="Run without TUI (default)"),
     upstream: str = typer.Option(None, "--upstream", help="Upstream proxy URL (socks5://host:port or http://host:port)"),
     session: str = typer.Option(None, "--session", help="Load an existing session on boot"),
     session_name: str = typer.Option(None, "--session-name", help="Create and activate a new session on boot"),
     no_restore_session: bool = typer.Option(False, "--no-restore-session", help="Start with empty state, do not restore last session"),
-    callback_port: int = typer.Option(18081, "--callback-port", help="Port for SSRF callback server"),
+    callback_port: int = typer.Option(DEFAULT_CALLBACK_PORT, "--callback-port", help="Port for SSRF callback server"),
 ):
     async def _run():
         # Reconfigure logging based on mode
@@ -311,6 +322,9 @@ def start(
         autoscan = AutoScanTracker(hook_bus=hook_bus)
         autoscan.start()
         plugin_loader.autoscan = autoscan
+        # Give the auto-discovered scanners the real callback port (see
+        # _plugin_configs) — the plugin payloads must match the listener below.
+        plugin_loader.plugin_configs = _plugin_configs(callback_port)
 
         # Start the OOB callback server on the configured port so SSRF/OOB
         # scanners probe the real callback listener instead of a hardcoded port.
@@ -391,7 +405,7 @@ def start(
             f"[green]API Docs →[/] [bold]http://{host}:{api_port}/docs[/]",
         ]
         if tui:
-            panel_lines.append("[green]Web UI   →[/] [bold]http://127.0.0.1:4321[/]")
+            panel_lines.append(f"[green]Web UI   →[/] [bold]http://127.0.0.1:{DEFAULT_WEB_PORT}[/]")
         if upstream:
             panel_lines.append(f"[cyan]Upstream:[/] {upstream}")
         if dashboard_task:

@@ -10,7 +10,10 @@ import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(__dirname, "..");
-const DEFAULT_API_BASE = "http://127.0.0.1:8000/api/v1";
+// Same default as `DEFAULT_API_PORT` in pwnproxy/shared/ports.py. Kept as an
+// env lookup so the port stays in one place here too.
+const DEFAULT_API_PORT = process.env.PWNPROXY_API_PORT ?? "17171";
+const DEFAULT_API_BASE = `http://127.0.0.1:${DEFAULT_API_PORT}/api/v1`;
 
 function buildApiBase(backend) {
   let url = backend.trim();

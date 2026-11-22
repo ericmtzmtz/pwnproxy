@@ -53,6 +53,10 @@ class UniversalPluginLoader:
         # Auto-scan batch tracker (optional; wired in server startup so the
         # proxy auto-scan path reports windowed started/completed events).
         self.autoscan = None
+        # Per-plugin config for auto-discovered scanners, keyed by plugin name.
+        # Set by the caller before start() when a runtime value (the SSRF
+        # callback port) must reach a plugin that ``start`` loads by itself.
+        self.plugin_configs: dict[str, dict] = {}
 
     async def load(
         self, 
@@ -250,7 +254,10 @@ class UniversalPluginLoader:
                 for _name, obj in vars(module).items():
                     if isinstance(obj, type) and issubclass(obj, ScannerPlugin) and obj is not ScannerPlugin:
                         plugin_instance = obj()
-                        await self.load_builtin(plugin_instance)
+                        await self.load_builtin(
+                            plugin_instance,
+                            config=self.plugin_configs.get(plugin_instance.metadata.name),
+                        )
                         logger.info("Auto-discovered scanner: %s", plugin_instance.metadata.name)
                         break
             except Exception as e:

@@ -33,6 +33,6 @@ export default defineConfig({
   },
   integrations: [preact({ include: ["**/*.tsx", "**/*.ts"] })],
   server: {
-    port: 4321,
+    port: 17172,
   },
 });

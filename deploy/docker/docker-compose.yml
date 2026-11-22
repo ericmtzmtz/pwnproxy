@@ -9,8 +9,11 @@
 #   backend  : proxy ${PROXY_PORT}, API ${API_PORT}, SSRF callback ${CALLBACK_PORT}
 #   web      : Astro static UI on ${WEB_PORT} (nginx)
 #
-# Web UI talks to the API via PUBLIC_API_BASE=http://backend:8000/api/v1
+# Web UI talks to the API via PUBLIC_API_BASE=http://backend:17171/api/v1
 # (set at web build time).
+#
+# Defaults come from pwnproxy/shared/ports.py:
+#   proxy 17170, API 17171, web 17172, SSRF callback 17173.
 #
 # Ports are overridable:
 #   PROXY_PORT=19080 API_PORT=19000 CALLBACK_PORT=19081 WEB_PORT=19082 \
@@ -22,9 +25,9 @@ services:
       context: ../..
       dockerfile: deploy/docker/Dockerfile.backend
     ports:
-      - "${PROXY_PORT:-8080}:8080"      # proxy
-      - "${API_PORT:-8000}:8000"        # API control plane
-      - "${CALLBACK_PORT:-18081}:18081" # SSRF OOB callback
+      - "${PROXY_PORT:-17170}:17170"      # proxy
+      - "${API_PORT:-17171}:17171"        # API control plane
+      - "${CALLBACK_PORT:-17173}:17173"   # SSRF OOB callback
     environment:
       # Path.home() -> /data/.pwnproxy (project uses ~/.pwnproxy hardcoded)
       - HOME=/data
@@ -37,9 +40,9 @@ services:
       context: ../../apps/web
       dockerfile: ../../deploy/docker/Dockerfile.web
       args:
-        PUBLIC_API_BASE: http://backend:8000/api/v1
+        PUBLIC_API_BASE: http://backend:17171/api/v1
     ports:
-      - "${WEB_PORT:-8081}:80"
+      - "${WEB_PORT:-17172}:80"
     depends_on:
       - backend
     restart: unless-stopped

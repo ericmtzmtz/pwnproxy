@@ -7,13 +7,13 @@ pwnproxy ships a Typer CLI. Run `pwnproxy --help` for the full command tree.
 Start the proxy server and API control plane.
 
 ```bash
-pwnproxy start --proxy-port 8080 --api-port 8000
+pwnproxy start --proxy-port 17170 --api-port 17171
 ```
 
 | Option | Default | Description |
 |--------|---------|-------------|
-| `--proxy-port` | `8080` | Proxy listen port |
-| `--api-port` | `8000` | API server port |
+| `--proxy-port` | `17170` | Proxy listen port |
+| `--api-port` | `17171` | API server port |
 | `--tui` | — | Launch the TUI dashboard |
 | `--no-tui` | — | Run without TUI (default) |
 | `--host` | `127.0.0.1` | Bind address for both proxy and API |
@@ -21,14 +21,14 @@ pwnproxy start --proxy-port 8080 --api-port 8000
 | `--session` | — | Load an existing session on boot |
 | `--session-name` | — | Create and activate a new session on boot |
 | `--no-restore-session` | — | Start with empty state, do not restore last session |
-| `--callback-port` | `18081` | Port for the SSRF callback server |
+| `--callback-port` | `17173` | Port for the SSRF callback server |
 
 Output on start:
 
 ```
 Session: default
-Proxy  → 127.0.0.1:8080  (intercepting)
-API    → 127.0.0.1:8000  (http://127.0.0.1:8000/docs)
+Proxy  → 127.0.0.1:17170  (intercepting)
+API    → 127.0.0.1:17171  (http://127.0.0.1:17171/docs)
 ```
 
 Press `Ctrl+C` to stop both servers gracefully.

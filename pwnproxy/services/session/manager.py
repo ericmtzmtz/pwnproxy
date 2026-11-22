@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from pwnproxy.services.session.storage import TokenStorage
 from pwnproxy.services.session.store import TaskStore
+from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
 from pwnproxy.shared.task_model import create_task_engine, init_task_db
 
 logger = logging.getLogger(__name__)
@@ -78,7 +79,7 @@ class ProxyConfig:
     def __init__(self, data: dict | None = None) -> None:
         d = data or {}
         self.host: str = d.get("host", "127.0.0.1")
-        self.port: int = d.get("port", 8080)
+        self.port: int = d.get("port", DEFAULT_PROXY_PORT)
         self.ssl_insecure: bool = d.get("ssl_insecure", True)
         self.upstream: str | None = d.get("upstream", None)
         self.capture_enabled: bool = d.get("capture_enabled", True)

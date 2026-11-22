@@ -5,10 +5,13 @@ import os
 from aiohttp import web
 
 from pwnproxy.shared.canary import get_registry
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_PORT = int(os.environ.get("PWNPROXY_OOB_PORT", "8888"))
+# Same port the SSRF plugin puts in its OOB payloads, so a payload always
+# reaches the server that is actually listening. `PWNPROXY_OOB_PORT` still wins.
+DEFAULT_PORT = int(os.environ.get("PWNPROXY_OOB_PORT", str(DEFAULT_CALLBACK_PORT)))
 DEFAULT_HOST = os.environ.get("PWNPROXY_OOB_HOST", "0.0.0.0")
 
 

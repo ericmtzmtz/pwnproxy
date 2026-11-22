@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from pwnproxy.ai.llm import create_client_from_config
 from pwnproxy.ai.llm.usage import UsageLedger, default_ledger_engine
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.ports import DEFAULT_API_PORT, DEFAULT_PROXY_PORT
 from pwnproxy.transport.rest.app import app
 
 logger = logging.getLogger(__name__)
@@ -62,8 +63,8 @@ async def start_api_server(
     crawler_process=None,
     autoscan_tracker=None,
     host: str = "127.0.0.1",
-    port: int = 8000,
-    proxy_port: int = 8080,
+    port: int = DEFAULT_API_PORT,
+    proxy_port: int = DEFAULT_PROXY_PORT,
 ) -> asyncio.Task:
     """Start the FastAPI/Uvicorn server in a background task."""
     if traffic_engine is None:

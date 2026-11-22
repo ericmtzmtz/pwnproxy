@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from pwnproxy.shared.observability import gen_correlation_id, set_correlation_id
+from pwnproxy.shared.ports import DEFAULT_WEB_PORT
 from pwnproxy.transport.rest import (
     crawler,
     findings,
@@ -24,7 +25,10 @@ from pwnproxy.transport.rest import (
 )
 from pwnproxy.transport.ws.events import router as ws_router
 
-_ORIGINS_ENV = os.environ.get("CORS_ORIGINS", "http://localhost:4321,http://127.0.0.1:4321,http://localhost:4322,http://127.0.0.1:4322")
+_ORIGINS_ENV = os.environ.get(
+    "CORS_ORIGINS",
+    f"http://localhost:{DEFAULT_WEB_PORT},http://127.0.0.1:{DEFAULT_WEB_PORT}",
+)
 ALLOWED_ORIGINS = [o.strip() for o in _ORIGINS_ENV.split(",") if o.strip()]
 
 app = FastAPI(
