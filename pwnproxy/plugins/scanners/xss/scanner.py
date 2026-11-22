@@ -3,6 +3,14 @@ from collections.abc import AsyncGenerator
 
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
+from pwnproxy.plugins.scanners.xss.context import ContextAnalyzer, ReflectionContext
+from pwnproxy.plugins.scanners.xss.dom_sinks import (
+    find_param_location_sinks,
+    find_param_location_snippet,
+    find_sink_snippet,
+    find_sinks,
+)
+from pwnproxy.plugins.scanners.xss.payloads import get_payloads_for_context
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
@@ -31,10 +39,29 @@ class XSSScanner:
 
     async def _scan_point(self, point: InjectionPoint) -> AsyncGenerator[Finding, None]:
         stages = [
-            ReflectedStage(self._replayer, evasion_level=self._evasion),
+            ReflectedStage(
+                self._replayer,
+                ContextAnalyzer,
+                ReflectionContext,
+                get_payloads_for_context,
+                evasion_level=self._evasion,
+            ),
             StoredStage(self._replayer, evasion_level=self._evasion, stored_payloads=self._stored_payloads),
-            DomStage(self._replayer, evasion_level=self._evasion),
-            ContextAwareStage(self._replayer, evasion_level=self._evasion),
+            DomStage(
+                self._replayer,
+                find_sinks,
+                find_sink_snippet,
+                find_param_location_sinks,
+                find_param_location_snippet,
+                evasion_level=self._evasion,
+            ),
+            ContextAwareStage(
+                self._replayer,
+                ContextAnalyzer,
+                ReflectionContext,
+                get_payloads_for_context,
+                evasion_level=self._evasion,
+            ),
         ]
         chain = DetectionChain(stages, DetectionDepth(self._depth))
 

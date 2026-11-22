@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.plugins.scanners.sqli.payloads import get_error_payloads
+from pwnproxy.plugins.scanners.sqli.payloads import get_control_payloads, get_error_payloads
 from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.sqli_stages import ErrorBasedStage
@@ -58,7 +58,7 @@ def _flow():
 async def test_baseline_with_error_skips_point():
     """Regression: session poisoned with SQLi -> clean response has error -> skip."""
     replayer = FakeReplayer(clean_text=f"<html>Error: {MYSQL_ERR}</html>", payload_text=f"<html>{MYSQL_ERR}</html>")
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
     assert replayer.clean_calls == 1
@@ -68,7 +68,7 @@ async def test_baseline_with_error_skips_point():
 @pytest.mark.asyncio
 async def test_clean_baseline_and_payload_error_confirms():
     replayer = FakeReplayer(clean_text="<html>normal page</html>", payload_text=f"<html>{MYSQL_ERR}</html>")
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     f = result.findings[0]
@@ -85,7 +85,7 @@ async def test_baseline_fails_skips_fail_closed():
             self.clean_calls += 1
 
     replayer = FailingReplayer("", "")
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
     assert replayer.payload_calls == 0
@@ -94,6 +94,6 @@ async def test_baseline_fails_skips_fail_closed():
 @pytest.mark.asyncio
 async def test_clean_baseline_and_payload_no_error_no_finding():
     replayer = FakeReplayer(clean_text="<html>normal</html>", payload_text="<html>still normal</html>")
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []

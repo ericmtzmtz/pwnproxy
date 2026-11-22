@@ -15,6 +15,7 @@ import asyncio
 import httpx
 import pytest
 
+from pwnproxy.plugins.scanners.xss.context import ContextAnalyzer, ReflectionContext
 from pwnproxy.plugins.scanners.xss.payloads import get_payloads_for_context
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
@@ -27,6 +28,13 @@ from pwnproxy.shared.scan.stages.xss_stages import (
 CANARY = "pwnxss-testcanary123"
 PROBE_HTML_BODY = f"<html><body><p>{CANARY}</p></body></html>"
 PROBE_HTML_ATTR = f'<html><body><input value="{CANARY}"></body></html>'
+
+
+def _ctx_aware(replayer):
+    """ContextAwareStage with the plugin-owned context data injected."""
+    return ContextAwareStage(
+        replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+    )
 
 
 class FakeXssReplayer:
@@ -83,7 +91,10 @@ class TestReflectedStagePointValueRegression:
         A real InjectionPoint has only ``value``; if the old bug returned the
         stage would raise AttributeError."""
         replayer = FakeXssReplayer(exploitable=True)
-        stage = ReflectedStage(replayer, canary_provider=lambda: CANARY)
+        stage = ReflectedStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
         assert len(result.findings) >= 1
         xss = [f for f in result.findings if f.technique == "reflected-xss"]
@@ -94,7 +105,10 @@ class TestReflectedStagePointValueRegression:
 class TestReflectedStageExploitabilityGate:
     def test_exploitable_confirms_reflected_xss(self):
         replayer = FakeXssReplayer(probe_body=PROBE_HTML_BODY, exploitable=True)
-        stage = ReflectedStage(replayer, canary_provider=lambda: CANARY)
+        stage = ReflectedStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
 
         xss = [f for f in result.findings if f.technique == "reflected-xss"]
@@ -110,7 +124,10 @@ class TestReflectedStageExploitabilityGate:
 
     def test_reflected_but_not_exploitable_is_unescaped_reflection(self):
         replayer = FakeXssReplayer(probe_body=PROBE_HTML_BODY, exploitable=False)
-        stage = ReflectedStage(replayer, canary_provider=lambda: CANARY)
+        stage = ReflectedStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
 
         low = [f for f in result.findings if f.technique == "unescaped-reflection"]
@@ -123,7 +140,10 @@ class TestReflectedStageExploitabilityGate:
 
     def test_not_reflected_skips_point(self):
         replayer = FakeXssReplayer(probe_body="<html><body>nothing here</body></html>")
-        stage = ReflectedStage(replayer, canary_provider=lambda: CANARY)
+        stage = ReflectedStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
         assert result.findings == []
         assert result.confirmed_points == set()
@@ -132,7 +152,10 @@ class TestReflectedStageExploitabilityGate:
         # Canary reflected in both html_body and html_attr; exploitable path taken.
         probe_body = f'<html><body><p>{CANARY}</p><input value="{CANARY}"></body></html>'
         replayer = FakeXssReplayer(probe_body=probe_body, exploitable=True)
-        stage = ReflectedStage(replayer, canary_provider=lambda: CANARY)
+        stage = ReflectedStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
         xss = [f for f in result.findings if f.technique == "reflected-xss"]
         assert len(xss) == 1
@@ -141,7 +164,10 @@ class TestReflectedStageExploitabilityGate:
 class TestContextAwareStage:
     def test_deep_uses_exploitable_gate(self):
         replayer = FakeXssReplayer(probe_body=PROBE_HTML_BODY, exploitable=True)
-        stage = ContextAwareStage(replayer, canary_provider=lambda: CANARY)
+        stage = ContextAwareStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
         xss = [f for f in result.findings if f.technique == "reflected-xss"]
         assert xss
@@ -149,7 +175,10 @@ class TestContextAwareStage:
 
     def test_deep_not_reflected_yields_nothing(self):
         replayer = FakeXssReplayer(probe_body="<html><body>none</body></html>")
-        stage = ContextAwareStage(replayer, canary_provider=lambda: CANARY)
+        stage = ContextAwareStage(
+            replayer, ContextAnalyzer, ReflectionContext, get_payloads_for_context,
+            canary_provider=lambda: CANARY,
+        )
         result = _run(stage, [_point()])
         assert result.findings == []
 
@@ -179,13 +208,13 @@ class TestContextAwareStageDepthGating:
                 from pwnproxy.plugins.core.chain import StageResult
                 return StageResult(findings=[], confirmed_points=set())
 
-        stages = [ContextAwareStage(FakeXssReplayer()), DummyStage()]
+        stages = [_ctx_aware(FakeXssReplayer()), DummyStage()]
         DetectionChain(stages, DetectionDepth.FAST)
         DetectionChain(stages, DetectionDepth.STANDARD)
         DetectionChain(stages, DetectionDepth.DEEP)
 
         # should_run must be False below DEEP for ContextAwareStage
-        assert not ContextAwareStage(FakeXssReplayer()).should_run(DetectionDepth.FAST)
-        assert not ContextAwareStage(FakeXssReplayer()).should_run(DetectionDepth.STANDARD)
-        assert ContextAwareStage(FakeXssReplayer()).should_run(DetectionDepth.DEEP)
+        assert not _ctx_aware(FakeXssReplayer()).should_run(DetectionDepth.FAST)
+        assert not _ctx_aware(FakeXssReplayer()).should_run(DetectionDepth.STANDARD)
+        assert _ctx_aware(FakeXssReplayer()).should_run(DetectionDepth.DEEP)
 

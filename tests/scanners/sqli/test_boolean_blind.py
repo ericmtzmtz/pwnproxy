@@ -4,6 +4,10 @@ import time
 import httpx
 import pytest
 
+from pwnproxy.plugins.scanners.sqli.payloads import (
+    CANONICAL_BOOLEAN_PAIR,
+    ESCALATION_BOOLEAN_PAIRS,
+)
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.sqli_stages import BooleanBlindStage
@@ -78,7 +82,9 @@ class FakeBooleanReplayer:
 
 
 def _run(replayer, deadline=None):
-    stage = BooleanBlindStage(replayer, deadline=deadline)
+    stage = BooleanBlindStage(
+        replayer, CANONICAL_BOOLEAN_PAIR, ESCALATION_BOOLEAN_PAIRS, deadline=deadline
+    )
     flow = Flow(id="f1", method="GET", url="http://t.com/page?id=1", request_headers={})
     return asyncio.run(stage.execute(flow, [_point()]))
 
@@ -134,7 +140,9 @@ def test_escalation_when_canonical_ambiguous():
 @pytest.mark.asyncio
 async def test_stage_stops_at_deadline_without_error():
     r = FakeBooleanReplayer()
-    stage = BooleanBlindStage(r, deadline=time.monotonic() - 1.0)
+    stage = BooleanBlindStage(
+        r, CANONICAL_BOOLEAN_PAIR, ESCALATION_BOOLEAN_PAIRS, deadline=time.monotonic() - 1.0
+    )
     flow = Flow(id="f1", method="GET", url="http://t.com/page?id=1", request_headers={})
     result = await stage.execute(flow, [_point()])
     assert len(result.findings) == 0
@@ -144,7 +152,7 @@ async def test_stage_stops_at_deadline_without_error():
 @pytest.mark.asyncio
 async def test_no_deadline_preserves_behavior():
     r = FakeBooleanReplayer()
-    stage = BooleanBlindStage(r)
+    stage = BooleanBlindStage(r, CANONICAL_BOOLEAN_PAIR, ESCALATION_BOOLEAN_PAIRS)
     flow = Flow(id="f1", method="GET", url="http://t.com/page?id=1", request_headers={})
     result = await stage.execute(flow, [_point()])
     assert len(result.findings) == 1
@@ -154,7 +162,7 @@ async def test_no_deadline_preserves_behavior():
 async def test_set_deadline_wires_intra_stage_cutoff():
     """BudgetChain calls set_deadline() before execute; the stage must honor it."""
     r = FakeBooleanReplayer()
-    stage = BooleanBlindStage(r)
+    stage = BooleanBlindStage(r, CANONICAL_BOOLEAN_PAIR, ESCALATION_BOOLEAN_PAIRS)
     stage.set_deadline(time.monotonic() - 1.0)
     flow = Flow(id="f1", method="GET", url="http://t.com/page?id=1", request_headers={})
     result = await stage.execute(flow, [_point()])

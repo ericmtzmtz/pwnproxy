@@ -3,6 +3,9 @@ from collections.abc import AsyncGenerator
 from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.core.chain import chain_from_depth
 from pwnproxy.plugins.scanners.sqli.payloads import (
+    CANONICAL_BOOLEAN_PAIR,
+    ESCALATION_BOOLEAN_PAIRS,
+    get_control_payloads,
     get_error_payloads,
     get_time_payloads,
 )
@@ -41,10 +44,14 @@ class SQLiScannerPlugin(ScannerPlugin):
         self._replayer = RequestReplayer()
         chain = chain_from_depth([
             ErrorBasedStage(
-                self._replayer, ERROR_SIGNATURES, get_error_payloads(), evasion_level,
+                self._replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads,
+                evasion_level,
                 aggressive_status=aggressive_status,
             ),
-            BooleanBlindStage(self._replayer, evasion_level),
+            BooleanBlindStage(
+                self._replayer, CANONICAL_BOOLEAN_PAIR, ESCALATION_BOOLEAN_PAIRS,
+                evasion_level,
+            ),
             TimeBlindStage(self._replayer, get_time_payloads(), evasion_level),
             OOBStage(self._replayer, evasion_level),
         ], depth=depth)
