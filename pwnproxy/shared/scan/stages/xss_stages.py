@@ -12,11 +12,11 @@ import logging
 import re
 import uuid
 
-from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.finding import Finding
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
+from pwnproxy.shared.scan.stage import DetectionDepth, DetectionStage, StageResult
 
 logger = logging.getLogger(__name__)
 
@@ -27,27 +27,9 @@ def _default_canary() -> str:
     return f"pwnxss-{uuid.uuid4().hex[:12]}"
 
 
-def _xss_context():
-    """Lazily import the XSS context analyzer to avoid a circular import.
-
-    ``xss_stages`` is imported by ``xss/scanner.py``, while this module needs
-    the ``xss`` package submodules; importing them eagerly would run the
-    package ``__init__`` and re-enter the scanner before this module finishes
-    loading.
-    """
-    from pwnproxy.plugins.scanners.xss.context import ContextAnalyzer, ReflectionContext
-    return ContextAnalyzer, ReflectionContext
-
-
-def _xss_payloads():
-    from pwnproxy.plugins.scanners.xss.payloads import get_payloads_for_context
-    return get_payloads_for_context
-
-
-def _reflect_contexts(analyzer, body: str, canary: str) -> list:
+def _reflect_contexts(analyzer, body: str, canary: str, reflection_context) -> list:
     """Reflection contexts of the canary, excluding UNKNOWN."""
-    _, ReflectionContext = _xss_context()
-    return [c for c in analyzer.analyze(body, canary) if c != ReflectionContext.UNKNOWN]
+    return [c for c in analyzer.analyze(body, canary) if c != reflection_context.UNKNOWN]
 
 
 class ReflectedStage(DetectionStage):
@@ -55,10 +37,23 @@ class ReflectedStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "reflected-xss"
 
-    def __init__(self, replayer: RequestReplayer, canary_provider=None, evasion_level: str = "none"):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        analyzer_factory,
+        reflection_context,
+        payloads_for_context,
+        canary_provider=None,
+        evasion_level: str = "none",
+    ):
         self._replayer = replayer
         self._evasion = evasion_level
         self._canary_provider = canary_provider or _default_canary
+        # Injected by the XSS plugin: the context analyzer, its enum and the
+        # context→payloads table all live in the plugin package.
+        self._analyzer_factory = analyzer_factory
+        self._reflection_context = reflection_context
+        self._payloads_for_context = payloads_for_context
 
     async def execute(
         self,
@@ -67,9 +62,8 @@ class ReflectedStage(DetectionStage):
     ) -> StageResult:
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
-        ContextAnalyzer, _ = _xss_context()
-        get_payloads_for_context = _xss_payloads()
-        analyzer = ContextAnalyzer()
+        get_payloads_for_context = self._payloads_for_context
+        analyzer = self._analyzer_factory()
         canary = self._canary_provider()
 
         for point in injection_points:
@@ -88,7 +82,7 @@ class ReflectedStage(DetectionStage):
             if canary not in probe.text:
                 continue
 
-            contexts = _reflect_contexts(analyzer, probe.text, canary)
+            contexts = _reflect_contexts(analyzer, probe.text, canary, self._reflection_context)
             exploitable_ctx = None
             exploitable_payload = None
             reason = None
@@ -246,10 +240,24 @@ class DomStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "dom-xss"
 
-    def __init__(self, replayer: RequestReplayer, canary_provider=None, evasion_level: str = "none"):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        find_sinks,
+        find_sink_snippet,
+        find_param_location_sinks,
+        find_param_location_snippet,
+        canary_provider=None,
+        evasion_level: str = "none",
+    ):
         self._replayer = replayer
         self._evasion = evasion_level
         self._canary_provider = canary_provider or _default_canary
+        # Injected by the XSS plugin: the DOM-sink scanner lives in the plugin.
+        self._find_sinks = find_sinks
+        self._find_sink_snippet = find_sink_snippet
+        self._find_param_location_sinks = find_param_location_sinks
+        self._find_param_location_snippet = find_param_location_snippet
 
     async def execute(
         self,
@@ -278,27 +286,20 @@ class DomStage(DetectionStage):
             if self._canary_in_html_body(body, canary):
                 continue
 
-            from pwnproxy.plugins.scanners.xss.dom_sinks import (
-                find_param_location_sinks,
-                find_param_location_snippet,
-                find_sink_snippet,
-                find_sinks,
-            )
-
             # Signal 1: canary inside a sink in the served script.
             sink = None
             snippet = ""
-            canary_sinks = find_sinks(body, canary)
+            canary_sinks = self._find_sinks(body, canary)
             if canary_sinks:
                 sink = canary_sinks[0]
-                snippet = find_sink_snippet(body, canary, sink)
+                snippet = self._find_sink_snippet(body, canary, sink)
                 evidence = f"Canary reaches DOM sink '{sink.name}' in served script"
             else:
                 # Signal 2: script reads this param from location.* into a sink.
-                param_sinks = find_param_location_sinks(body, point.name)
+                param_sinks = self._find_param_location_sinks(body, point.name)
                 if param_sinks:
                     sink = param_sinks[0]
-                    snippet = find_param_location_snippet(body, point.name, sink)
+                    snippet = self._find_param_location_snippet(body, point.name, sink)
                     evidence = (
                         f"Param '{point.name}' is read from location into a script "
                         f"writing to DOM sink '{sink.name}'"
@@ -343,10 +344,23 @@ class ContextAwareStage(DetectionStage):
     min_depth = DetectionDepth.DEEP
     capability = "reflected-xss"
 
-    def __init__(self, replayer: RequestReplayer, canary_provider=None, evasion_level: str = "none"):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        analyzer_factory,
+        reflection_context,
+        payloads_for_context,
+        canary_provider=None,
+        evasion_level: str = "none",
+    ):
         self._replayer = replayer
         self._evasion = evasion_level
         self._canary_provider = canary_provider or _default_canary
+        # Injected by the XSS plugin: the context analyzer, its enum and the
+        # context→payloads table all live in the plugin package.
+        self._analyzer_factory = analyzer_factory
+        self._reflection_context = reflection_context
+        self._payloads_for_context = payloads_for_context
 
     async def execute(
         self,
@@ -355,9 +369,8 @@ class ContextAwareStage(DetectionStage):
     ) -> StageResult:
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
-        ContextAnalyzer, _ = _xss_context()
-        get_payloads_for_context = _xss_payloads()
-        analyzer = ContextAnalyzer()
+        get_payloads_for_context = self._payloads_for_context
+        analyzer = self._analyzer_factory()
         canary = self._canary_provider()
 
         for point in injection_points:
@@ -372,7 +385,7 @@ class ContextAwareStage(DetectionStage):
             if probe is None:
                 continue
 
-            contexts = _reflect_contexts(analyzer, probe.text, canary)
+            contexts = _reflect_contexts(analyzer, probe.text, canary, self._reflection_context)
             found = False
             for ctx in contexts:
                 payloads = get_payloads_for_context(ctx.value)

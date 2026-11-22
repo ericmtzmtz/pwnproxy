@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import logging
 
-from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
 from pwnproxy.shared.canary import get_registry
 from pwnproxy.shared.http_server import get_server
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.finding import Finding
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
+from pwnproxy.shared.scan.stage import DetectionDepth, DetectionStage, StageResult
 
 logger = logging.getLogger(__name__)
 

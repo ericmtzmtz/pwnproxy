@@ -1,15 +1,10 @@
 import logging
 
-from pwnproxy.plugins.core.base import Finding
-from pwnproxy.plugins.core.chain import DetectionDepth, DetectionStage, StageResult
-from pwnproxy.plugins.scanners.command_injection.payloads import Payload
-from pwnproxy.plugins.scanners.command_injection.signatures import (
-    get_evidence,
-    has_command_output,
-)
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.scan.finding import Finding
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
+from pwnproxy.shared.scan.stage import DetectionDepth, DetectionStage, StageResult
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +16,21 @@ class CommandInjectionStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "command-injection"
     
-    def __init__(self, replayer: RequestReplayer, payloads: list[Payload], evasion_level="none", timeout=5.0):
+    def __init__(
+        self,
+        replayer: RequestReplayer,
+        payloads: list,
+        has_command_output,
+        get_evidence,
+        evasion_level="none",
+        timeout=5.0,
+    ):
         self._replayer = replayer
         self._payloads = payloads
+        # Injected by the scanner plugin: response-body detector and evidence
+        # formatter live with the plugin's signatures, not in shared.
+        self._has_command_output = has_command_output
+        self._get_evidence = get_evidence
         self._evasion = evasion_level
         self._timeout = timeout
     
@@ -45,10 +52,10 @@ class CommandInjectionStage(DetectionStage):
                         continue
                     
                     body = resp.text or ""
-                    detected, technique = has_command_output(body)
+                    detected, technique = self._has_command_output(body)
                     
                     if detected:
-                        evidence = get_evidence(body, technique)
+                        evidence = self._get_evidence(body, technique)
                         findings.append(Finding(
                             scanner="command-injection",
                             url=point.url,

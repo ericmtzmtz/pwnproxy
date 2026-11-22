@@ -160,8 +160,9 @@ evasion were already resolved at load time.
 
 ### 3.3 `Finding`
 
-Defined in `pwnproxy/plugins/core/base.py:43`. Every scanner MUST emit fully populated
-`Finding` objects:
+Defined in `pwnproxy/shared/scan/finding.py` (re-exported by
+`pwnproxy/plugins/core/base.py`, so `from pwnproxy.plugins.core.base import Finding`
+keeps working). Every scanner MUST emit fully populated `Finding` objects:
 
 | Field | Type | Notes |
 |---|---|---|
@@ -250,7 +251,9 @@ flow (from bus)
 
 ## 6. Detection chains and depth semantics
 
-`pwnproxy/plugins/core/chain.py`.
+`pwnproxy/plugins/core/chain.py`. The base types (`DetectionDepth`, `StageResult`,
+`DetectionStage`) live in `pwnproxy/shared/scan/stage.py` and are re-exported from
+`chain.py`; the chain implementations stay in `chain.py`.
 
 ```python
 class DetectionDepth(str, Enum):
@@ -307,7 +310,8 @@ at plugin load time.
 
 ## 7. Stages
 
-`DetectionStage` (`pwnproxy/plugins/core/chain.py:44`). Contract:
+`DetectionStage` (`pwnproxy/shared/scan/stage.py`, re-exported by
+`pwnproxy/plugins/core/chain.py`). Contract:
 
 ```python
 class DetectionStage(ABC):
@@ -551,10 +555,10 @@ promises behavior the assertion does not check, fix the test.
 
 ```
 pwnproxy/plugins/core/          plugin framework
-  base.py                       PwnPlugin, ScannerPlugin, PluginMetadata, PluginContext, Finding
+  base.py                       PwnPlugin, ScannerPlugin, PluginMetadata, PluginContext (+ re-export Finding)
   contracts.py                  consumer mixins (Flow/Finding/Surface/Evidence)
   loader.py                     UniversalPluginLoader, PluginLoader (load_builtin, run_scan, discover_scanners)
-  chain.py                      DetectionDepth, DetectionStage, DetectionChain, BudgetChain, chain_from_depth
+  chain.py                      DetectionChain, BudgetChain, chain_from_depth (+ re-exports from shared/scan/stage.py)
   config.py                     legacy [plugin] config reader (not wired to scanners)
   discovery.py / watchdog.py    PyPI discovery / hot-reload
 
@@ -565,6 +569,8 @@ pwnproxy/plugins/scanners/<name>/
   signatures.py                 error signatures (error-based scanners)
 
 pwnproxy/shared/scan/
+  finding.py                    Finding (canonical home; re-exported by plugins/core/base.py)
+  stage.py                      DetectionDepth, StageResult, DetectionStage
   params.py                     InjectionPoint + extract()
   replayer.py                   RequestReplayer (I/O, rate limiting, injection)
   replayers/xxe.py              XxeReplayer (XML body mutation)
