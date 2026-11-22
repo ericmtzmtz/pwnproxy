@@ -1,8 +1,15 @@
 #!/usr/bin/env pwsh
 # dev.ps1 — Start all pwnproxy services for local development
-# Requires: PowerShell 7+, poetry, node, pwnproxy on PATH
+# Requires: PowerShell 7+, node, and either poetry (repo virtualenv, preferred)
+#           or a pwnproxy executable on PATH (fallback only)
 #   dev.ps1              — start dev environment
+#   dev.ps1 -Verbose     — same, but pwnproxy output stays in this console
 #   dev.ps1 -KillPort    — free all pwnproxy ports (proxy, API, callback)
+#
+# pwnproxy always runs from the repo virtualenv when poetry + pyproject.toml are
+# present. A global `pwnproxy` executable is only used as a fallback and is
+# announced: a stale `pip install -e .` outside poetry has no dependencies
+# (aiosqlite & co.), so it dies at import time.
 
 param(
     [switch]$KillPort,
@@ -80,22 +87,99 @@ function Check-Command($cmd) {
     }
 }
 
-Check-Command "poetry"
 Check-Command "node"
 
-# Try to find pwnproxy, fall back to poetry run
-$PwnCmd = "pwnproxy"
-if (-not (Get-Command "pwnproxy" -ErrorAction SilentlyContinue)) {
-    Write-Host "[dev] pwnproxy not on PATH, trying 'poetry run pwnproxy'..." -ForegroundColor Yellow
-    $PwnCmd = "poetry"
-    # Verify we can find it via poetry
-    $test = & poetry run pwnproxy --help 2>&1 | Out-String
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "[ERROR] Could not find pwnproxy via PATH or poetry." -ForegroundColor Red
-        Write-Host "  Run 'poetry shell' or 'pip install -e .' first." -ForegroundColor Yellow
-        exit 1
+# -- pwnproxy log files (relative to the repo, never inside the working dir) --
+$RepoRoot   = $PSScriptRoot
+$LogDir     = Join-Path $RepoRoot ".dev-logs"
+$LogFile    = Join-Path $LogDir "pwnproxy.log"
+$ErrLogFile = Join-Path $LogDir "pwnproxy.err.log"
+
+# Repo virtualenv first, global executable only as a fallback.
+function Get-PwnCommand {
+    param([string]$RepoRoot)
+
+    $hasPyproject = Test-Path -LiteralPath (Join-Path $RepoRoot "pyproject.toml")
+    $poetry = Get-Command "poetry" -ErrorAction SilentlyContinue
+    if ($hasPyproject -and $poetry) {
+        return [pscustomobject]@{
+            Kind     = "poetry"
+            FilePath = $poetry.Source
+            Prefix   = @("run", "pwnproxy")
+            Label    = "poetry run pwnproxy ($($poetry.Source))"
+            Warning  = $null
+        }
+    }
+
+    $global = Get-Command "pwnproxy.exe", "pwnproxy" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandType -in @("Application", "ExternalScript") } |
+        Select-Object -First 1
+    if ($global) {
+        $why = if (-not $hasPyproject) { "no pyproject.toml next to this script" } else { "poetry not on PATH" }
+        return [pscustomobject]@{
+            Kind     = "global"
+            FilePath = $global.Source
+            Prefix   = @()
+            Label    = "$($global.Source) [global executable]"
+            Warning  = "using a GLOBAL pwnproxy executable ($($global.Source)) because $why. Its dependencies may not match pyproject.toml (missing aiosqlite etc.)."
+        }
+    }
+
+    return $null
+}
+
+function Get-LogTail {
+    param([string]$Path, [int]$Lines = 25)
+    if (-not $Path -or -not (Test-Path -LiteralPath $Path)) { return @() }
+    return @(Get-Content -LiteralPath $Path -Tail $Lines -ErrorAction SilentlyContinue)
+}
+
+function Test-PortBusyError {
+    param([string[]]$Lines)
+    if (-not $Lines -or $Lines.Count -eq 0) { return $false }
+    return (($Lines -join "`n") -match 'Errno 10048|WinError 10048|address already in use|only one usage of each socket address|EADDRINUSE')
+}
+
+# Real diagnostics for a pwnproxy that died: exit code, log tail, log paths.
+function Show-PwnExitDiagnostics {
+    param($Job, [string]$LogFile, [string]$ErrLogFile, [int]$ProxyPort)
+
+    $exitCode = "unknown"
+    try { $exitCode = $Job.ExitCode } catch { }
+    Write-Host "[ERROR] pwnproxy exited prematurely (exit code $exitCode)." -ForegroundColor Red
+
+    $tail = @(Get-LogTail -Path $ErrLogFile -Lines 25)
+    if ($tail.Count -eq 0) { $tail = @(Get-LogTail -Path $LogFile -Lines 25) }
+
+    if ($tail.Count -gt 0) {
+        Write-Host "[dev] Last $($tail.Count) line(s) of the log:" -ForegroundColor Yellow
+        $tail | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    } else {
+        Write-Host "[dev] (no log output captured - rerun as 'dev.ps1 -Verbose' to see pwnproxy output live)" -ForegroundColor Yellow
+    }
+
+    if (Test-PortBusyError $tail) {
+        Write-Host "  The log says the port is in use. Try: `$env:PWNPROXY_PROXY_PORT=9090" -ForegroundColor Yellow
+    }
+
+    if ($LogFile -and (Test-Path -LiteralPath $LogFile)) {
+        Write-Host "[dev]   stdout log: $LogFile" -ForegroundColor DarkGray
+    }
+    if ($ErrLogFile -and (Test-Path -LiteralPath $ErrLogFile)) {
+        Write-Host "[dev]   stderr log: $ErrLogFile" -ForegroundColor DarkGray
     }
 }
+
+$Pwn = Get-PwnCommand -RepoRoot $RepoRoot
+if (-not $Pwn) {
+    Write-Host "[ERROR] Could not find pwnproxy: poetry is not on PATH and no pwnproxy executable is available." -ForegroundColor Red
+    Write-Host "  Recommended: run 'poetry install' in $RepoRoot, then retry." -ForegroundColor Yellow
+    exit 1
+}
+if ($Pwn.Warning) {
+    Write-Host "[dev] WARNING: $($Pwn.Warning)" -ForegroundColor Yellow
+}
+Write-Host "[dev] Using $($Pwn.Label)" -ForegroundColor DarkGray
 
 # -- Web UI needs a reachable API host (0.0.0.0 is not valid in browser) --
 $WebApiHost = if ($ApiHost -eq "0.0.0.0") { "127.0.0.1" } else { $ApiHost }
@@ -104,34 +188,34 @@ $env:PUBLIC_API_BASE = "http://${WebApiHost}:${ApiPort}/api/v1"
 Write-Host "`n[dev] Starting pwnproxy dev environment..." -ForegroundColor Cyan
 
 # -- 1. Start pwnproxy in background --
+$pwnCommandArgs = @(
+    "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "$CallbackPort", "--no-restore-session"
+)
 $pwnArgs = @{ PassThru = $true }
 if ($Verbose) {
     $pwnArgs["NoNewWindow"] = $true
     Write-Host "[dev] Starting proxy on port ${ProxyPort} (API: ${ApiHost}:${ApiPort})... (verbose)" -ForegroundColor Yellow
     Write-Host "[dev]   pwnproxy logs will appear below" -ForegroundColor Gray
 } else {
+    New-Item -ItemType Directory -Path $LogDir -Force | Out-Null
+    Remove-Item -LiteralPath $LogFile, $ErrLogFile -Force -ErrorAction SilentlyContinue
     $pwnArgs["WindowStyle"] = "Hidden"
+    $pwnArgs["RedirectStandardOutput"] = $LogFile
+    $pwnArgs["RedirectStandardError"] = $ErrLogFile
     Write-Host "[dev] Starting proxy on port ${ProxyPort} (API: ${ApiHost}:${ApiPort})..." -ForegroundColor Yellow
+    Write-Host "[dev]   log: $LogFile" -ForegroundColor Gray
 }
-if ($PwnCmd -eq "poetry") {
-    $proxyJob = Start-Process @pwnArgs -FilePath "poetry" -ArgumentList @(
-        "run", "pwnproxy", "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "$CallbackPort", "--no-restore-session"
-    )
-} else {
-    $proxyJob = Start-Process @pwnArgs -FilePath "pwnproxy" -ArgumentList @(
-        "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "$CallbackPort", "--no-restore-session"
-    )
-}
+$proxyJob = Start-Process @pwnArgs -FilePath $Pwn.FilePath -ArgumentList ($Pwn.Prefix + $pwnCommandArgs)
 
 # -- 2. Poll API health endpoint --
 Write-Host "[dev] Waiting for API to be ready..." -ForegroundColor Yellow
 $ready = $false
+$exitedEarly = $false
 for ($i = 1; $i -le 15; $i++) {
     Start-Sleep -Seconds 1
     if ($proxyJob.HasExited) {
-        Write-Host "[ERROR] pwnproxy exited prematurely (port $ProxyPort may be in use)." -ForegroundColor Red
-        Write-Host "  Try: `$env:PWNPROXY_PROXY_PORT=9090" -ForegroundColor Yellow
-        exit 1
+        $exitedEarly = $true
+        break
     }
     try {
         $code = curl.exe -s -o nul -w "%{http_code}" $HealthUrl 2>$null
@@ -143,12 +227,35 @@ for ($i = 1; $i -le 15; $i++) {
     Write-Host "[dev]   Attempt $i/15 - not ready yet..." -ForegroundColor Gray
 }
 
+if ($exitedEarly) {
+    if ($Verbose) {
+        Write-Host "[ERROR] pwnproxy exited prematurely (exit code $($proxyJob.ExitCode))." -ForegroundColor Red
+        Write-Host "[dev]   Its output was printed above (verbose mode)." -ForegroundColor DarkGray
+    } else {
+        Show-PwnExitDiagnostics -Job $proxyJob -LogFile $LogFile -ErrLogFile $ErrLogFile -ProxyPort $ProxyPort
+    }
+    exit 1
+}
+
 if (-not $ready) {
     Write-Host "[ERROR] API did not start within 15 seconds." -ForegroundColor Red
+    if (-not $Verbose) {
+        $tail = @(Get-LogTail -Path $ErrLogFile -Lines 25)
+        if ($tail.Count -eq 0) { $tail = @(Get-LogTail -Path $LogFile -Lines 25) }
+        if ($tail.Count -gt 0) {
+            Write-Host "[dev] Last $($tail.Count) line(s) of the log:" -ForegroundColor Yellow
+            $tail | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+        }
+        Write-Host "[dev]   log: $LogFile" -ForegroundColor DarkGray
+    }
     taskkill /T /F /PID $proxyJob.Id 2>&1 | Out-Null
     exit 1
 }
 Write-Host "[dev] API is ready!" -ForegroundColor Green
+if (-not $Verbose) {
+    Write-Host "[dev]   log: $LogFile" -ForegroundColor DarkGray
+    Write-Host "[dev]   errors: $ErrLogFile" -ForegroundColor DarkGray
+}
 
 # -- 3. Verify SSRF callback is listening --
 Write-Host "[dev] Verifying SSRF callback server..." -ForegroundColor Yellow
@@ -168,6 +275,9 @@ Write-Host "  API   -> http://${ApiHost}:$ApiPort" -ForegroundColor Green
 Write-Host "  Proxy -> http://${ApiHost}:$ProxyPort" -ForegroundColor Green
 Write-Host "  Docs  -> http://${ApiHost}:${ApiPort}/docs" -ForegroundColor Green
 Write-Host "  Web UI -> http://127.0.0.1:$WebPort" -ForegroundColor Green
+if (-not $Verbose) {
+    Write-Host "  Log    -> $LogFile" -ForegroundColor Green
+}
 Write-Host "---------------------------------" -ForegroundColor Cyan
 if ($ApiHost -eq "0.0.0.0") {
     Write-Host "Remote access: http://<this-machine-ip>:$ApiPort" -ForegroundColor Yellow

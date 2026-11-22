@@ -26,6 +26,14 @@ Start all services (proxy + API + Web UI) with a single command:
 
 This starts the proxy on `:17170`, API on `:17171`, and Web UI on `:17172`, then polls the health endpoint before showing all URLs. Press `Ctrl+C` to stop everything cleanly.
 
+pwnproxy always runs from the repo virtualenv (`poetry run pwnproxy`) when `poetry` and
+`pyproject.toml` are present. A `pwnproxy` found on `PATH` is only a fallback, announced with a
+warning: an editable install outside poetry does not carry the project dependencies
+(`aiosqlite`, ...) and dies at import time. Proxy output is written to `.dev-logs/pwnproxy.log`
+(plus `.dev-logs/pwnproxy.err.log` on Windows); if the process dies before the API answers, the
+last lines of that log are printed instead of a generic error. Use `.\dev.ps1 -Verbose` to keep
+the output in the console.
+
 Override ports via environment variables:
 
 ```bash

@@ -31,6 +31,9 @@ apps/web/dist/
 # Temp files
 cookies.txt
 
+# dev.ps1 / dev.sh runtime logs
+.dev-logs/
+
 # Build artifacts + review diffs
 *.zip
 *.diff

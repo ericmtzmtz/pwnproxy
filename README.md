@@ -477,6 +477,11 @@ This starts:
 - Proxy → `:17170`
 - API → `:17171`
 - Web UI → `:17172`
+- Logs → `.dev-logs/pwnproxy.log` (pwnproxy stdout/stderr; `.dev-logs/pwnproxy.err.log` on Windows)
+
+Both scripts run pwnproxy from the repo virtualenv (`poetry run pwnproxy`) when poetry is
+available, and only fall back to a `pwnproxy` on `PATH` (with a warning) otherwise. If the
+process dies at startup, the last lines of that log are printed.
 
 ### Run tests
 
