@@ -1,14 +1,14 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { createTab } from "@/api/repeater/calls";
 import { launchScan } from "@/api/scan/calls";
 import { listPlugins } from "@/api/plugins/calls";
+import type { PluginInfo } from "@/api/plugins/types";
 import { PluginToggle } from "@/components/plugins/PluginToggle";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { API_HOST } from "@/core";
 
-const SCANNER_NAMES = ["sqli", "xss", "lfi", "xxe", "ssrf"] as const;
 const PER_PAGE = 10;
 const POLL_INTERVAL = 2000;
 
@@ -34,14 +34,15 @@ function readScanParams() {
   }
   const p = new URLSearchParams(location.search);
   const method = (p.get("method") ?? "GET").toUpperCase();
-  const scannerParam = p.get("scanners") ?? "";
   return {
     url: p.get("url") ?? "",
     method: HTTP_METHODS.includes(method) ? method : "GET",
     body: p.get("body") ?? "",
     content_type: p.get("content_type") ?? "",
     cookies: p.get("cookies") ?? "",
-    scanners: SCANNER_NAMES.some((name) => name === scannerParam) ? scannerParam : "",
+    // Not validated against a name list: the catalog decides what exists (it
+    // arrives after mount) and the server rejects an unknown name with a clear error.
+    scanners: p.get("scanners") ?? "",
   };
 }
 
@@ -54,7 +55,9 @@ export function ScannersPage() {
   const [cookies, setCookies] = useState(init.current.cookies);
   const [selectedScanner, setSelectedScanner] = useState(init.current.scanners);
   const [scanning, setScanning] = useState(false);
-  const [disabledPlugins, setDisabledPlugins] = useState<Set<string>>(new Set());
+  const [plugins, setPlugins] = useState<PluginInfo[]>([]);
+  const [pluginsError, setPluginsError] = useState<string | null>(null);
+  const [pluginsLoaded, setPluginsLoaded] = useState(false);
   const [history, setHistory] = useState<TaskStatus[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -126,14 +129,29 @@ export function ScannersPage() {
     };
   }, []);
 
-  useEffect(() => {
-    listPlugins()
-      .then((data) => {
-        const disabled = new Set(data.plugins.filter((p) => p.disabled).map((p) => p.name));
-        setDisabledPlugins(disabled);
-      })
-      .catch(() => {});
+  const loadPlugins = useCallback(async () => {
+    try {
+      const data = await listPlugins();
+      setPlugins(data.plugins);
+      setPluginsError(data.error);
+    } catch (err: unknown) {
+      setPlugins([]);
+      setPluginsError(err instanceof Error ? err.message : "Could not reach the API");
+    } finally {
+      setPluginsLoaded(true);
+    }
   }, []);
+
+  useEffect(() => {
+    void loadPlugins();
+  }, [loadPlugins]);
+
+  // A `?scanners=` name that is not an active plugin can no longer be scanned:
+  // drop it once the catalog is known (a failed load leaves the URL untouched).
+  useEffect(() => {
+    if (!pluginsLoaded || pluginsError !== null || !selectedScanner) return;
+    if (!plugins.some((p) => p.name === selectedScanner && p.enabled)) setSelectedScanner("");
+  }, [pluginsLoaded, pluginsError, plugins, selectedScanner]);
 
   useEffect(() => {
     (async () => {
@@ -208,6 +226,8 @@ export function ScannersPage() {
   const totalPages = Math.max(1, Math.ceil(history.length / PER_PAGE));
   const safePage = Math.min(page, totalPages - 1);
   const paged = history.slice(safePage * PER_PAGE, (safePage + 1) * PER_PAGE);
+  // Only plugins the server reports as enabled can be targeted by a new scan.
+  const enabledPlugins = plugins.filter((p) => p.enabled);
 
   return (
     <div>
@@ -251,8 +271,8 @@ export function ScannersPage() {
                 class="rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100 transition-colors focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
               >
                 <option value="">All scanners</option>
-                {SCANNER_NAMES.map((n) => (
-                  <option value={n} disabled={disabledPlugins.has(n)}>{n.toUpperCase()} only</option>
+                {enabledPlugins.map((p) => (
+                  <option key={p.name} value={p.name}>{p.name.toUpperCase()} only</option>
                 ))}
               </select>
             </div>
@@ -301,22 +321,32 @@ export function ScannersPage() {
         </form>
       </div>
 
-      <div class="mt-4 grid grid-cols-5 gap-3">
-        {SCANNER_NAMES.map((name) => (
-          <PluginToggle
-            key={name}
-            name={name}
-            disabled={disabledPlugins.has(name)}
-            onToggle={(n, d) => {
-              setDisabledPlugins((prev) => {
-                const next = new Set(prev);
-                if (d) next.add(n);
-                else next.delete(n);
-                return next;
-              });
-            }}
-          />
-        ))}
+      <div class="mt-4">
+        <div class="mb-2 flex items-center justify-between gap-3">
+          <h3 class="text-sm font-semibold text-neutral-200">Plugins</h3>
+          {pluginsError === null && plugins.length > 0 ? (
+            <span class="text-[11px] text-neutral-500">
+              {enabledPlugins.length} of {plugins.length} active
+            </span>
+          ) : null}
+        </div>
+
+        {pluginsError !== null ? (
+          <div role="alert" class="rounded-md border border-danger-800 bg-danger-900/20 px-3 py-2">
+            <p class="text-xs font-medium text-danger-400">Plugin catalog unavailable</p>
+            <p class="mt-0.5 break-words text-[11px] text-neutral-400">{pluginsError}</p>
+          </div>
+        ) : plugins.length === 0 ? (
+          <div class="rounded-md border border-dashed border-neutral-800 px-3 py-6 text-center text-xs text-neutral-500">
+            {pluginsLoaded ? "No plugins discovered" : "Loading plugins..."}
+          </div>
+        ) : (
+          <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {plugins.map((p) => (
+              <PluginToggle key={p.name} plugin={p} onChanged={loadPlugins} />
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Scan history */}

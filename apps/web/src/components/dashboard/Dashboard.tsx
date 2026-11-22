@@ -5,6 +5,7 @@ import { DiscoveredSection } from "./DiscoveredSection";
 import { WorkersStrip } from "@/components/workers/WorkersStrip";
 import { listFlows } from "@/api/traffic/calls";
 import { listFindings } from "@/api/findings/calls";
+import { listPlugins } from "@/api/plugins/calls";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
 import type { FlowRecord } from "@/api/traffic/types";
 import type { Finding } from "@/api/findings/types";
@@ -13,6 +14,7 @@ export function Dashboard() {
   const [flows, setFlows] = useState<FlowRecord[]>([]);
   const [findings, setFindings] = useState<Finding[]>([]);
   const [totalFindings, setTotalFindings] = useState(0);
+  const [scannerCount, setScannerCount] = useState(0);
   const loadedRef = useRef(false);
 
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
@@ -31,6 +33,11 @@ export function Dashboard() {
       setTotalFindings(r.total);
       setFindings(r.items);
     }).catch(() => {});
+    // "Scanners — active" comes from the plugin catalog: a hardcoded 5 hid
+    // every installed plugin and lied as soon as one was turned off.
+    listPlugins()
+      .then((data) => setScannerCount(data.plugins.filter((p) => p.enabled).length))
+      .catch(() => {});
   }, []);
 
   return (
@@ -52,7 +59,7 @@ export function Dashboard() {
         mediumCount={mediumCount}
         lowCount={lowCount}
         infoCount={infoCount}
-        scannerCount={5}
+        scannerCount={scannerCount}
         scopeCount={0}
       />
 
