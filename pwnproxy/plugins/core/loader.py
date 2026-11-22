@@ -98,6 +98,13 @@ class UniversalPluginLoader:
         logger.info("Loaded plugin: %s with channels: %s", name, list(plugin.metadata.consumes))
         self._plugins[name] = plugin
 
+    async def load_builtin(self, plugin: PwnPlugin, config: dict | None = None) -> None:
+        """Load a builtin plugin and call its on_load hook."""
+        await self.load(plugin)
+        ctx = PluginContext(config=config or {}, hook_bus=self.hook_bus)
+        plugin.context = ctx
+        await plugin.on_load()
+
     async def _run_consumer(
         self, 
         plugin: PwnPlugin, 
@@ -366,14 +373,7 @@ class PluginLoader(UniversalPluginLoader):
             from pwnproxy.shared.hooks import HookBus
             hook_bus = HookBus()
         super().__init__(hook_bus, bus=bus)
-    
-    async def load_builtin(self, plugin: PwnPlugin, config: dict | None = None) -> None:
-        """Load a builtin plugin and call its on_load hook."""
-        await self.load(plugin)
-        ctx = PluginContext(config=config or {}, hook_bus=self.hook_bus)
-        plugin.context = ctx
-        await plugin.on_load()
-    
+
     async def activate(self, name: str) -> bool:
         plugin = self._plugins.get(name)
         if plugin is None:
