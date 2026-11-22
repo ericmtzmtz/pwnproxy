@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
-import { listTasks, pollTask } from "@/api/task/calls";
+import { listTasks } from "@/api/task/calls";
+import { repeaterResult } from "@/api/task/result";
 
 interface RepeaterHistoryProps {
   onRestore: (raw: string, name: string) => void;
@@ -49,27 +50,21 @@ export function RepeaterHistory({ onRestore, onClose }: RepeaterHistoryProps) {
   useEffect(() => {
     (async () => {
       try {
-        const data = await listTasks("repeater", 100);
-        const tasks = data.tasks ?? [];
+        // One request: `detail=true` inlines each task's config and result.
+        const data = await listTasks({ type: "repeater", limit: 100, detail: true });
         const mapped: HistoryItem[] = [];
-        for (const t of tasks) {
-          const raw = (t.config?.raw_request as string) ?? "";
+        for (const task of data.tasks ?? []) {
+          const raw = typeof task.config.raw_request === "string" ? task.config.raw_request : "";
           if (!raw) continue;
-          let status: number | null = null;
-          let timing: number | null = null;
-          const r = t.result as Record<string, unknown> | null;
-          if (r && r.status_code !== undefined) {
-            status = r.status_code as number;
-            timing = (r.duration_ms as number) ?? null;
-          }
+          const response = repeaterResult(task.result);
           mapped.push({
-            task_id: t.id,
+            task_id: task.id,
             raw,
             method: methodFromRaw(raw),
             url: urlFromRaw(raw),
-            status_code: status,
-            timing_ms: timing,
-            created_at: t.created_at ?? "",
+            status_code: response ? response.status_code : null,
+            timing_ms: response ? response.duration_ms : null,
+            created_at: task.created_at ?? "",
           });
         }
         setItems(mapped);

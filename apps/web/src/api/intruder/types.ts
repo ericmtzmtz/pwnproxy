@@ -15,6 +15,8 @@ export interface IntruderResult {
   response_headers: Record<string, string>;
   response_body: string;
   error: string | null;
+  /** The HTTP request actually sent for this payload ("" on older tasks). */
+  raw_request: string;
 }
 
 export interface IntruderRunResponse {

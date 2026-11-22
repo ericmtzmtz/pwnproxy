@@ -16,6 +16,9 @@ class IntruderResult:
     response_headers: dict[str, str] = field(default_factory=dict)
     response_body: str = ""
     error: str | None = None
+    # The exact HTTP request sent for this payload (markers already replaced),
+    # so callers can replay it verbatim (e.g. "Send to Repeater").
+    raw_request: str = ""
 
 
 class IntruderEngine:
@@ -64,6 +67,7 @@ class IntruderEngine:
                         timing_ms=round(elapsed, 1),
                         response_headers=dict(response.headers),
                         response_body=body,
+                        raw_request=raw_request,
                     )
                 except Exception as exc:
                     elapsed = (time.monotonic() - start) * 1000
@@ -74,6 +78,7 @@ class IntruderEngine:
                         response_length=0,
                         timing_ms=round(elapsed, 1),
                         error=str(exc),
+                        raw_request=raw_request,
                     )
 
         tasks = []

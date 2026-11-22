@@ -1,6 +1,6 @@
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, SerializeAsAny, field_validator
 
 
 class TaskCreateRequest(BaseModel):
@@ -44,6 +44,20 @@ class TaskSummary(BaseModel):
     completed_at: str | None = None
 
 
+class TaskDetailSummary(TaskSummary):
+    """`TaskSummary` plus the task's `config` and `result`.
+
+    Returned by ``GET /tasks?detail=true`` so list views that render a task's
+    request and response (e.g. the Repeater history) need a single request
+    instead of one ``GET /tasks/{id}`` per row.
+    """
+
+    config: dict[str, Any]
+    result: dict[str, Any] | None = None
+
+
 class TaskListResponse(BaseModel):
-    tasks: list[TaskSummary]
+    # SerializeAsAny keeps the extra fields of `TaskDetailSummary` items; plain
+    # `TaskSummary` items keep serializing without `config`/`result`.
+    tasks: list[SerializeAsAny[TaskSummary]]
     total: int

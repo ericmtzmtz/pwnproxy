@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "preact/hooks";
 import { pollTask } from "@/api/task/calls";
-import type { TaskStatus } from "@/api/task/types";
+import { intruderResults, repeaterResult, resultText, scanFindings } from "@/api/task/result";
+import type { RepeaterTaskResult, ScanFinding, TaskStatus } from "@/api/task/types";
+import type { IntruderResult } from "@/api/intruder/types";
 
 interface TaskPollerProps {
   taskId: string;
@@ -18,7 +20,7 @@ function sevColor(severity: string): string {
   return map[severity] ?? "text-neutral-400";
 }
 
-function findingRow(f: any, i: number) {
+function findingRow(f: ScanFinding, i: number) {
   const isConfirmed = f.confidence === "confirmed";
   return (
     <tr key={i} class="bg-neutral-950 hover:bg-neutral-900/50">
@@ -36,7 +38,7 @@ function findingRow(f: any, i: number) {
   );
 }
 
-function intruderResultRow(r: any, i: number) {
+function intruderResultRow(r: IntruderResult, i: number) {
   const sc = r.status_code >= 400 ? "text-danger-500" : r.status_code >= 200 && r.status_code < 300 ? "text-success-500" : "text-neutral-500";
   return (
     <tr key={i} class="bg-neutral-950 hover:bg-neutral-900/50">
@@ -72,7 +74,7 @@ export function TaskPoller({ taskId, onComplete }: TaskPollerProps) {
               detail: {
                 title: `${t.type} ${t.status}`,
                 message: t.error ?? `${t.type} finished (${t.progress}/${t.total})`,
-                severity: t.status === "completed" ? (t.result?.findings?.length > 0 ? "warning" : "success") : "error",
+                severity: t.status === "completed" ? (scanFindings(t.result).length > 0 ? "warning" : "success") : "error",
               },
             }));
             onComplete?.(t);
@@ -98,14 +100,15 @@ export function TaskPoller({ taskId, onComplete }: TaskPollerProps) {
   }
 
   if (!done && task.status === "running") {
+    const phase = resultText(task.result, "phase");
     return (
       <div class="flex items-center justify-center py-8">
         <svg class="h-6 w-6 animate-spin text-primary-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" /><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
         <span class="ml-2 text-sm text-neutral-400">
           {task.type === "intruder"
             ? `${task.progress} / ${task.total} requests`
-            : task.type === "report" && (task.result as any)?.phase
-              ? `report — ${(task.result as any).phase} (${task.progress}%)`
+            : task.type === "report" && phase
+              ? `report — ${phase} (${task.progress}%)`
               : `${task.type}...`}
         </span>
       </div>
@@ -121,16 +124,17 @@ export function TaskPoller({ taskId, onComplete }: TaskPollerProps) {
     );
   }
 
-  if (task.type === "scan" && task.result?.findings) {
-    return <ScanResults findings={task.result.findings} />;
+  if (task.type === "scan" && task.result && Array.isArray(task.result.findings)) {
+    return <ScanResults findings={scanFindings(task.result)} />;
   }
 
-  if (task.type === "intruder" && task.result?.results) {
-    return <IntruderResults results={task.result.results} total={task.total} />;
+  if (task.type === "intruder" && task.result && Array.isArray(task.result.results)) {
+    return <IntruderResults results={intruderResults(task.result)} total={task.total} />;
   }
 
-  if (task.type === "repeater" && task.result) {
-    return <RepeaterResult result={task.result as any} />;
+  const repeater = task.type === "repeater" ? repeaterResult(task.result) : null;
+  if (repeater) {
+    return <RepeaterResult result={repeater} />;
   }
 
   return (
@@ -140,7 +144,7 @@ export function TaskPoller({ taskId, onComplete }: TaskPollerProps) {
   );
 }
 
-function ScanResults({ findings }: { findings: any[] }) {
+function ScanResults({ findings }: { findings: ScanFinding[] }) {
   if (!findings || findings.length === 0) {
     return (
       <div class="flex flex-col items-center justify-center py-12 text-sm text-neutral-600">
@@ -173,7 +177,7 @@ function ScanResults({ findings }: { findings: any[] }) {
   );
 }
 
-function IntruderResults({ results, total }: { results: any[]; total: number }) {
+function IntruderResults({ results, total }: { results: IntruderResult[]; total: number }) {
   if (!results || results.length === 0) {
     return <div class="flex flex-col items-center justify-center py-12 text-sm text-neutral-600">No results</div>;
   }
@@ -200,7 +204,7 @@ function IntruderResults({ results, total }: { results: any[]; total: number }) 
   );
 }
 
-function RepeaterResult({ result }: { result: { status_code: number; headers: Record<string, string>; body: string; duration_ms: number; error?: string } }) {
+function RepeaterResult({ result }: { result: RepeaterTaskResult }) {
   const bodyPreview = result.body?.slice(0, 500) + (result.body?.length > 500 ? "..." : "");
   return (
     <div class="space-y-2">

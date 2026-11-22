@@ -28,6 +28,8 @@ class IntruderResultItem(BaseModel):
     response_headers: dict[str, str] = {}
     response_body: str = ""
     error: str | None = None
+    # Empty for results persisted before the field existed.
+    raw_request: str = ""
 
 
 class WordlistEntry(BaseModel):

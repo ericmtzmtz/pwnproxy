@@ -3,6 +3,7 @@ import { runIntruder, listWordlists } from "@/api/intruder/calls";
 import { createTab } from "@/api/repeater/calls";
 import type { IntruderResult, WordlistEntry } from "@/api/intruder/types";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
+import { intruderResults } from "@/api/task/result";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 
 const POLL_INTERVAL = 1500;
@@ -85,8 +86,7 @@ export function IntruderPage() {
         const task = await pollTask(taskId);
         upsertAttack(task);
         if (selectedId === taskId) {
-          const taskResults = (task.result?.results as IntruderResult[]) ?? [];
-          setResults(taskResults);
+          setResults(intruderResults(task.result));
         }
         if (task.status === "completed" || task.status === "failed" || task.status === "cancelled") {
           clearInterval(timer);
@@ -150,7 +150,7 @@ export function IntruderPage() {
     setShowConfig(false);
     setPreview(null);
     if (task) {
-      setResults((task.result?.results as IntruderResult[]) ?? []);
+      setResults(intruderResults(task.result));
       setRawRequest((task.config?.raw_request as string) ?? "");
       setMode((task.config?.mode as string) ?? "sniper");
       setWordlistPath((task.config?.wordlist_path as string) ?? "");
@@ -555,9 +555,11 @@ async function handleSendToRepeater(rawReq: string) {
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                                   </button>
-                                  <button onClick={() => handleSendToRepeater(r.raw_request ?? r.payload)}
-                                    class="ml-1 rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400"
-                                    title="Send to Repeater"
+                                  <button onClick={() => handleSendToRepeater(r.raw_request)}
+                                    disabled={!r.raw_request}
+                                    aria-label="Send to Repeater"
+                                    title={r.raw_request ? "Send to Repeater" : "Request not available for this task"}
+                                    class="ml-1 rounded p-1 text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-primary-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-neutral-500"
                                   >
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10h4l3-8 4 16 3-8h4"/></svg>
                                   </button>

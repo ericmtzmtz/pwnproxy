@@ -1,5 +1,6 @@
 import { useMemo, useState } from "preact/hooks";
-import { listTasks, pollTask } from "@/api/task/calls";
+import { listTasks } from "@/api/task/calls";
+import { repeaterResult } from "@/api/task/result";
 
 export interface HttpResponse {
   status_code: number;
@@ -370,25 +371,22 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps) {
             onLoadHistory={async () => {
               setHistoryLoading(true);
               try {
-                const data = await listTasks("repeater", 50);
+                // One request: `detail=true` inlines each task's config and result.
+                const data = await listTasks({ type: "repeater", limit: 50, detail: true });
                 const out: typeof history = [];
                 for (const t of data.tasks ?? []) {
-                  try {
-                    const full = await pollTask(t.id);
-                    const r = full.result;
-                    if (r && r.body !== undefined) {
-                      const raw = (full.config?.raw_request as string) ?? "";
-                      const m = raw.trim().match(/^(\w+)/);
-                      const urlM = raw.match(/^\w+\s+(\S+)/);
-                      out.push({
-                        id: t.id,
-                        status: (r.status_code as number) ?? 0,
-                        method: m ? m[1].toUpperCase() : "GET",
-                        url: urlM ? urlM[1] : "",
-                        body: (r.body as string) ?? "",
-                      });
-                    }
-                  } catch { /* skip task */ }
+                  const saved = repeaterResult(t.result);
+                  if (!saved) continue;
+                  const raw = typeof t.config.raw_request === "string" ? t.config.raw_request : "";
+                  const m = raw.trim().match(/^(\w+)/);
+                  const urlM = raw.match(/^\w+\s+(\S+)/);
+                  out.push({
+                    id: t.id,
+                    status: saved.status_code,
+                    method: m ? m[1].toUpperCase() : "GET",
+                    url: urlM ? urlM[1] : "",
+                    body: saved.body,
+                  });
                 }
                 setHistory(out);
               } catch { /* api down */ } finally {
