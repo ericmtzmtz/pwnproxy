@@ -637,4 +637,8 @@ See:
 
 You are free to use, modify, and distribute pwnproxy under the terms of the AGPLv3.
 
+External contributions require signing the Contributor License Agreement (CLA) once: you keep the
+copyright of your contribution and grant the maintainer a license that also covers commercial use.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to sign, and [`CLA.md`](CLA.md) for the full text.
+
 <p align="center"> Built for security testing beyond the desktop. </p>
