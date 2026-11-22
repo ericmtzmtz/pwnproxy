@@ -249,15 +249,12 @@ class BooleanBlindStage(DetectionStage):
         self._evasion = evasion_level
         self._deadline = deadline
 
-    def set_deadline(self, deadline: float | None) -> None:
-        self._deadline = deadline
-
     async def execute(self, flow: Flow, injection_points: list[InjectionPoint]) -> StageResult:
         findings: list[Finding] = []
         confirmed: set[tuple] = set()
 
         for point in injection_points:
-            if self._deadline is not None and time.monotonic() > self._deadline:
+            if self._deadline_exceeded():
                 logger.info("BooleanBlindStage: stopping at intra-stage deadline (%d points tested)", len(findings))
                 break
 
