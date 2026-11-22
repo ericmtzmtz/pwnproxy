@@ -7,6 +7,7 @@ from mitmproxy.options import Options
 from mitmproxy.tools.dump import DumpMaster
 
 from pwnproxy.shared.hooks import HookBus
+from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 class ProxyEngine:
     """Embedded mitmproxy engine running in an asyncio task."""
 
-    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: str | None = None, host: str = "127.0.0.1", port: int = 8080, ssl_insecure: bool = True, flow_filter=None, session_name_fn: Callable[[], str | None] | None = None):
+    def __init__(self, hook_bus: HookBus, db_engine=None, with_termlog: bool = True, upstream: str | None = None, host: str = "127.0.0.1", port: int = DEFAULT_PROXY_PORT, ssl_insecure: bool = True, flow_filter=None, session_name_fn: Callable[[], str | None] | None = None):
         self.hook_bus = hook_bus
         self.db_engine = db_engine
         self._with_termlog = with_termlog

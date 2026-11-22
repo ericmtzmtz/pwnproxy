@@ -12,6 +12,7 @@ from pwnproxy.services.intruder.engine import IntruderEngine
 from pwnproxy.services.intruder.tui.config import IntruderConfig
 from pwnproxy.services.intruder.tui.editor import IntruderEditor
 from pwnproxy.services.intruder.tui.results import IntruderResults
+from pwnproxy.shared.ports import DEFAULT_API_PORT
 
 
 class IntruderScreen(Screen[None]):
@@ -48,7 +49,7 @@ class IntruderScreen(Screen[None]):
     }
     """
 
-    def __init__(self, engine: IntruderEngine | None = None, initial_request: str = "", api_host: str = "127.0.0.1", api_port: int = 8000):
+    def __init__(self, engine: IntruderEngine | None = None, initial_request: str = "", api_host: str = "127.0.0.1", api_port: int = DEFAULT_API_PORT):
         super().__init__()
         self._engine = engine or IntruderEngine()
         self._initial_request = initial_request

@@ -27,7 +27,7 @@ pwnproxy is a local-first security testing platform: one core engine exposed thr
 │  └──────────┘     └──────────┘     └──────────┘                  │
 │                                                                   │
 │  ┌──────────────────────────────────────────────────────┐          │
-│  │          FastAPI Control Plane (:8000)                │          │
+│  │          FastAPI Control Plane (:17171)               │          │
 │  │  /flows  /findings  /sessions  /interceptor          │          │
 │  │  /repeater  /intruder  /scanners  /ws  /plugins      │          │
 │  │  /scan  /import                                        │          │

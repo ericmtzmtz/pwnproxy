@@ -135,7 +135,7 @@ class PluginContext:
 | `evasion_level` | str | `none` \| `light` \| `aggressive` | `none` | all scanners |
 | `aggressive_status` | bool | — | `False` | SQLi |
 | `callback_host` | str | — | `127.0.0.1` | SSRF / OOB |
-| `callback_port` | int | — | `18080` | SSRF / OOB |
+| `callback_port` | int | — | `DEFAULT_CALLBACK_PORT` (`17173`) | SSRF / OOB |
 
 - The `scanners` allow-list is **not** a plugin concern: the caller decides which plugin
   classes to load. A plugin never filters itself out.

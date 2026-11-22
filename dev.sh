@@ -3,9 +3,10 @@
 # Requires: poetry, node, pwnproxy on PATH
 set -euo pipefail
 
-PROXY_PORT="${PWNPROXY_PROXY_PORT:-8080}"
-API_PORT="${PWNPROXY_API_PORT:-8000}"
-WEB_PORT=4321
+PROXY_PORT="${PWNPROXY_PROXY_PORT:-17170}"
+API_PORT="${PWNPROXY_API_PORT:-17171}"
+CALLBACK_PORT="${CALLBACK_PORT:-17173}"
+WEB_PORT="${WEB_PORT:-17172}"
 HEALTH_URL="http://127.0.0.1:${API_PORT}/api/v1/health"
 
 # ── Prerequisites ──────────────────────────────────────────────
@@ -30,7 +31,7 @@ trap cleanup EXIT INT TERM
 
 # ── Start Proxy ────────────────────────────────────────────────
 echo "[dev] Starting proxy on port ${PROXY_PORT}..."
-pwnproxy start --proxy-port "$PROXY_PORT" --api-port "$API_PORT" &
+pwnproxy start --proxy-port "$PROXY_PORT" --api-port "$API_PORT" --callback-port "$CALLBACK_PORT" &
 PROXY_PID=$!
 
 # ── Poll health endpoint ───────────────────────────────────────
@@ -62,10 +63,10 @@ echo ""
 echo "╔══════════════════════════════════════╗"
 echo "║        pwnproxy — Dev Environment   ║"
 echo "╠══════════════════════════════════════╣"
-echo "║  Proxy → http://127.0.0.1:${PROXY_PORT}            ║"
-echo "║  API   → http://127.0.0.1:${API_PORT}              ║"
-echo "║  Docs  → http://127.0.0.1:${API_PORT}/docs         ║"
-echo "║  Web UI → http://127.0.0.1:${WEB_PORT}             ║"
+echo "║  Proxy → http://127.0.0.1:${PROXY_PORT}           ║"
+echo "║  API   → http://127.0.0.1:${API_PORT}             ║"
+echo "║  Docs  → http://127.0.0.1:${API_PORT}/docs        ║"
+echo "║  Web UI → http://127.0.0.1:${WEB_PORT}            ║"
 echo "╚══════════════════════════════════════╝"
 echo ""
 echo "Press Ctrl+C to stop all services"

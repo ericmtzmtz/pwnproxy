@@ -6,6 +6,7 @@ import { PluginToggle } from "@/components/plugins/PluginToggle";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { API_HOST } from "@/core";
 
 const SCANNER_NAMES = ["sqli", "xss", "lfi", "xxe", "ssrf"] as const;
 const PER_PAGE = 10;
@@ -24,10 +25,6 @@ function badgeClass(scanner: string): string {
   const key = scanner.toLowerCase();
   return SCANNER_BADGES[key] ?? SCANNER_BADGES.All;
 }
-
-const WS_HOST = import.meta.env.PUBLIC_API_BASE
-  ? new URL(import.meta.env.PUBLIC_API_BASE).host
-  : "127.0.0.1:8000";
 
 const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "OPTIONS", "DELETE", "HEAD"];
 
@@ -63,7 +60,7 @@ export function ScannersPage() {
   const pollTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   useWebSocket({
-    url: `ws://${WS_HOST}/ws/events`,
+    url: `ws://${API_HOST}/ws/events`,
     onMessage(msg) {
       if (msg.type === "scan.started") {
         window.dispatchEvent(new CustomEvent("pwnproxy-toast", {

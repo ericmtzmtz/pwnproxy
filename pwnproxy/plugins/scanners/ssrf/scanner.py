@@ -4,6 +4,7 @@ from collections.abc import AsyncGenerator
 from pwnproxy.plugins.core.base import Finding
 from pwnproxy.plugins.core.chain import DetectionChain, DetectionDepth
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
 from pwnproxy.shared.scan.stages.ssrf_stages import (
@@ -22,7 +23,7 @@ class SSRFScanner:
         depth: str = "fast",
         evasion: str = "none",
         callback_host: str = "127.0.0.1",
-        callback_port: int = 18080,
+        callback_port: int = DEFAULT_CALLBACK_PORT,
     ):
         self._replayer = replayer
         self._depth = depth

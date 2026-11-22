@@ -12,6 +12,7 @@ import logging
 from pwnproxy.shared.canary import get_registry
 from pwnproxy.shared.http_server import get_server
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.scan.finding import Finding
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer, _serialize_request
@@ -50,7 +51,7 @@ class SsrfSimpleStage(DetectionStage):
     min_depth = DetectionDepth.FAST
     capability = "ssrf-simple"
 
-    def __init__(self, replayer: RequestReplayer, callback_host: str = "127.0.0.1", callback_port: int = 18080, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, callback_host: str = "127.0.0.1", callback_port: int = DEFAULT_CALLBACK_PORT, evasion_level: str = "none"):
         self._replayer = replayer
         self._callback_host = callback_host
         self._callback_port = callback_port
@@ -186,7 +187,7 @@ class SsrfOOBStage(DetectionStage):
     min_depth = DetectionDepth.DEEP
     capability = "ssrf-oob"
 
-    def __init__(self, replayer: RequestReplayer, callback_host: str = "127.0.0.1", callback_port: int = 18080, evasion_level: str = "none"):
+    def __init__(self, replayer: RequestReplayer, callback_host: str = "127.0.0.1", callback_port: int = DEFAULT_CALLBACK_PORT, evasion_level: str = "none"):
         self._replayer = replayer
         self._callback_host = callback_host
         self._callback_port = callback_port

@@ -23,15 +23,15 @@ All wordlists are hand-curated for legal penetration testing. They are **not** e
 
 ```bash
 # Start bruteforce
-curl -X POST http://127.0.0.1:8000/api/v1/bruteforce/start \
+curl -X POST http://127.0.0.1:17171/api/v1/bruteforce/start \
   -H 'Content-Type: application/json' \
   -d '{"base_urls": ["https://target.com"], "wordlist": "medium", "detect_soft404": true}'
 
 # List available wordlists
-curl http://127.0.0.1:8000/api/v1/bruteforce/wordlists
+curl http://127.0.0.1:17171/api/v1/bruteforce/wordlists
 
 # Stop
-curl -X POST http://127.0.0.1:8000/api/v1/bruteforce/stop
+curl -X POST http://127.0.0.1:17171/api/v1/bruteforce/stop
 ```
 
 Bruteforce jobs are tracked as tasks with the formal job state machine (`RUNNING → STOPPING → CANCELLED` on stop; stats include `probed`, `found`, `soft404_filtered`, `maxed`).

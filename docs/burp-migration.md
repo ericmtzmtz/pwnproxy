@@ -30,7 +30,7 @@ Imported scope is written to the active session's scope and applied immediately 
 pwnproxy can sit downstream of Burp as an upstream proxy:
 
 1. In Burp Suite, go to **Settings → Network → Connections → Upstream Proxy Servers**
-2. Add a rule: Destination host `*`, Proxy host `127.0.0.1`, Port `8080`
+2. Add a rule: Destination host `*`, Proxy host `127.0.0.1`, Port `17170`
 3. Ensure Burp's own listener is on a different port (e.g., `:8081`)
 
 ## Workflow Comparison

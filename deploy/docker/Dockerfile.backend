@@ -1,6 +1,6 @@
 # pwnproxy backend — proxy + API control plane
 # Build:  docker build -f Dockerfile.backend -t pwnproxy-backend .
-# Run:    docker run -p 8080:8080 -p 8000:8000 pwnproxy-backend
+# Run:    docker run -p 17170:17170 -p 17171:17171 pwnproxy-backend
 
 FROM python:3.12-slim AS base
 

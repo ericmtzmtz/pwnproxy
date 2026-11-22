@@ -1,12 +1,9 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { useWebSocket } from "@/hooks/useWebSocket";
+import { API_HOST } from "@/core";
 import { getPreset, resolveIcon } from "./TOAST_PRESETS";
 import { ToastContainer } from "./ToastContainer";
 import type { ToastData } from "./Toast";
-
-const WS_HOST = import.meta.env.PUBLIC_API_BASE
-  ? new URL(import.meta.env.PUBLIC_API_BASE).host
-  : "127.0.0.1:8000";
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -130,7 +127,7 @@ export function NotificationLayer() {
   );
 
   useWebSocket({
-    url: `ws://${WS_HOST}/ws/events`,
+    url: `ws://${API_HOST}/ws/events`,
     onMessage: onWsMessage,
   });
 

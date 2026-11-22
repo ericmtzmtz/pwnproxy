@@ -9,7 +9,14 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-API_BASE = os.environ.get("PUBLIC_API_BASE", "http://127.0.0.1:8000/api/v1")
+# Default API location. This package is standalone (its only requirements are
+# `mcp` and `httpx`), so it cannot import `pwnproxy.shared.ports`; keep these two
+# numbers in sync with DEFAULT_API_PORT there. The guard
+# `tests/architecture/test_ports.py` fails if the old ports come back.
+DEFAULT_API_PORT = 17171
+DEFAULT_API_BASE = f"http://127.0.0.1:{DEFAULT_API_PORT}/api/v1"
+
+API_BASE = os.environ.get("PUBLIC_API_BASE", DEFAULT_API_BASE)
 SESSION_NAME = os.environ.get("PWNPROXY_SESSION")
 TIMEOUT = 30.0
 
@@ -94,10 +101,10 @@ def main():
         from mcp.server.fastmcp import FastMCP
         mcp = FastMCP("pwnproxy", instructions="""pwnproxy MCP server.
 
-Default API: http://127.0.0.1:8000/api/v1 (env: PUBLIC_API_BASE).
+Default API: http://127.0.0.1:17171/api/v1 (env: PUBLIC_API_BASE).
 
 If health_check returns Connection refused, ask the user for their 
- pwnproxy API URL (e.g. http://192.168.1.93:8000/api/v1) and call 
+ pwnproxy API URL (e.g. http://192.168.1.93:17171/api/v1) and call 
  configure(api_base=\"<url>\") to set it before retrying.
 """)
         _register_tools(mcp)
@@ -112,7 +119,7 @@ def _register_tools(mcp):
     c = get_client()
 
     @mcp.tool()
-    async def configure(api_base: str = "http://127.0.0.1:8000/api/v1", session: str = "") -> str:
+    async def configure(api_base: str = DEFAULT_API_BASE, session: str = "") -> str:
         global _client
         _client = MCPApiClient(base_url=api_base, session=session or None)
         return _ok({"status": "configured", "api_base": api_base})
@@ -288,7 +295,7 @@ RESOURCE_DEFINITIONS = [
 
 def _handle_configure(arguments: dict) -> dict:
     global _client
-    api_base = arguments.get("api_base", "http://127.0.0.1:8000/api/v1")
+    api_base = arguments.get("api_base", DEFAULT_API_BASE)
     session = arguments.get("session", "") or None
     _client = MCPApiClient(base_url=api_base, session=session)
     return {"status": "configured", "api_base": api_base}

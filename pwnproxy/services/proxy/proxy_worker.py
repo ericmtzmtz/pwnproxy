@@ -15,6 +15,7 @@ from pwnproxy.services.session.manager import ScopeConfig
 from pwnproxy.shared.bus.transports.tcp_bridge import TcpBridgeServer
 from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
 
 logger = logging.getLogger("proxy_worker")
 
@@ -22,7 +23,7 @@ logger = logging.getLogger("proxy_worker")
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="pwnproxy worker process")
     p.add_argument("--listen-host", default="127.0.0.1")
-    p.add_argument("--listen-port", type=int, default=8080)
+    p.add_argument("--listen-port", type=int, default=DEFAULT_PROXY_PORT)
     p.add_argument("--ssl-insecure", action="store_true", default=True)
     p.add_argument("--upstream", default=None)
     p.add_argument("--capture-enabled", action="store_true", default=True)

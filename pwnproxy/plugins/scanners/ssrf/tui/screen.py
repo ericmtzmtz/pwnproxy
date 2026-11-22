@@ -8,6 +8,7 @@ from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, DataTable, Header, Input, Label, Static
 
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 
 
 class ConfigScreen(ModalScreen[None]):
@@ -39,7 +40,7 @@ class ConfigScreen(ModalScreen[None]):
         try:
             port = int(port_str)
         except ValueError:
-            port =18080
+            port = DEFAULT_CALLBACK_PORT
         self._scanner.configure(callback_host=host, listen_port=port)
         self.app.pop_screen()
 

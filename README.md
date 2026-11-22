@@ -91,19 +91,19 @@ Python 3.12 or later is required.
 ### 2. Start the proxy and API
 
 ```bash
-poetry run pwnproxy start --proxy-port 8080 --api-port 8000
+poetry run pwnproxy start --proxy-port 17170 --api-port 17171
 ```
 
 This starts:
 
-- Proxy → `127.0.0.1:8080`
-- API → `127.0.0.1:8000`
-- Docs → `http://127.0.0.1:8000/docs`
+- Proxy → `127.0.0.1:17170`
+- API → `127.0.0.1:17171`
+- Docs → `http://127.0.0.1:17171/docs`
 
 ### 3. Send traffic through the proxy
 
 ```bash
-curl -x http://127.0.0.1:8080 http://httpbin.org/get
+curl -x http://127.0.0.1:17170 http://httpbin.org/get
 ```
 
 ### 4. Inspect captured traffic
@@ -241,7 +241,7 @@ Use an interactive terminal interface for:
 Control the platform programmatically.
 
 ```bash
-curl http://127.0.0.1:8000/api/v1/flows
+curl http://127.0.0.1:17171/api/v1/flows
 ```
 
 The API exposes functionality for:
@@ -259,7 +259,7 @@ The API exposes functionality for:
 
 Interactive API documentation is available at:
 
-`http://127.0.0.1:8000/docs`
+`http://127.0.0.1:17171/docs`
 
 ### WebSocket
 
@@ -474,9 +474,9 @@ Windows PowerShell:
 
 This starts:
 
-- Proxy → `:8080`
-- API → `:8000`
-- Web UI → `:4321`
+- Proxy → `:17170`
+- API → `:17171`
+- Web UI → `:17172`
 
 ### Run tests
 

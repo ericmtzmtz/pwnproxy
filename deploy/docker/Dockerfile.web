@@ -3,7 +3,7 @@
 # ARG PUBLIC_API_BASE sets the backend API URL embedded at build time.
 
 FROM node:22-alpine AS build
-ARG PUBLIC_API_BASE=http://backend:8000/api/v1
+ARG PUBLIC_API_BASE=http://backend:17171/api/v1
 ENV PUBLIC_API_BASE=$PUBLIC_API_BASE
 
 WORKDIR /app

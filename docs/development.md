@@ -24,7 +24,7 @@ Start all services (proxy + API + Web UI) with a single command:
 .\dev.ps1
 ```
 
-This starts the proxy on `:8080`, API on `:8000`, and Web UI on `:4321`, then polls the health endpoint before showing all URLs. Press `Ctrl+C` to stop everything cleanly.
+This starts the proxy on `:17170`, API on `:17171`, and Web UI on `:17172`, then polls the health endpoint before showing all URLs. Press `Ctrl+C` to stop everything cleanly.
 
 Override ports via environment variables:
 
@@ -36,7 +36,7 @@ To run services individually:
 
 ```bash
 # Terminal 1: Proxy + API
-pwnproxy start --proxy-port 8080 --api-port 8000
+pwnproxy start --proxy-port 17170 --api-port 17171
 
 # Terminal 2: Web UI
 cd apps/web && npm run dev

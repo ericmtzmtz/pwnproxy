@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from pwnproxy.plugins.core.loader import PluginLoader
+from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ async def _check_port(host: str, port: int, timeout: float = 2.0) -> bool:
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request):
-    proxy_port = getattr(request.app.state, "proxy_port", 8080)
+    proxy_port = getattr(request.app.state, "proxy_port", DEFAULT_PROXY_PORT)
     proxy_ok = await _check_port("127.0.0.1", proxy_port)
 
     loader: PluginLoader | None = getattr(request.app.state, "plugin_loader", None)
@@ -59,6 +60,9 @@ async def health_check(request: Request):
         "proxy": {
             "status": "ok" if proxy_ok else "down",
             "message": "Proxy is accepting connections" if proxy_ok else "Proxy is not responding",
+            # The real port the proxy listens on, so the Web UI never has to
+            # guess one (it used to print a hardcoded port).
+            "port": proxy_port,
         },
         "scanners": {
             "status": "ok" if scanner_names else "degraded",

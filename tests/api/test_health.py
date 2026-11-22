@@ -48,3 +48,23 @@ class TestHealth:
     def test_health_proxy_down_when_not_running(self, test_app):
         response = test_app.get("/api/v1/health")
         assert response.json()["checks"]["proxy"]["status"] == "down"
+
+    def test_health_proxy_check_publishes_the_configured_port(self, test_app):
+        """The Web UI reads the real port from here instead of hardcoding it."""
+        response = test_app.get("/api/v1/health")
+        assert response.json()["checks"]["proxy"]["port"] == 19999
+
+    def test_health_proxy_port_falls_back_to_the_default(self):
+        """Without a configured port, the check reports the shared default."""
+        from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
+
+        had_port = hasattr(app.state, "proxy_port")
+        previous = getattr(app.state, "proxy_port", None)
+        if had_port:
+            delattr(app.state, "proxy_port")
+        try:
+            with TestClient(app) as client:
+                data = client.get("/api/v1/health").json()
+        finally:
+            app.state.proxy_port = previous
+        assert data["checks"]["proxy"]["port"] == DEFAULT_PROXY_PORT

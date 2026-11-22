@@ -27,7 +27,7 @@ import Card from "@/ui/Card.astro";
         </div>
         <div>
           <label class="mb-1 block text-xs text-neutral-400">Port</label>
-          <input value="8080" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" readonly />
+          <input id="proxy-port" value="Sin dato" class="w-full rounded-md border border-neutral-700 bg-neutral-800 px-3 py-2 text-sm text-neutral-100" readonly />
         </div>
         <div>
           <label class="mb-1 block text-xs text-neutral-400">Mode</label>
@@ -53,8 +53,22 @@ import Card from "@/ui/Card.astro";
 
 <script>
   import { listPlugins, togglePlugin } from "@/api/plugins/calls";
+  import { getHealth } from "@/api/health/calls";
 
   const pluginList = document.getElementById("plugin-list") as HTMLDivElement;
+  const proxyPortInput = document.getElementById("proxy-port") as HTMLInputElement | null;
+
+  /** Show the port the proxy really listens on — never a hardcoded one. */
+  async function loadProxyPort() {
+    if (!proxyPortInput) return;
+    try {
+      const health = await getHealth();
+      const port = health.checks.proxy?.port;
+      proxyPortInput.value = typeof port === "number" ? String(port) : "Sin dato";
+    } catch {
+      proxyPortInput.value = "Sin dato";
+    }
+  }
 
   async function loadPlugins() {
     try {
@@ -132,4 +146,5 @@ import Card from "@/ui/Card.astro";
   }
 
   loadPlugins();
+  loadProxyPort();
 </script>

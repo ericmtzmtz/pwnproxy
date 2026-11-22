@@ -12,7 +12,7 @@ via HTTP and exposes each API endpoint as an MCP tool.
 
 ## Quick Start
 
-1. Start pwnproxy (API on default port 8000):
+1. Start pwnproxy (API on default port 17171):
    ```bash
    pwnproxy start
    ```
@@ -69,7 +69,7 @@ Then configure your agent with the remote path:
       "command": "python",
       "args": ["-m", "pwnproxy_mcp.server"],
       "env": {
-        "PUBLIC_API_BASE": "http://192.168.1.93:8000/api/v1",
+        "PUBLIC_API_BASE": "http://192.168.1.93:17171/api/v1",
         "PWNPROXY_SESSION": "default"
       }
     }
@@ -94,7 +94,7 @@ call:
       "command": "python",
       "args": ["-m", "pwnproxy_mcp.server"],
       "env": {
-        "PUBLIC_API_BASE": "http://192.168.1.93:8000/api/v1",
+        "PUBLIC_API_BASE": "http://192.168.1.93:17171/api/v1",
         "PWNPROXY_SESSION": "my-session"
       }
     }
@@ -116,12 +116,12 @@ CMD ["python", "-m", "pwnproxy_mcp.server"]
 Build and run:
 ```bash
 docker build -t pwnproxy-mcp .
-docker run -e PUBLIC_API_BASE=http://host.docker.internal:8000/api/v1 pwnproxy-mcp
+docker run -e PUBLIC_API_BASE=http://host.docker.internal:17171/api/v1 pwnproxy-mcp
 ```
 
 Note: The MCP protocol requires stdio transport. For Docker, use `-i` flag:
 ```bash
-docker run -i -e PUBLIC_API_BASE=http://host.docker.internal:8000/api/v1 pwnproxy-mcp
+docker run -i -e PUBLIC_API_BASE=http://host.docker.internal:17171/api/v1 pwnproxy-mcp
 ```
 
 ## Agent Configuration
@@ -184,7 +184,7 @@ If pwnproxy runs on non-default ports, call the `configure` tool first:
 configure(api_base="http://localhost:5000/api/v1", session="my-session")
 ```
 
-The default API URL is `http://127.0.0.1:8000/api/v1`.
+The default API URL is `http://127.0.0.1:17171/api/v1`.
 
 ## Available Tools
 
@@ -222,7 +222,7 @@ The default API URL is `http://127.0.0.1:8000/api/v1`.
 ### Scan a target and get findings
 
 ```
-configure(api_base="http://localhost:8000/api/v1")
+configure(api_base="http://localhost:17171/api/v1")
 trigger_scan(url="http://bwapp.local/sqli_1.php?title=test")
 get_task(task_id="<task_id_from_response>")
 # repeat get_task until status="completed"
@@ -256,7 +256,7 @@ trigger_scan(url="https://api.target.com/endpoint")
                                                      ▼
                                            ┌──────────────────────┐
                                            │  pwnproxy REST API   │
-                                           │  (FastAPI :8000)     │
+                                           │  (FastAPI :17171)    │
                                            └──────────────────────┘
 ```
 

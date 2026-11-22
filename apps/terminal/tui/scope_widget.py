@@ -7,6 +7,8 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, DataTable, Input, Label, Static
 
+from pwnproxy.shared.ports import DEFAULT_API_PORT
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,7 +68,7 @@ class ScopeTab(Vertical):
         height: 1fr;
     }
     """
-    def __init__(self, host: str = "127.0.0.1", api_port: int = 8000, **kwargs):
+    def __init__(self, host: str = "127.0.0.1", api_port: int = DEFAULT_API_PORT, **kwargs):
         super().__init__(**kwargs)
         self._host = host
         self._api_port = api_port

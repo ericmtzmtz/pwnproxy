@@ -12,9 +12,11 @@ param(
 $ErrorActionPreference = "Stop"
 
 # -- Ports --
-$ProxyPort   = if ($env:PWNPROXY_PROXY_PORT) { $env:PWNPROXY_PROXY_PORT } else { 8080 }
-$ApiPort     = if ($env:PWNPROXY_API_PORT)   { $env:PWNPROXY_API_PORT   } else { 8000 }
-$CallbackPort = 18081
+# Defaults live in pwnproxy/shared/ports.py (tests/architecture/test_ports.py
+# fails if a stale literal comes back). All of them are overridable.
+$ProxyPort   = if ($env:PWNPROXY_PROXY_PORT) { $env:PWNPROXY_PROXY_PORT } else { 17170 }
+$ApiPort     = if ($env:PWNPROXY_API_PORT)   { $env:PWNPROXY_API_PORT   } else { 17171 }
+$CallbackPort = if ($env:CALLBACK_PORT)      { $env:CALLBACK_PORT      } else { 17173 }
 
 function Clear-Port($portNum, $label, [switch]$Prompt) {
     Write-Host "[dev] Finding process(es) on port $portNum ($label)..." -ForegroundColor Yellow
@@ -66,7 +68,7 @@ Clear-Port $ApiPort "API (stale)" -Prompt
 Clear-Port $CallbackPort "SSRF callback (stale)" -Prompt
 
 $ApiHost   = if ($env:PWNPROXY_API_HOST)   { $env:PWNPROXY_API_HOST   } else { "127.0.0.1" }
-$WebPort   = 4321
+$WebPort   = if ($env:WEB_PORT)            { $env:WEB_PORT            } else { 17172 }
 $HealthUrl = "http://127.0.0.1:${ApiPort}/api/v1/health"
 $SSRFUrl   = "http://127.0.0.1:${CallbackPort}/"
 
@@ -113,11 +115,11 @@ if ($Verbose) {
 }
 if ($PwnCmd -eq "poetry") {
     $proxyJob = Start-Process @pwnArgs -FilePath "poetry" -ArgumentList @(
-        "run", "pwnproxy", "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "18081", "--no-restore-session"
+        "run", "pwnproxy", "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "$CallbackPort", "--no-restore-session"
     )
 } else {
     $proxyJob = Start-Process @pwnArgs -FilePath "pwnproxy" -ArgumentList @(
-        "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "18081", "--no-restore-session"
+        "start", "--host", "$ApiHost", "--proxy-port", "$ProxyPort", "--api-port", "$ApiPort", "--callback-port", "$CallbackPort", "--no-restore-session"
     )
 }
 
@@ -177,7 +179,7 @@ Write-Host ""
 $webDir = Join-Path $PSScriptRoot "apps/web"
 Push-Location $webDir
 try {
-    npm run dev -- --host 
+    npm run dev -- --host --port $WebPort
 } finally {
     Pop-Location
     Write-Host "`n[dev] Shutting down..." -ForegroundColor Yellow

@@ -7,6 +7,7 @@ from collections.abc import AsyncGenerator
 from pwnproxy.plugins.core.base import Finding, PluginMetadata, ScannerPlugin
 from pwnproxy.plugins.scanners.ssrf.scanner import SSRFScanner
 from pwnproxy.shared.models import Flow
+from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.scan.params import extract as extract_params
 from pwnproxy.shared.scan.params import is_url_like_param
 from pwnproxy.shared.scan.replayer import RequestReplayer
@@ -31,7 +32,7 @@ class SSRFScannerPlugin(ScannerPlugin):
         if evasion_level not in ("none", "light", "aggressive"):
             raise ValueError(f"invalid evasion_level '{evasion_level}'")
         callback_host = self.context.config.get("callback_host", "127.0.0.1")
-        callback_port = int(self.context.config.get("callback_port", 18080))
+        callback_port = int(self.context.config.get("callback_port", DEFAULT_CALLBACK_PORT))
         self._replayer = RequestReplayer()
         self._scanner = SSRFScanner(
             self._replayer,
