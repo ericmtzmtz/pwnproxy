@@ -3,7 +3,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pwnproxy.plugins.scanners.sqli.payloads import CONTROL_PAYLOADS, get_error_payloads
+from pwnproxy.plugins.scanners.sqli.payloads import (
+    CONTROL_PAYLOADS,
+    get_control_payloads,
+    get_error_payloads,
+)
 from pwnproxy.plugins.scanners.sqli.signatures import ERROR_SIGNATURES
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.stages.sqli_stages import ErrorBasedStage
@@ -73,7 +77,7 @@ def _flow():
 @pytest.mark.asyncio
 async def test_waf_block_page_on_5xx_no_finding():
     replayer = GuardReplayer(sql_status=500, waf_headers=True)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -82,7 +86,7 @@ async def test_waf_block_page_on_5xx_no_finding():
 async def test_control_also_5xx_no_finding():
     """Non-SQL control induces 5xx too -> status change not attributable to SQL."""
     replayer = GuardReplayer(sql_status=500, control_status=500)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -91,7 +95,7 @@ async def test_control_also_5xx_no_finding():
 async def test_rate_limit_503_not_counted_as_trigger():
     """503 on SQL payloads is excluded from the differential triggers -> no finding."""
     replayer = GuardReplayer(rate_status=503)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -100,7 +104,7 @@ async def test_rate_limit_503_not_counted_as_trigger():
 async def test_mostly_rate_limited_aborts_point():
     """Half or more of the payloads 503 -> abort the point entirely."""
     replayer = GuardReplayer(rate_status=503)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -110,7 +114,7 @@ async def test_bad_gateway_502_not_counted_as_trigger():
     """A dead/half-open proxy answering 502 for every SQL payload must NOT be
     treated as an error-payload induced 5xx (proxy failed, not the query)."""
     replayer = GuardReplayer(rate_status=502)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert result.findings == []
 
@@ -133,7 +137,7 @@ async def test_mixed_502_and_sql_500_only_counts_real_triggers():
             return await super().replay(point, payload, timeout=timeout, evasion_level=evasion_level)
 
     replayer = MixedReplayer()
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     assert result.findings[0].confidence == "tentative"
@@ -144,7 +148,7 @@ async def test_mixed_502_and_sql_500_only_counts_real_triggers():
 async def test_clean_5xx_over_control_emits_tentative():
     """Real muted-SQL signal: SQL 5xx, control 200, no WAF -> tentative/medium."""
     replayer = GuardReplayer(sql_status=500, control_status=200)
-    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads())
+    stage = ErrorBasedStage(replayer, ERROR_SIGNATURES, get_error_payloads(), get_control_payloads)
     result = await stage.execute(_flow(), [_point()])
     assert len(result.findings) == 1
     assert result.findings[0].confidence == "tentative"

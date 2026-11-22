@@ -6,6 +6,10 @@ from pwnproxy.plugins.scanners.command_injection.payloads import (
     COMMAND_PAYLOADS,
     WINDOWS_PAYLOADS,
 )
+from pwnproxy.plugins.scanners.command_injection.signatures import (
+    get_evidence,
+    has_command_output,
+)
 from pwnproxy.shared.models import Flow
 from pwnproxy.shared.scan.params import InjectionPoint
 from pwnproxy.shared.scan.replayer import RequestReplayer
@@ -18,7 +22,9 @@ class CommandInjectionScanner:
     def __init__(self, replayer: RequestReplayer, depth="fast", evasion="none"):
         payloads = COMMAND_PAYLOADS + WINDOWS_PAYLOADS
         self._chain = DetectionChain([
-            CommandInjectionStage(replayer, payloads, evasion),
+            CommandInjectionStage(
+                replayer, payloads, has_command_output, get_evidence, evasion,
+            ),
         ], DetectionDepth(depth))
     
     async def _scan_point(self, point: InjectionPoint) -> AsyncGenerator[Finding, None]:
