@@ -10,9 +10,9 @@ readme = "README.md"
 python = "^3.12"
 mitmproxy = "^12.2"
 textual = "^8.2.7"
-typer = ">=0.25,<0.28"
+typer = ">=0.25,<0.30"
 httpx = "^0.28"
-fastapi = ">=0.136,<0.163"
+fastapi = ">=0.136,<0.166"
 uvicorn = {extras = ["standard"], version = ">=0.47,<0.55"}
 # greenlet is required by SQLAlchemy's asyncio support (aiosqlite engine).
 # Declared explicitly so the dependency never depends on transitive luck.
