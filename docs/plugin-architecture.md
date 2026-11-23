@@ -158,6 +158,14 @@ await plugin.on_load()          # reads self.context.config here
 `run_scan()` runs the loaded plugins over a flow and takes **only** the flow: depth and
 evasion were already resolved at load time.
 
+**Remote configuration (next change).** Configuration reaches a plugin only through the loader
+today; activation (`[plugin.activation]` in `config.toml`) is machine-wide. The change that adds an
+API to read and write plugin configuration — including client credentials — will require the token
+scope `full` on those routes (`Depends(require_scope("full"))` from
+`pwnproxy/transport/rest/auth.py`). The MCP uses the `agent` scope, so it will not be able to read
+or write secrets; `require_scope` already exists and answers a fixed `403`, but no route uses it yet.
+That is not a sandbox: an agent with a shell can still read `~/.pwnproxy/api-token`.
+
 ### 3.3 `Finding`
 
 Defined in `pwnproxy/shared/scan/finding.py` (re-exported by

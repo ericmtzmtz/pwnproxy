@@ -10,6 +10,54 @@ through this server.
 The MCP server runs as a stdio subprocess. It connects to the pwnproxy REST API
 via HTTP and exposes each API endpoint as an MCP tool.
 
+## Authentication
+
+The API now requires a token on every route except `GET /api/v1/health`, and the MCP uses the
+`agent` token:
+
+| Source | Scope | When |
+|---|---|---|
+| `PWNPROXY_API_TOKEN` | `full` | Set in the MCP `env` block: it wins over the file |
+| `<config_dir>/mcp-token` | `agent` | The normal case |
+
+`<config_dir>` is `PWNPROXY_CONFIG_DIR` when set, otherwise `~/.pwnproxy`. `pwnproxy start` creates
+`mcp-token` on its first run; `pwnproxy api token --scope agent` prints it. The header goes on every
+request (`Authorization: Bearer <token>`), and `configure(api_base=...)` keeps it: the client is
+rebuilt and re-reads the token.
+
+```bash
+# The token the MCP uses
+pwnproxy api token --scope agent
+```
+
+`GET /api/v1/health` needs no token, so `health_check` works even with a broken token.
+
+### A `401` from a tool
+
+A `401` comes back as an explicit error, never as a connection failure:
+
+```
+401 Unauthorized — the API rejected the token. The MCP uses the agent token in
+/home/you/.pwnproxy/mcp-token; run 'pwnproxy api token --scope agent' to see it
+(or set PWNPROXY_API_TOKEN to reuse a known token).
+```
+
+What to do, in order:
+
+1. `pwnproxy api token --scope agent` — the file exists? If it does not, start the API once
+   (`pwnproxy start`) or rotate that scope (`pwnproxy api token --rotate --scope agent`).
+2. If the token was rotated, restart the MCP server (or call `configure(api_base=...)`) so the
+   client re-reads the file. The MCP reads the token when it builds its HTTP client, not per call.
+3. Check `whoami` to see which scope the token really has:
+   `curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/auth/whoami`.
+
+### The scope is not a sandbox
+
+The `agent` scope exists so the credentials of your test accounts do not travel through the MCP
+tools: reading or writing them will need a route that demands `full`. It does **not** contain a
+malicious agent — one with a shell on the same machine can read `~/.pwnproxy/api-token` and use it.
+To contain an agent, run it on another machine or under another user.
+
 ## Quick Start
 
 1. Start pwnproxy (API on default port 17171):
@@ -80,6 +128,10 @@ Then configure your agent with the remote path:
 The agent connects to the MCP server via stdio (SSH tunnel or local). The MCP
 server connects to pwnproxy's API via HTTP — update `PUBLIC_API_BASE` to point
 to your pwnproxy instance.
+
+A remote MCP also needs the **token of the machine running the API**: copy its `mcp-token` into the
+remote `<config_dir>`, point `PWNPROXY_CONFIG_DIR` at that directory, or set `PWNPROXY_API_TOKEN`
+(the `full` token) in the `env` block. Without one every tool answers `401`.
 
 ### Using env vars (no configure tool needed)
 
