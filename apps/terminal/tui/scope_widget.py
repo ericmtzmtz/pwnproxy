@@ -7,6 +7,7 @@ from textual.containers import Horizontal, Vertical
 from textual.message import Message
 from textual.widgets import Button, DataTable, Input, Label, Static
 
+from apps.terminal.tui.api import auth_error_message, create_client
 from pwnproxy.shared.ports import DEFAULT_API_PORT
 
 logger = logging.getLogger(__name__)
@@ -68,11 +69,27 @@ class ScopeTab(Vertical):
         height: 1fr;
     }
     """
-    def __init__(self, host: str = "127.0.0.1", api_port: int = DEFAULT_API_PORT, **kwargs):
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        api_port: int = DEFAULT_API_PORT,
+        client: httpx.AsyncClient | None = None,
+        **kwargs,
+    ):
         super().__init__(**kwargs)
         self._host = host
         self._api_port = api_port
+        #: The dashboard hands over its single API client (token already set).
+        #: A screen built on its own falls back to building one, so the widget
+        #: stays usable outside ``DashboardApp``.
+        self._client = client
         self._scope: dict = {}
+
+    def api(self) -> httpx.AsyncClient:
+        """Return the API client: the dashboard's, or one built here on demand."""
+        if self._client is None:
+            self._client = create_client(self._host, self._api_port)
+        return self._client
 
     def compose(self) -> ComposeResult:
         yield Static("", id="scope-title")
@@ -94,15 +111,13 @@ class ScopeTab(Vertical):
         asyncio.create_task(self._load_scope())
 
     async def _load_scope(self) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/scope"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=5)
+            resp = await self.api().get("/sessions/scope")
             if resp.status_code == 200:
                 self._scope = resp.json()
                 self._refresh_ui()
             else:
-                self.notify("Failed to load scope", severity="error")
+                self.notify(auth_error_message(resp) or "Failed to load scope", severity="error")
         except Exception as e:
             self.notify(f"Scope load error: {e}", severity="error")
 
@@ -120,15 +135,16 @@ class ScopeTab(Vertical):
         title.update(f"[bold]Web Scope Configuration[/] — Scope is {status}")
 
     async def _save_scope(self) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/scope"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.put(url, json=self._scope, timeout=5)
+            resp = await self.api().put("/sessions/scope", json=self._scope)
             if resp.status_code == 200:
                 self.notify("Scope updated")
                 self._refresh_ui()
             else:
-                self.notify(f"Failed to save scope: {resp.text}", severity="error")
+                self.notify(
+                    auth_error_message(resp) or f"Failed to save scope: {resp.text}",
+                    severity="error",
+                )
         except Exception as e:
             self.notify(f"Scope save error: {e}", severity="error")
 

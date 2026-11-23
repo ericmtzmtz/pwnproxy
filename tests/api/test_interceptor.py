@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.shared.db import Base as CoreBase
@@ -13,7 +12,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     controller = MagicMock()
     controller.enabled = True
@@ -36,7 +35,7 @@ def test_app():
         app.state.repeater_engine = None
         app.state.intruder_engine = None
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client
 
         asyncio.run(traffic_engine.dispose())

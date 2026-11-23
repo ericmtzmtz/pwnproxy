@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { API_HOST } from "@/core";
+import { wsUrl } from "@/api/client";
 import { getPreset, resolveIcon } from "./TOAST_PRESETS";
 import { ToastContainer } from "./ToastContainer";
 import type { ToastData } from "./Toast";
@@ -127,7 +127,7 @@ export function NotificationLayer() {
   );
 
   useWebSocket({
-    url: `ws://${API_HOST}/ws/events`,
+    url: wsUrl("/ws/events"),
     onMessage: onWsMessage,
   });
 

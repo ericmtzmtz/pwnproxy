@@ -1,7 +1,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 from pwnproxy.services.session.manager import (
     ScopeConfig,
@@ -11,7 +10,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_client(monkeypatch, tmp_path):
+def test_client(monkeypatch, tmp_path, api_client):
     manager = MagicMock()
     manager.active_name = "test-session"
     manager.active_path = tmp_path / "test-session"
@@ -50,7 +49,7 @@ def test_client(monkeypatch, tmp_path):
     monkeypatch.setattr("pwnproxy.services.session.manager.SESSIONS_ROOT", tmp_path)
     monkeypatch.setattr("pwnproxy.services.session.manager.LAST_SESSION_FILE", last_file)
 
-    with TestClient(app) as client:
+    with api_client(app) as client:
         yield client
 
 

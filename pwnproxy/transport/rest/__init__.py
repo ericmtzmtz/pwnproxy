@@ -1,5 +1,7 @@
-"REST API routers."
+"""REST API routers."""
+from pwnproxy.transport.rest.auth import router as auth
 from pwnproxy.transport.rest.crawler import router as crawler
+from pwnproxy.transport.rest.docs import router as docs
 from pwnproxy.transport.rest.findings import router as findings
 from pwnproxy.transport.rest.health import router as health
 from pwnproxy.transport.rest.interceptor import router as interceptor
@@ -16,7 +18,9 @@ from pwnproxy.transport.rest.traffic import router as traffic
 from pwnproxy.transport.rest.workers import router as workers
 
 __all__ = [
+    "auth",
     "crawler",
+    "docs",
     "findings",
     "health",
     "interceptor",

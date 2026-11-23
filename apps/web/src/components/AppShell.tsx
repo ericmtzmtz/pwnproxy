@@ -1,4 +1,5 @@
 import { useEffect, useState } from "preact/hooks";
+import { TOKEN_CHANGED_EVENT, getToken } from "@/api/client";
 import { SessionPrompt } from "@/components/session/SessionPrompt";
 import { Dashboard } from "@/components/dashboard/Dashboard";
 
@@ -12,10 +13,15 @@ function hasStoredSession(): boolean {
 
 export function AppShell() {
   const [hasSession, setHasSession] = useState<boolean | null>(null);
+  const [hasToken, setHasToken] = useState(false);
 
   useEffect(() => {
+    const syncToken = () => setHasToken(Boolean(getToken()));
+    syncToken();
+    window.addEventListener(TOKEN_CHANGED_EVENT, syncToken);
     setHasSession(hasStoredSession());
     try { (window as any).__sessionReady?.(); } catch {}
+    return () => window.removeEventListener(TOKEN_CHANGED_EVENT, syncToken);
   }, []);
 
   const handleReady = () => {
@@ -26,6 +32,10 @@ export function AppShell() {
       window.location.replace(redirect);
     }
   };
+
+  // Token first, session second: without a token nothing behind this shell may
+  // run (the gate owns the screen and no session request is sent).
+  if (!hasToken) return null;
 
   if (hasSession === null) {
     return (

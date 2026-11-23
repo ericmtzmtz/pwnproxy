@@ -16,7 +16,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -41,7 +40,7 @@ VALID_BODY = {
 
 
 @pytest.fixture
-def api(monkeypatch):
+def api(monkeypatch, api_client):
     """Mount a real loader, a real findings table and a mock session manager."""
     hook_bus = HookBus()
     saved: list[dict] = []
@@ -68,7 +67,7 @@ def api(monkeypatch):
         app.state.plugin_loader = loader
         app.state.session_manager = session_mgr
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client, scanner_engine, saved, loader
 
         asyncio.run(scanner_engine.dispose())

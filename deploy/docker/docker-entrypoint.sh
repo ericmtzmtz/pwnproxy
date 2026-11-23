@@ -31,8 +31,27 @@ for i in $(seq 1 30); do
 done
 
 echo "[entrypoint] Starting proxy subprocess (POST /proxy/start)..."
-curl -sf -X POST "http://127.0.0.1:${API_PORT}/api/v1/proxy/start" >/dev/null 2>&1 \
-  || echo "[entrypoint] WARNING: proxy/start failed — proxy may not be listening."
+# The API requires Authorization: Bearer <token> on every route but /health.
+# The token is created by the API on its first start and lives in the data
+# volume ($HOME/.pwnproxy/api-token); PWNPROXY_API_TOKEN, when set, wins over it.
+# Only the failure is logged: the token never goes to the container log.
+TOKEN_FILE="${HOME:-/data}/.pwnproxy/api-token"
+if [ -n "${PWNPROXY_API_TOKEN:-}" ]; then
+  API_TOKEN="${PWNPROXY_API_TOKEN}"
+elif [ -f "${TOKEN_FILE}" ]; then
+  API_TOKEN="$(cat "${TOKEN_FILE}")"
+else
+  API_TOKEN=""
+fi
+
+if [ -z "${API_TOKEN}" ]; then
+  echo "[entrypoint] WARNING: no API token at ${TOKEN_FILE} — proxy/start skipped." >&2
+  echo "[entrypoint]   Read it with: docker compose exec backend cat ${TOKEN_FILE}" >&2
+else
+  curl -sf -X POST -H "Authorization: Bearer ${API_TOKEN}" \
+    "http://127.0.0.1:${API_PORT}/api/v1/proxy/start" >/dev/null 2>&1 \
+    || echo "[entrypoint] WARNING: proxy/start failed — proxy may not be listening."
+fi
 
 echo "[entrypoint] pwnproxy is up. Proxy :${PROXY_PORT}, API :${API_PORT}."
 # Foreground: keep the container alive with the main process

@@ -1,4 +1,5 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 
 export interface ScopeConfig {
   in_scope: string[];
@@ -7,13 +8,13 @@ export interface ScopeConfig {
 }
 
 export async function getScope(): Promise<ScopeConfig> {
-  const res = await fetch(`${API_BASE}/sessions/scope`);
+  const res = await apiFetch(`${API_BASE}/sessions/scope`);
   if (!res.ok) throw new Error(`Failed to get scope: ${res.statusText}`);
   return res.json();
 }
 
 export async function updateScope(scope: ScopeConfig): Promise<void> {
-  const res = await fetch(`${API_BASE}/sessions/scope`, {
+  const res = await apiFetch(`${API_BASE}/sessions/scope`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(scope),

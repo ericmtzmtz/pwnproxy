@@ -4,7 +4,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.session.store import TaskStore
@@ -15,7 +14,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
 
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
@@ -47,7 +46,7 @@ def test_app():
         app.state.session_manager = session_mgr
         app.state.plugin_loader = None
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client, task_store
 
         asyncio.run(traffic_engine.dispose())

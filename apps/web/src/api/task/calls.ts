@@ -1,8 +1,9 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { TaskListDetailResponse, TaskListResponse, TaskStatus } from "./types";
 
 export async function pollTask(taskId: string): Promise<TaskStatus> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}`);
+  const res = await apiFetch(`${API_BASE}/tasks/${taskId}`);
   if (!res.ok) throw new Error(`Task ${taskId} not found`);
   return res.json();
 }
@@ -30,17 +31,17 @@ export async function listTasks(
   if (opts.type) params.set("type", opts.type);
   params.set("limit", String(opts.limit ?? 50));
   if (opts.detail) params.set("detail", "true");
-  const res = await fetch(`${API_BASE}/tasks?${params}`);
+  const res = await apiFetch(`${API_BASE}/tasks?${params}`);
   if (!res.ok) throw new Error("Failed to list tasks");
   return res.json();
 }
 
 export async function cancelTask(taskId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}/cancel`, { method: "POST" });
+  const res = await apiFetch(`${API_BASE}/tasks/${taskId}/cancel`, { method: "POST" });
   if (!res.ok) throw new Error(`Failed to cancel task ${taskId}`);
 }
 
 export async function deleteTask(taskId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/tasks/${taskId}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/tasks/${taskId}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete task ${taskId}`);
 }

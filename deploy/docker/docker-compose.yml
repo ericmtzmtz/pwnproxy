@@ -15,6 +15,22 @@
 # Defaults come from pwnproxy/shared/ports.py:
 #   proxy 17170, API 17171, web 17172, SSRF callback 17173.
 #
+# API token (read this before opening the Web UI):
+#   The API requires Authorization: Bearer <token> on every route except
+#   /health. The token is generated INSIDE the container on its first start and
+#   lives in the pwnproxy-data volume — never in this file and never in the
+#   image. To read it and open the UI with it:
+#     docker compose exec backend cat /data/.pwnproxy/api-token
+#     -> http://127.0.0.1:17172/#token=<token>
+#   (or, from the host: docker compose exec backend \
+#        python -c "from pwnproxy.shared.api_token import read_token; print(read_token())")
+#   To use a known value instead (a scripted demo, CI), pass
+#   PWNPROXY_API_TOKEN when starting compose (it is read by the commented line
+#   of `environment` below): authentication stays on, only the source changes,
+#   and the value is visible in `docker inspect`.
+#   The MCP gets its own token (scope "agent") with:
+#     docker compose exec backend cat /data/.pwnproxy/mcp-token
+#
 # Ports are overridable:
 #   PROXY_PORT=19080 API_PORT=19000 CALLBACK_PORT=19081 WEB_PORT=19082 \
 #     docker compose up -d --build
@@ -31,6 +47,9 @@ services:
     environment:
       # Path.home() -> /data/.pwnproxy (project uses ~/.pwnproxy hardcoded)
       - HOME=/data
+      # Optional: a known token instead of the one in the volume (CI, demo).
+      # Leave it commented for normal use: it is visible in `docker inspect`.
+      # - PWNPROXY_API_TOKEN=${PWNPROXY_API_TOKEN:-}
     volumes:
       - pwnproxy-data:/data
     restart: unless-stopped

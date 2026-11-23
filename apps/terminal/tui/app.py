@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -17,6 +18,7 @@ from textual.widgets import (
     TabPane,
 )
 
+from apps.terminal.tui.api import auth_error_message, create_client
 from apps.terminal.tui.findings_widget import FindingsTable
 from apps.terminal.tui.interceptor_widget import InterceptorWidget
 from apps.terminal.tui.log_widget import LogTable
@@ -104,10 +106,8 @@ class SessionPicker(ModalScreen[str]):
         self.query_one("#picker-input", Input).focus()
 
     async def _fetch_sessions(self) -> None:
-        url = f"http://{self.app._host}:{self.app._api_port}/api/v1/sessions"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=5)
+            resp = await self.app.api().get("/sessions")
             if resp.status_code == 200:
                 sessions = resp.json()
                 if not sessions:
@@ -120,6 +120,9 @@ class SessionPicker(ModalScreen[str]):
                     lines.append(f"  {i}. {s['name']}{tag}")
                 self.query_one("#session-list", Static).update("\n".join(lines))
                 self._sessions = sessions
+            else:
+                message = auth_error_message(resp) or f"HTTP {resp.status_code}"
+                self.query_one("#session-list", Static).update(f"[red]{message}[/]")
         except Exception as e:
             self.query_one("#session-list", Static).update(f"[red]Error: {e}[/]")
 
@@ -226,6 +229,49 @@ class DashboardApp(App):
         self._interceptor_controller = interceptor_controller
         self._scan_manager = scan_manager
         self._active_session: str | None = None
+        #: The one API client of this screen: built on first use (it reads the
+        #: token at that point) and closed by :meth:`run_dashboard`.
+        self._api_client: httpx.AsyncClient | None = None
+        #: Last "check your token" message shown, so a retry loop does not stack
+        #: the same notification every couple of seconds.
+        self._last_api_error: str | None = None
+
+    def api(self) -> httpx.AsyncClient:
+        """Return this screen's API client, creating it on first use.
+
+        The client already carries ``Authorization: Bearer`` (see
+        :mod:`apps.terminal.tui.api`), so no caller builds a URL or a header by
+        hand. It is one instance for the whole dashboard on purpose: the token is
+        read once, and rotating it mid-run surfaces as a clear ``401`` message.
+        """
+        if self._api_client is None:
+            self._api_client = create_client(self._host, self._api_port)
+        return self._api_client
+
+    async def aclose_api(self) -> None:
+        """Close the API client if it was ever created (idempotent)."""
+        client, self._api_client = self._api_client, None
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.aclose()
+
+    async def run_dashboard(self) -> None:
+        """Run the dashboard and close the API client on the way out."""
+        try:
+            await self.run_async()
+        finally:
+            await self.aclose_api()
+
+    def _notify_api_error(self, message: str) -> None:
+        """Show ``message`` as an error, once per distinct text.
+
+        Called from the response handling and from the WebSocket ``on_error``
+        callback: both retry, so the same notification must not pile up.
+        """
+        if message == self._last_api_error:
+            return
+        self._last_api_error = message
+        self.notify(message, severity="error", timeout=10)
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
@@ -250,7 +296,7 @@ class DashboardApp(App):
             with TabPane("Sessions", id="tab-sessions"):
                 yield SessionsTab()
             with TabPane("Scope", id="tab-scope"):
-                yield ScopeTab(host=self._host, api_port=self._api_port, id="scope-tab")
+                yield ScopeTab(client=self.api(), id="scope-tab")
             with TabPane("Findings", id="findings"):
                 yield FindingsTable(id="findings-table")
         yield Footer()
@@ -276,10 +322,13 @@ class DashboardApp(App):
         asyncio.create_task(self._load_session_by_name(result))
 
     async def _load_session_by_name(self, name: str) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                await client.post(url, json={"action": "load", "name": name}, timeout=5)
+            resp = await self.api().post("/sessions/manage", json={"action": "load", "name": name})
+            message = auth_error_message(resp)
+            if message:
+                self._notify_api_error(message)
+                self.sub_title = "Session: (none)"
+                return
             self._active_session = name
             self.sub_title = f"Session: {name}"
             self.notify(f"Loaded session: {name}")
@@ -288,10 +337,8 @@ class DashboardApp(App):
             self.sub_title = "Session: (none)"
 
     async def _load_session_info(self) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/active"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=5)
+            resp = await self.api().get("/sessions/active")
             if resp.status_code == 200:
                 data = resp.json()
                 name = data.get("name")
@@ -299,6 +346,11 @@ class DashboardApp(App):
                 self.sub_title = f"Session: {name or '(none)'}"
                 if name and data.get("scope_enabled"):
                     self.sub_title += " [scope]"
+            else:
+                message = auth_error_message(resp)
+                if message:
+                    self._notify_api_error(message)
+                self.sub_title = "Session: (none)"
         except Exception:
             self.sub_title = "Session: (none)"
 
@@ -307,11 +359,11 @@ class DashboardApp(App):
         asyncio.create_task(self._consume_findings())
 
     async def _consume_traffic(self) -> None:
-        async for msg in stream_traffic(self._host, self._api_port):
+        async for msg in stream_traffic(self._host, self._api_port, on_error=self._notify_api_error):
             self.query_one("#log-table", LogTable).post_message(LogTable.AddFlow(msg))
 
     async def _consume_findings(self) -> None:
-        async for msg in stream_findings(self._host, self._api_port):
+        async for msg in stream_findings(self._host, self._api_port, on_error=self._notify_api_error):
             self.query_one("#findings-table", FindingsTable).post_message(FindingsTable.AddFinding(msg))
 
     def on_interceptor_widget_send_to_repeater(
@@ -363,29 +415,25 @@ class DashboardApp(App):
         )
 
     async def _do_load(self, name: str) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={"action": "load", "name": name}, timeout=10)
+            resp = await self.api().post("/sessions/manage", json={"action": "load", "name": name})
             if resp.status_code == 200:
                 self._active_session = name
                 self.sub_title = f"Session: {name}"
                 self.notify(f"Loaded session '{name}'")
                 await self._refresh_sessions()
             else:
-                self.notify(f"[red]Failed to load session: {resp.text}[/]", severity="error")
+                self._notify_api_error(auth_error_message(resp) or f"[red]Failed to load session: {resp.text}[/]")
         except Exception as e:
             self.notify(f"[red]Error loading session: {e}[/]", severity="error")
 
     async def _save_current_session(self) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={"action": "save"}, timeout=10)
+            resp = await self.api().post("/sessions/manage", json={"action": "save"})
             if resp.status_code == 200:
                 self.notify(f"Saved session '{self._active_session or '(none)'}'")
             else:
-                self.notify(f"[red]Failed to save: {resp.text}[/]", severity="error")
+                self._notify_api_error(auth_error_message(resp) or f"[red]Failed to save: {resp.text}[/]")
         except Exception as e:
             self.notify(f"[red]Error saving: {e}[/]", severity="error")
 
@@ -404,10 +452,8 @@ class DashboardApp(App):
         )
 
     async def _do_delete(self, name: str) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={"action": "delete", "name": name}, timeout=10)
+            resp = await self.api().post("/sessions/manage", json={"action": "delete", "name": name})
             if resp.status_code == 200:
                 self.notify(f"Deleted session '{name}'")
                 if name == self._active_session:
@@ -415,7 +461,7 @@ class DashboardApp(App):
                     self.sub_title = "Session: (none)"
                 await self._refresh_sessions()
             else:
-                self.notify(f"[red]Failed to delete: {resp.text}[/]", severity="error")
+                self._notify_api_error(auth_error_message(resp) or f"[red]Failed to delete: {resp.text}[/]")
         except Exception as e:
             self.notify(f"[red]Error deleting: {e}[/]", severity="error")
 
@@ -437,18 +483,23 @@ class DashboardApp(App):
         if old_name == new_name:
             self.notify("New name is the same as current")
             return
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={"action": "rename", "name": old_name, "new_name": new_name}, timeout=10)
+            resp = await self.api().post(
+                "/sessions/manage",
+                json={"action": "rename", "name": old_name, "new_name": new_name},
+            )
             if resp.status_code == 200:
                 self._active_session = new_name if self._active_session == old_name else self._active_session
                 self.sub_title = f"Session: {self._active_session}"
                 self.notify(f"Renamed session '{old_name}' -> '{new_name}'")
                 await self._refresh_sessions()
             else:
-                detail = resp.json().get("detail", resp.text)
-                self.notify(f"[red]Failed: {detail}[/]", severity="error")
+                message = auth_error_message(resp)
+                if message:
+                    self._notify_api_error(message)
+                else:
+                    detail = resp.json().get("detail", resp.text)
+                    self.notify(f"[red]Failed: {detail}[/]", severity="error")
         except Exception as e:
             self.notify(f"[red]Error: {e}[/]", severity="error")
 
@@ -457,18 +508,20 @@ class DashboardApp(App):
             asyncio.create_task(self._do_create(name))
 
     async def _do_create(self, name: str) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions/manage"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={"action": "create", "name": name}, timeout=10)
+            resp = await self.api().post("/sessions/manage", json={"action": "create", "name": name})
             if resp.status_code == 200:
                 self._active_session = name
                 self.sub_title = f"Session: {name}"
                 self.notify(f"Created session '{name}'")
                 await self._refresh_sessions()
             else:
-                detail = resp.json().get("detail", resp.text)
-                self.notify(f"[red]Failed: {detail}[/]", severity="error")
+                message = auth_error_message(resp)
+                if message:
+                    self._notify_api_error(message)
+                else:
+                    detail = resp.json().get("detail", resp.text)
+                    self.notify(f"[red]Failed: {detail}[/]", severity="error")
         except Exception as e:
             self.notify(f"[red]Error: {e}[/]", severity="error")
 
@@ -479,14 +532,18 @@ class DashboardApp(App):
             asyncio.create_task(self._refresh_sessions())
 
     async def _refresh_sessions(self) -> None:
-        url = f"http://{self._host}:{self._api_port}/api/v1/sessions"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(url, timeout=10)
+            resp = await self.api().get("/sessions")
             resp.raise_for_status()
             data = resp.json()
             self.query_one("#sessions-table", SessionsTable).post_message(
                 SessionsTable.LoadSessions(data)
             )
+        except httpx.HTTPStatusError as e:
+            message = auth_error_message(e.response)
+            if message:
+                self._notify_api_error(message)
+            else:
+                self.notify(f"[red]Sessions load error: {e}[/]", severity="error")
         except Exception as e:
             self.notify(f"[red]Sessions load error: {e}[/]", severity="error")

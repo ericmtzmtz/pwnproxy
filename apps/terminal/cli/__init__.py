@@ -1,5 +1,6 @@
 import typer
 
+from apps.terminal.cli.api import app as api_app
 from apps.terminal.cli.findings import findings
 from apps.terminal.cli.history import app as history_app
 from apps.terminal.cli.import_cmd import app as import_app
@@ -16,6 +17,7 @@ app = typer.Typer(
 )
 
 app.command()(start)
+app.add_typer(api_app, name="api", help="Show or rotate the local API token")
 app.add_typer(history_app, name="history", help="Query proxy traffic history")
 app.add_typer(session_app, name="session", help="Manage proxy sessions (save/load state)")
 app.add_typer(tokens_app, name="tokens", help="Manage extracted tokens (JWT, cookies, CSRF)")

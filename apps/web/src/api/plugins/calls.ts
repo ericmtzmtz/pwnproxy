@@ -1,4 +1,5 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { PluginListResponse, ToggleResponse } from "./types";
 
 /**
@@ -24,7 +25,7 @@ function serverDetail(body: unknown): string | null {
 
 /** Every plugin in the catalog, disabled and broken ones included. Never 4xx/5xx. */
 export async function listPlugins(): Promise<PluginListResponse> {
-  const res = await fetch(`${API_BASE}/plugins`);
+  const res = await apiFetch(`${API_BASE}/plugins`);
   if (!res.ok) {
     throw new Error(`Failed to list plugins: ${res.statusText}`);
   }
@@ -33,7 +34,7 @@ export async function listPlugins(): Promise<PluginListResponse> {
 
 /** Flip a plugin's activation. Machine-wide; the server decides the new state. */
 export async function togglePlugin(name: string): Promise<ToggleResponse> {
-  const res = await fetch(`${API_BASE}/plugins/${encodeURIComponent(name)}/toggle`, {
+  const res = await apiFetch(`${API_BASE}/plugins/${encodeURIComponent(name)}/toggle`, {
     method: "POST",
   });
   if (!res.ok) {

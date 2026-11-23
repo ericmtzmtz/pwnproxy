@@ -5,8 +5,10 @@ import logging
 from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 from pwnproxy.shared.bus.topics import FINDING_STORED
+from pwnproxy.transport.rest.auth import authorize_websocket
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +20,11 @@ class ConnectionManager:
         self._connections: set[WebSocket] = set()
 
     async def connect(self, ws: WebSocket) -> None:
-        await ws.accept()
+        # ``authorize_websocket`` already accepted the handshake (it has to, to
+        # answer the ``pwnproxy`` subprotocol), and accepting twice is an error.
+        # Test doubles without ``client_state`` keep the old behaviour (accept).
+        if getattr(ws, "client_state", None) is not WebSocketState.CONNECTED:
+            await ws.accept()
         self._connections.add(ws)
 
     def disconnect(self, ws: WebSocket) -> None:
@@ -44,7 +50,8 @@ class RoomManager:
         self._rooms: dict[str, set[WebSocket]] = {}
 
     async def connect(self, room_id: str, ws: WebSocket) -> None:
-        await ws.accept()
+        if getattr(ws, "client_state", None) is not WebSocketState.CONNECTED:
+            await ws.accept()
         if room_id not in self._rooms:
             self._rooms[room_id] = set()
         self._rooms[room_id].add(ws)
@@ -239,6 +246,14 @@ FINDINGS_TABLE = "findings"
 
 @router.websocket("/ws/traffic")
 async def ws_traffic(ws: WebSocket):
+    """Live traffic stream.
+
+    The handshake must offer ``pwnproxy-token.<token>`` in
+    ``Sec-WebSocket-Protocol``; without it (or with a bad token) the socket is
+    accepted and closed with ``4401``.
+    """
+    if not await authorize_websocket(ws):
+        return
     await traffic_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
     queue = hook_bus.register("response")
@@ -266,6 +281,13 @@ async def ws_traffic(ws: WebSocket):
 
 @router.websocket("/ws/findings")
 async def ws_findings(ws: WebSocket):
+    """Persisted findings stream.
+
+    Same handshake as ``/ws/traffic``: the token travels in
+    ``Sec-WebSocket-Protocol`` and a missing/invalid one closes with ``4401``.
+    """
+    if not await authorize_websocket(ws):
+        return
     await findings_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
     # ``finding.stored`` (the persisted row), never the raw ``finding`` channel:
@@ -291,6 +313,13 @@ async def ws_findings(ws: WebSocket):
 
 @router.websocket("/ws/events")
 async def ws_events(ws: WebSocket):
+    """Unified event stream (flows, findings, scan/crawl status).
+
+    Same handshake as ``/ws/traffic``: the token travels in
+    ``Sec-WebSocket-Protocol`` and a missing/invalid one closes with ``4401``.
+    """
+    if not await authorize_websocket(ws):
+        return
     await events_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
     flow_queue = hook_bus.register("flow_stored")
@@ -432,9 +461,18 @@ def _is_valid_room_id(room_id: str) -> bool:
 
 @router.websocket("/ws/rooms/{room_id}")
 async def ws_room(ws: WebSocket, room_id: str):
-    # Validate scheme before joining — fail closed on 4404
+    """Per-session/job room stream.
+
+    Authentication comes first (``4401`` when the handshake offers no valid
+    ``pwnproxy-token.<token>``), then the room scheme (``4404``) and the session
+    existence check (``4403``) — an unauthenticated client learns nothing about
+    which sessions exist.
+    """
+    if not await authorize_websocket(ws):
+        return
+    # Validate scheme before joining — fail closed on 4404. The socket is
+    # already accepted by ``authorize_websocket``, so only ``close`` is called.
     if not _is_valid_room_id(room_id):
-        await ws.accept()
         await ws.close(code=4404)
         return
     # Validate session exists for session/traffic/findings rooms using the live
@@ -444,7 +482,6 @@ async def ws_room(ws: WebSocket, room_id: str):
         if prefix in ("session", "traffic", "findings"):
             sm = getattr(ws.app.state, "session_manager", None)
             if sm is None:
-                await ws.accept()
                 await ws.close(code=4403)
                 return
             try:
@@ -454,11 +491,9 @@ async def ws_room(ws: WebSocket, room_id: str):
                 if sm.active_name:
                     known.add(sm.active_name)
                 if sid not in known:
-                    await ws.accept()
                     await ws.close(code=4403)
                     return
             except Exception:
-                await ws.accept()
                 await ws.close(code=4403)
                 return
     await room_manager.connect(room_id, ws)

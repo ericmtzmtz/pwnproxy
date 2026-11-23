@@ -1,8 +1,26 @@
+"""The pwnproxy MCP server: the agent's tools, backed by the local REST API.
+
+The API requires ``Authorization: Bearer <token>`` on every route except
+``/api/v1/health``. This package is standalone (its only requirements are ``mcp``
+and ``httpx``, see ``pyproject.toml``), so it cannot import
+``pwnproxy.shared.api_token``; it mirrors the two rules that matter:
+
+* the token is the **agent** one — ``mcp-token`` in the pwnproxy config dir
+  (``PWNPROXY_CONFIG_DIR`` or ``~/.pwnproxy``) — and ``PWNPROXY_API_TOKEN``, when
+  defined, wins over the file (the CI path);
+* a ``401`` is translated into a message that names the file and the command that
+  shows the token, never into a bare "401" or a connection error.
+
+The token is read when a client is built, so rotating it is followed by
+``configure(api_base=...)`` (which rebuilds the client) or a restart.
+"""
+
 import asyncio
 import json
 import logging
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import httpx
@@ -20,10 +38,58 @@ API_BASE = os.environ.get("PUBLIC_API_BASE", DEFAULT_API_BASE)
 SESSION_NAME = os.environ.get("PWNPROXY_SESSION")
 TIMEOUT = 30.0
 
+#: File that holds the ``agent`` token (same name the server uses).
+MCP_TOKEN_FILE = "mcp-token"
+
+#: Environment variable that overrides the token from the file (CI).
+TOKEN_ENV = "PWNPROXY_API_TOKEN"
+
+
+def config_dir() -> Path:
+    """Return the pwnproxy config dir: ``PWNPROXY_CONFIG_DIR`` or ``~/.pwnproxy``."""
+    return Path(os.environ.get("PWNPROXY_CONFIG_DIR") or Path.home() / ".pwnproxy")
+
+
+def token_file() -> Path:
+    """Return the path of the agent token file (``<config_dir>/mcp-token``)."""
+    return config_dir() / MCP_TOKEN_FILE
+
+
+def read_agent_token() -> Optional[str]:
+    """Return the agent token: the env value if set, else the file, else ``None``.
+
+    Read on every call (not at import) so ``configure`` and the tests see the
+    current environment, and so a rotated file is picked up by the next client.
+    An unreadable file counts as "no token": the API then answers ``503``/``401``
+    and :func:`unauthorized_message` explains what to do.
+    """
+    env_token = (os.environ.get(TOKEN_ENV) or "").strip()
+    if env_token:
+        return env_token
+    try:
+        return token_file().read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def auth_headers() -> dict[str, str]:
+    """Return ``{"Authorization": "Bearer <agent token>"}``, or ``{}`` without one."""
+    token = read_agent_token()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def unauthorized_message() -> str:
+    """Return the explanation of a ``401``, naming the file and the command."""
+    return (
+        "401 Unauthorized — the API rejected the token. The MCP uses the agent token in "
+        f"{token_file()}; run 'pwnproxy api token --scope agent' to see it (or set "
+        f"{TOKEN_ENV} to reuse a known token)."
+    )
+
 
 class MCPApiClient:
     def __init__(self, base_url: str = API_BASE, session: Optional[str] = SESSION_NAME):
-        headers = {}
+        headers = auth_headers()
         if session:
             headers["X-Pwnproxy-Session"] = session
         self._client = httpx.AsyncClient(
@@ -40,6 +106,8 @@ class MCPApiClient:
             resp = await self._client.request(method, path, **kwargs)
             if resp.status_code == 204:
                 return {"ok": True}
+            if resp.status_code == 401:
+                return {"error": unauthorized_message(), "status_code": 401}
             if resp.status_code >= 400:
                 try:
                     detail = resp.json().get("detail", resp.text)
@@ -86,7 +154,7 @@ def main():
 
     if SESSION_NAME:
         try:
-            resp = httpx.get(f"{API_BASE}/sessions", timeout=5)
+            resp = httpx.get(f"{API_BASE}/sessions", headers=auth_headers(), timeout=5)
             if resp.status_code == 200:
                 names = [s["name"] for s in resp.json()]
                 if SESSION_NAME not in names:
@@ -102,6 +170,10 @@ def main():
         mcp = FastMCP("pwnproxy", instructions="""pwnproxy MCP server.
 
 Default API: http://127.0.0.1:17171/api/v1 (env: PUBLIC_API_BASE).
+
+Authentication: every request carries the agent token (env PWNPROXY_API_TOKEN,
+else <config dir>/mcp-token). A 401 means the token is missing or was rotated —
+ask the user to run `pwnproxy api token --scope agent`.
 
 If health_check returns Connection refused, ask the user for their 
  pwnproxy API URL (e.g. http://192.168.1.93:17171/api/v1) and call 
@@ -120,6 +192,7 @@ def _register_tools(mcp):
 
     @mcp.tool()
     async def configure(api_base: str = DEFAULT_API_BASE, session: str = "") -> str:
+        """Point the client at another API URL/session (the agent token is re-read)."""
         global _client
         _client = MCPApiClient(base_url=api_base, session=session or None)
         return _ok({"status": "configured", "api_base": api_base})

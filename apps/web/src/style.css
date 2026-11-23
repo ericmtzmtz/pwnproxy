@@ -153,6 +153,16 @@
     background: var(--color-neutral-500);
   }
 
+  /* Native modal dialogs (the API token gate): keep scroll gestures from
+     chaining to the page behind the backdrop. */
+  dialog:modal {
+    overscroll-behavior: contain;
+  }
+  dialog::backdrop {
+    overflow: hidden;
+    overscroll-behavior: contain;
+  }
+
   /* Syntax highlighting for code blocks */
   pre code {
     font-family: "JetBrains Mono", "Fira Code", ui-monospace, monospace;

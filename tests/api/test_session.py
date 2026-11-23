@@ -3,7 +3,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.session.models import TokenCandidate
@@ -14,7 +13,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         traffic_engine = create_async_engine(f"sqlite+aiosqlite:///{Path(tmp)/'traffic.db'}")
@@ -42,7 +41,7 @@ def test_app():
         app.state.repeater_engine = None
         app.state.intruder_engine = None
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client
 
         asyncio.run(storage.close())

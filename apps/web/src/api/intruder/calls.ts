@@ -1,8 +1,9 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { IntruderRunRequest, IntruderRunResponse, WordlistEntry } from "./types";
 
 export async function runIntruder(body: IntruderRunRequest): Promise<IntruderRunResponse> {
-  const res = await fetch(`${API_BASE}/intruder/run`, {
+  const res = await apiFetch(`${API_BASE}/intruder/run`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -16,7 +17,7 @@ export async function runIntruder(body: IntruderRunRequest): Promise<IntruderRun
 
 export async function listWordlists(dir = ""): Promise<WordlistEntry[]> {
   const params = dir ? `?dir=${encodeURIComponent(dir)}` : "";
-  const res = await fetch(`${API_BASE}/intruder/wordlists${params}`);
+  const res = await apiFetch(`${API_BASE}/intruder/wordlists${params}`);
   if (!res.ok) throw new Error("Failed to list wordlists");
   return res.json();
 }

@@ -99,6 +99,20 @@ This starts:
 - Proxy → `127.0.0.1:17170`
 - API → `127.0.0.1:17171`
 - Docs → `http://127.0.0.1:17171/docs`
+- API token → `~/.pwnproxy/api-token`
+- Web UI → `http://127.0.0.1:17172/#token=<token>`
+
+The API requires `Authorization: Bearer <token>` on every route except `GET /api/v1/health`. The
+first start creates `api-token` (scope `full`) and `mcp-token` (scope `agent`) in `~/.pwnproxy`, and
+the panel prints the Web UI URL with the token in the fragment: open it and the UI stores the token
+by itself. If the UI ever asks for the token (`401`, or a rotated token), run:
+
+```bash
+pwnproxy api token
+```
+
+That prints the token, its file and the Web UI URL again. `pwnproxy scan url`, the proxy on `17170`
+and the SSRF callback on `17173` need no token.
 
 ### 3. Send traffic through the proxy
 
@@ -248,8 +262,15 @@ Use an interactive terminal interface for:
 Control the platform programmatically.
 
 ```bash
-curl http://127.0.0.1:17171/api/v1/flows
+# The token: every route except GET /api/v1/health needs it
+TOKEN=$(pwnproxy api token | sed -n 's/^Token:[[:space:]]*//p')
+
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/flows
 ```
+
+Without the header the API answers `401` with a fixed body and `WWW-Authenticate: Bearer
+realm="pwnproxy"`; with no token configured at all it answers `503`. On PowerShell use `curl.exe`
+(the `curl` alias is `Invoke-WebRequest`) with the same header.
 
 The API exposes functionality for:
 
@@ -267,6 +288,11 @@ The API exposes functionality for:
 Interactive API documentation is available at:
 
 `http://127.0.0.1:17171/docs`
+
+`/docs` is public (it embeds the schema and holds no data) and takes the token from the fragment, so
+`http://127.0.0.1:17171/docs#token=<token>` makes "Try it out" work. `/openapi.json` needs the
+token and `/redoc` is disabled. See [`docs/api.md`](docs/api.md) for the full authentication
+contract.
 
 ### WebSocket
 
@@ -329,6 +355,11 @@ Then configure your MCP-compatible agent:
 ```
 
 The MCP server acts as a thin integration layer over the pwnproxy platform.
+
+It authenticates with `~/.pwnproxy/mcp-token` (scope `agent`), created by the first `pwnproxy
+start`; `PWNPROXY_API_TOKEN` in the `env` block replaces it. The `agent` scope keeps the credentials
+of your test accounts out of the agent's tools, but it does not contain an agent that has a shell on
+the same machine — see [`docs/mcp.md`](docs/mcp.md).
 
 See:
 
@@ -483,7 +514,7 @@ This starts:
 
 - Proxy → `:17170`
 - API → `:17171`
-- Web UI → `:17172`
+- Web UI → `:17172` — the script prints the URL with `#token=<token>` once `GET /api/v1/health` answers
 - Logs → `.dev-logs/pwnproxy.log` (pwnproxy stdout/stderr; `.dev-logs/pwnproxy.err.log` on Windows)
 
 Both scripts run pwnproxy from the repo virtualenv (`poetry run pwnproxy`) when poetry is

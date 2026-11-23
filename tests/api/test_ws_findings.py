@@ -21,7 +21,6 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -168,7 +167,7 @@ def _receive_json(ws, timeout: float = 10.0) -> dict:
 
 
 @pytest.fixture
-def live(tmp_path, monkeypatch):
+def live(tmp_path, monkeypatch, api_client):
     """The real app with a real loader, storage and session manager.
 
     Discovery is patched to find nothing: each test loads its own plugin
@@ -191,7 +190,7 @@ def live(tmp_path, monkeypatch):
     app.state.plugin_loader = loader
     app.state.session_manager = session_manager
 
-    with TestClient(app) as client:
+    with api_client(app) as client:
         live_app = SimpleNamespace(client=client, bus=hook_bus, engine=engine, loader=loader)
 
         def start(*plugins, builtin: bool = False) -> None:

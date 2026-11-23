@@ -170,6 +170,29 @@ function Show-PwnExitDiagnostics {
     }
 }
 
+# Web UI URL with the API token in the fragment, read from the CLI itself.
+# `pwnproxy api token` also prints the token and the file; only the URL is
+# returned here, so no other line of this script can leak the secret. Without a
+# token (older CLI, command failed) the bare URL is returned and the UI asks for
+# the token by hand.
+function Get-WebUiUrl {
+    param($Pwn, [int]$WebPort)
+
+    $fallback = "http://127.0.0.1:${WebPort}/"
+    try {
+        $lines = & $Pwn.FilePath ($Pwn.Prefix + @("api", "token")) 2>$null
+        $tokenLine = $lines | Where-Object { $_ -match '^Token:\s' } | Select-Object -First 1
+        if (-not $tokenLine) { return $fallback }
+        $token = ($tokenLine -replace '^Token:\s+', '').Trim()
+        if (-not $token) { return $fallback }
+        return "http://127.0.0.1:${WebPort}/#token=${token}"
+    } catch {
+        Write-Host "[dev] WARNING: could not read the API token ($($_.Exception.Message))." -ForegroundColor Yellow
+        Write-Host "[dev]   Get it with: $($Pwn.Label) api token" -ForegroundColor DarkGray
+        return $fallback
+    }
+}
+
 $Pwn = Get-PwnCommand -RepoRoot $RepoRoot
 if (-not $Pwn) {
     Write-Host "[ERROR] Could not find pwnproxy: poetry is not on PATH and no pwnproxy executable is available." -ForegroundColor Red
@@ -257,6 +280,12 @@ if (-not $Verbose) {
     Write-Host "[dev]   errors: $ErrLogFile" -ForegroundColor DarkGray
 }
 
+# -- 2b. Read the API token (the Web UI needs it in the URL fragment) --
+# The API requires Authorization: Bearer <token>; the Web UI takes it from
+# #token=... . Only the URL is printed: the token must not appear on any other
+# line of this output (it would end up in a log or in a pasted issue).
+$WebUiUrl = Get-WebUiUrl -Pwn $Pwn -WebPort $WebPort
+
 # -- 3. Verify SSRF callback is listening --
 Write-Host "[dev] Verifying SSRF callback server..." -ForegroundColor Yellow
 Start-Sleep -Seconds 1
@@ -274,7 +303,8 @@ Write-Host "--- pwnproxy Dev Environment ---" -ForegroundColor Cyan
 Write-Host "  API   -> http://${ApiHost}:$ApiPort" -ForegroundColor Green
 Write-Host "  Proxy -> http://${ApiHost}:$ProxyPort" -ForegroundColor Green
 Write-Host "  Docs  -> http://${ApiHost}:${ApiPort}/docs" -ForegroundColor Green
-Write-Host "  Web UI -> http://127.0.0.1:$WebPort" -ForegroundColor Green
+Write-Host "  Web UI -> $WebUiUrl" -ForegroundColor Cyan
+Write-Host "            (open this URL: the token travels in the fragment, never to a server)" -ForegroundColor DarkGray
 if (-not $Verbose) {
     Write-Host "  Log    -> $LogFile" -ForegroundColor Green
 }
