@@ -222,3 +222,47 @@ class TestFakePluginHelper:
         module = importlib.import_module(fake.module)
 
         assert module.FakeScanner().metadata.name == fake.plugin_name
+
+
+class TestInstalledPluginIsolation:
+    """The suite must not depend on which plugins the machine has installed.
+
+    ``isolated_installed_plugins`` (``tests/conftest.py``) is autouse for the
+    whole session: only the fake distributions :func:`install_fake_plugin` put
+    under ``tmp_path`` reach ``discover_plugins``. A real package installed in
+    the environment (``pip install pwnproxy-pro``) is still importable and still
+    declares its entry point, but it must not appear in the catalog a test sees.
+    """
+
+    def test_a_distribution_outside_the_test_tree_is_invisible(self, monkeypatch):
+        import importlib.metadata
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        tree = Path(tempfile.mkdtemp(prefix="pwnproxy-real-plugin-"))
+        try:
+            module = "real_pwnproxy_plugin_probe"
+            (tree / f"{module}.py").write_text(
+                _plugin_source("RealPlugin", "real-plugin"), encoding="utf-8"
+            )
+            dist_info = tree / "pwnproxy_real_probe-9.9.9.dist-info"
+            dist_info.mkdir()
+            (dist_info / "METADATA").write_text(
+                "Metadata-Version: 2.1\nName: pwnproxy-real-probe\nVersion: 9.9.9\n",
+                encoding="utf-8",
+            )
+            (dist_info / "entry_points.txt").write_text(
+                f"[{ENTRY_POINT_GROUP}]\nreal-plugin = {module}:RealPlugin\n", encoding="utf-8"
+            )
+            monkeypatch.syspath_prepend(str(tree))
+
+            # Production enumeration (not the patched seam) does see it: the
+            # distribution is a valid one, the filter is what hides it.
+            enumerated = [ep.name for ep in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)]
+            names = [record.name for record in discover_plugins()]
+
+            assert ("real-plugin" in enumerated, "real-plugin" in names) == (True, False)
+        finally:
+            shutil.rmtree(tree, ignore_errors=True)
+

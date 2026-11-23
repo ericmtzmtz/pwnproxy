@@ -214,10 +214,21 @@ def _relative_reference(plugin_file: Path, root: Path) -> str:
         return plugin_file.as_posix()
 
 
+def _iter_entry_points() -> list[importlib.metadata.EntryPoint]:
+    """Return every entry point declared in :data:`ENTRY_POINT_GROUP`.
+
+    Single seam for the enumeration: the tests patch this function so the
+    catalog only sees the fake distributions a test installed, instead of
+    depending on which plugin packages happen to be installed in the developer's
+    environment. Production behaviour is exactly ``importlib.metadata``.
+    """
+    return list(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP))
+
+
 def _discover_installed() -> list[PluginRecord]:
     """Discover plugins declared by installed distributions' entry points."""
     try:
-        entry_points = list(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP))
+        entry_points = _iter_entry_points()
     except Exception as exc:  # metadata backend broken: built-ins still work
         logger.warning("Could not enumerate the %s entry points: %s", ENTRY_POINT_GROUP, exc)
         return []
