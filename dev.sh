@@ -120,6 +120,18 @@ fi
 echo "[dev] API is ready!"
 gray "[dev]   log: ${LOG_FILE}"
 
+# ── API token for the Web UI URL ───────────────────────────────
+# The API requires Authorization: Bearer <token> and the Web UI takes it from
+# the URL fragment. Only the URL is printed: the token must not show up on any
+# other line (it would end up in a log or in a pasted issue).
+WEB_UI_URL="http://127.0.0.1:${WEB_PORT}/"
+API_TOKEN="$("${PWN_CMD[@]}" api token 2>/dev/null | sed -n 's/^Token:[[:space:]]*//p' | head -n 1)"
+if [ -n "$API_TOKEN" ]; then
+    WEB_UI_URL="http://127.0.0.1:${WEB_PORT}/#token=${API_TOKEN}"
+else
+    yellow "[dev] WARNING: could not read the API token; get it with: ${PWN_CMD[*]} api token"
+fi
+
 # ── Start Web UI ───────────────────────────────────────────────
 echo "[dev] Starting Web UI on port ${WEB_PORT}..."
 export PUBLIC_API_BASE="$API_BASE"
@@ -130,7 +142,8 @@ echo "--- pwnproxy Dev Environment ---"
 echo "  API     -> http://127.0.0.1:${API_PORT}"
 echo "  Proxy   -> http://127.0.0.1:${PROXY_PORT}"
 echo "  Docs    -> http://127.0.0.1:${API_PORT}/docs"
-echo "  Web UI  -> http://127.0.0.1:${WEB_PORT}"
+echo "  Web UI  -> ${WEB_UI_URL}"
+echo "             (open this URL: the token travels in the fragment, never to a server)"
 echo "  Log     -> ${LOG_FILE}"
 echo "-------------------------------"
 echo ""

@@ -169,6 +169,81 @@ class TestSessionHeader:
         assert "X-Pwnproxy-Session" not in client._client.headers
 
 
+class TestAgentToken:
+    """The MCP authenticates with the ``agent`` token; a 401 must explain itself."""
+
+    @pytest.fixture(autouse=True)
+    def isolated_config(self, tmp_path, monkeypatch):
+        """Point the config dir at ``tmp_path`` and drop the env override."""
+        monkeypatch.setenv("PWNPROXY_CONFIG_DIR", str(tmp_path))
+        monkeypatch.delenv("PWNPROXY_API_TOKEN", raising=False)
+        return tmp_path
+
+    @pytest.mark.asyncio
+    async def test_request_carries_the_bearer_from_mcp_token(self, isolated_config):
+        import httpx
+        from pwnproxy_mcp import server
+        from pwnproxy_mcp.server import MCPApiClient
+
+        (isolated_config / "mcp-token").write_text("agent-token-from-file", encoding="utf-8")
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1", session=None)
+        seen: dict[str, str | None] = {}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["authorization"] = request.headers.get("Authorization")
+            return httpx.Response(200, json={"ok": True})
+
+        # Swap only the transport: the default headers (the token) are applied by
+        # the client when it builds the request — which is what this proves.
+        client._client._transport = httpx.MockTransport(handler)
+        assert await client.get("/whoami") == {"ok": True}
+        assert seen["authorization"] == "Bearer agent-token-from-file"
+        assert server.token_file() == isolated_config / "mcp-token"
+        await client.close()
+
+    def test_env_token_wins_over_the_file(self, isolated_config, monkeypatch):
+        from pwnproxy_mcp.server import MCPApiClient
+
+        (isolated_config / "mcp-token").write_text("agent-token-from-file", encoding="utf-8")
+        monkeypatch.setenv("PWNPROXY_API_TOKEN", "env-token-for-ci")
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1", session=None)
+        assert client._client.headers.get("Authorization") == "Bearer env-token-for-ci"
+
+    def test_without_any_token_no_authorization_header(self, isolated_config):
+        from pwnproxy_mcp.server import MCPApiClient
+
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1", session=None)
+        assert "Authorization" not in client._client.headers
+
+    def test_configure_preserves_the_token(self, isolated_config, monkeypatch):
+        from pwnproxy_mcp import server
+
+        (isolated_config / "mcp-token").write_text("agent-token-from-file", encoding="utf-8")
+        monkeypatch.setattr(server, "_client", None)
+        server._handle_configure({"api_base": "http://otro:17171/api/v1", "session": ""})
+        client = server.get_client()
+        assert str(client._client.base_url) == "http://otro:17171/api/v1/"
+        assert client._client.headers.get("Authorization") == "Bearer agent-token-from-file"
+
+    @pytest.mark.asyncio
+    async def test_401_explains_the_file_and_the_command(self, isolated_config):
+        from pwnproxy_mcp.server import MCPApiClient
+
+        client = MCPApiClient(base_url="http://localhost:8000/api/v1", session=None)
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_resp.json = MagicMock(return_value={"detail": "Missing or invalid API token"})
+        mock_resp.text = "Missing or invalid API token"
+        client._client = AsyncMock()
+        client._client.request = AsyncMock(return_value=mock_resp)
+        result = await client.get("/flows")
+        assert result["status_code"] == 401
+        assert str(isolated_config / "mcp-token") in result["error"]
+        assert "pwnproxy api token --scope agent" in result["error"]
+        assert "Connection refused" not in result["error"]
+        await client.close()
+
+
 class TestJsonRpcFallback:
     def test_list_tools(self):
         proc = subprocess.Popen(

@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ from rich.prompt import Prompt
 from apps.api.server import start_api_server
 from pwnproxy.services.crawler.process import CrawlerProcess
 from pwnproxy.services.proxy.proxy_process import ProxyProcess
+from pwnproxy.shared.api_token import SCOPE_FULL, TOKEN_ENV, read_token, token_path
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
 from pwnproxy.shared.db import create_engine as create_traffic_engine
 from pwnproxy.shared.db import init_db
@@ -24,6 +26,87 @@ from pwnproxy.shared.ports import DEFAULT_API_PORT, DEFAULT_CALLBACK_PORT, DEFAU
 
 logger = logging.getLogger(__name__)
 console = Console()
+
+
+def _web_ui_url(token: str | None, web_port: int = DEFAULT_WEB_PORT) -> str:
+    """Return the Web UI URL, with the token in the fragment when there is one.
+
+    The fragment never reaches the server (the browser does not send it), and it
+    is the one place the token is allowed to appear: the Web UI reads it, stores
+    it and strips it from the address bar.
+
+    Args:
+        token: A ``full`` token, or ``None`` when none could be read.
+        web_port: Port the Web UI is served on.
+
+    Returns:
+        ``http://127.0.0.1:<web_port>/#token=<token>``, or the bare URL.
+    """
+    url = f"http://127.0.0.1:{web_port}/"
+    return f"{url}#token={token}" if token else url
+
+
+def startup_panel_lines(
+    *,
+    session_name: str | None,
+    host: str,
+    proxy_port: int,
+    api_port: int,
+    web_port: int = DEFAULT_WEB_PORT,
+    api_token: str | None = None,
+    api_token_path: Path | None = None,
+    env_token: bool = False,
+    upstream: str | None = None,
+    dashboard: bool = False,
+) -> list[str]:
+    """Build the lines of the startup panel.
+
+    Pulled out of :func:`start` so the panel can be asserted without starting
+    anything. The token appears **only** inside the Web UI URL: every other line
+    prints the file path, never the secret — this panel lands in a terminal and,
+    under ``--tui``, the process log is a file on disk.
+
+    When ``PWNPROXY_API_TOKEN`` is set the server accepts **that** value and
+    ignores the file, so a URL built from the file would not authenticate. In
+    that case the panel prints the bare URL (no fragment) plus a note naming the
+    variable — never its value, because this panel may end up in CI logs.
+
+    Args:
+        session_name: Active session, or ``None``.
+        host: Host the proxy and the API bind to.
+        proxy_port: Proxy port.
+        api_port: API port.
+        web_port: Web UI port.
+        api_token: The ``full`` token from the file, for the Web UI fragment.
+        api_token_path: File the token lives in.
+        env_token: Whether ``PWNPROXY_API_TOKEN`` is defined (it wins over the
+            file, so the fragment is omitted).
+        upstream: Upstream proxy URL, when one was given.
+        dashboard: Whether the TUI was launched.
+
+    Returns:
+        Rich-markup lines, ready for ``Panel("\\n".join(...))``.
+    """
+    lines = [
+        f"[green]Session:[/] {session_name or '[dim](none)[/]'}",
+        f"[green]Proxy    →[/] [bold]http://{host}:{proxy_port}[/]",
+        f"[green]API      →[/] [bold]http://{host}:{api_port}[/]",
+        f"[green]API Docs →[/] [bold]http://{host}:{api_port}/docs[/]",
+    ]
+    if api_token_path is not None:
+        lines.append(f"[green]API token →[/] [dim]{api_token_path}[/]")
+    if env_token:
+        lines.append(f"[green]Web UI   →[/] [bold]{_web_ui_url(None, web_port)}[/]")
+        lines.append("[yellow]token:[/] PWNPROXY_API_TOKEN (from the environment; ask whoever set it)")
+    else:
+        lines.append(f"[green]Web UI   →[/] [bold]{_web_ui_url(api_token, web_port)}[/]")
+    if upstream:
+        lines.append(f"[cyan]Upstream:[/] {upstream}")
+    if dashboard:
+        lines.append("[green]TUI dashboard[/] launched (press Q or Ctrl+Q to quit)")
+    else:
+        lines.append("[dim]Press Ctrl+C to stop[/]")
+    return lines
 
 
 def _plugin_configs(callback_port: int) -> dict[str, dict]:
@@ -396,23 +479,26 @@ def start(
                 hook_bus=hook_bus,
                 interceptor_controller=interceptor_controller,
             )
-            dashboard_task = asyncio.create_task(dashboard.run_async())
+            # run_dashboard() closes the dashboard's API client on the way out.
+            dashboard_task = asyncio.create_task(dashboard.run_dashboard())
 
         err_console = Console(stderr=True)
-        panel_lines = [
-            f"[green]Session:[/] {session_manager.active_name or '[dim](none)[/]'}",
-            f"[green]Proxy    →[/] [bold]http://{host}:{proxy_port}[/]",
-            f"[green]API      →[/] [bold]http://{host}:{api_port}[/]",
-            f"[green]API Docs →[/] [bold]http://{host}:{api_port}/docs[/]",
-        ]
-        if tui:
-            panel_lines.append(f"[green]Web UI   →[/] [bold]http://127.0.0.1:{DEFAULT_WEB_PORT}[/]")
-        if upstream:
-            panel_lines.append(f"[cyan]Upstream:[/] {upstream}")
-        if dashboard_task:
-            panel_lines.append("[green]TUI dashboard[/] launched (press Q or Ctrl+Q to quit)")
-        else:
-            panel_lines.append("[dim]Press Ctrl+C to stop[/]")
+        # ensure_tokens() ran inside start_api_server, so the file exists by now.
+        # With PWNPROXY_API_TOKEN set the server accepts that value and ignores
+        # the file, so the panel prints the bare URL plus a note: a fragment built
+        # from the file would not authenticate, and the variable's value is never
+        # printed (this panel can land in a CI log).
+        panel_lines = startup_panel_lines(
+            session_name=session_manager.active_name,
+            host=host,
+            proxy_port=proxy_port,
+            api_port=api_port,
+            api_token=read_token(SCOPE_FULL),
+            api_token_path=token_path(SCOPE_FULL),
+            env_token=bool((os.environ.get(TOKEN_ENV) or "").strip()),
+            upstream=upstream,
+            dashboard=dashboard_task is not None,
+        )
         err_console.print(Panel("\n".join(panel_lines), title="[bold]pwnproxy[/]"))
 
         try:

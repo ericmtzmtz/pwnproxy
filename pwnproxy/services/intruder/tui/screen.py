@@ -1,7 +1,6 @@
 import asyncio
 from pathlib import Path
 
-import httpx
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -12,11 +11,20 @@ from pwnproxy.services.intruder.engine import IntruderEngine
 from pwnproxy.services.intruder.tui.config import IntruderConfig
 from pwnproxy.services.intruder.tui.editor import IntruderEditor
 from pwnproxy.services.intruder.tui.results import IntruderResults
+from pwnproxy.shared.api_client import auth_error_message, create_api_client
 from pwnproxy.shared.ports import DEFAULT_API_PORT
 
 
 class IntruderScreen(Screen[None]):
-    """Main Intruder screen combining editor, config, and results."""
+    """Main Intruder screen combining editor, config, and results.
+
+    The attack is launched through the local API (``POST /api/v1/intruder/run``),
+    so the request goes through :func:`pwnproxy.shared.api_client.create_api_client`
+    to carry the bearer token, and a rejected token is explained with
+    :func:`pwnproxy.shared.api_client.auth_error_message` (the same sentence the
+    dashboard shows). One client per attack: an attack can run for minutes and
+    keeping a socket and a stale token alive for the whole session buys nothing.
+    """
 
     BINDINGS = [
         Binding("escape", "close_screen", "Close"),
@@ -113,15 +121,21 @@ class IntruderScreen(Screen[None]):
         self._running = True
         self._toggle_controls(False)
 
-        url = f"http://{self._api_host}:{self._api_port}/api/v1/intruder/run"
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post(url, json={
+            async with create_api_client(
+                base_url=f"http://{self._api_host}:{self._api_port}/api/v1",
+                timeout=300,
+            ) as client:
+                resp = await client.post("/intruder/run", json={
                     "raw_request": raw,
                     "mode": mode,
                     "wordlist_path": wordlist_path,
                     "concurrency": concurrency,
-                }, timeout=300)
+                })
+            message = auth_error_message(resp)
+            if message:
+                self._set_status(f"[red]{message}[/]")
+                return
             resp.raise_for_status()
             data = resp.json()
             total = data.get("total", 0)
