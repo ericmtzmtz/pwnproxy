@@ -107,12 +107,15 @@ Response `201`:
 
 Codes: `201` saved; `422` invalid field, unknown field, out-of-range size or a
 `scanner` that is not in the catalog (the message names it and points at
-`GET /api/v1/plugins`); `409` no active session; `500` the storage write failed.
+`GET /api/v1/plugins`); `409` no active session; `500` the storage write failed
+(`detail` is always `could not save finding` — the exception goes to the server
+log, never into the response body).
 
 The finding is persisted with the same `FindingStorage.save` the internal scanners use
-(so the triage callback runs) and only then published on the `finding` channel, which
-means it shows up in `/ws/findings` and `/ws/events` like any other finding. **There is
-no deduplication:** two identical POSTs create two findings.
+(so the triage callback runs) and only then announced: the stored row is published on
+`finding.stored` (the channel `/ws/findings` and `/ws/events` forward, once per finding) and,
+for plugins that declare `consumes=["finding"]`, on the raw `finding` channel as before.
+**There is no deduplication:** two identical POSTs create two findings.
 
 **Security.** This endpoint shares the API's lack of authentication. The service binds
 to `127.0.0.1` by default; exposing the port outside the machine turns this endpoint
@@ -278,7 +281,7 @@ ws://127.0.0.1:17171/ws/traffic
 
 # Findings stream
 ws://127.0.0.1:17171/ws/findings
-# → {"type": "finding", "scanner": "sqli", ...}
+# → {"type": "finding", "id": 12, "scanner": "sqli", "session_id": "demo", ...}
 
 # Unified events stream (traffic + findings)
 ws://127.0.0.1:17171/ws/events
@@ -286,6 +289,13 @@ ws://127.0.0.1:17171/ws/events
 # Room-isolated stream (multi-client team sessions)
 ws://127.0.0.1:17171/ws/rooms/{room_id}
 ```
+
+Both finding streams forward the **stored row** (the same fields as an item of
+`GET /api/v1/findings`, plus `session_id`) published on the bus channel `finding.stored`, so
+`id` is always the id in the session database. Findings from a plugin, from a built-in scanner
+and from `POST /api/v1/findings` look identical here. A message the relay cannot serialise is
+logged and skipped; it never closes the socket. The `findings:{session_id}` room receives the
+same row inside the room envelope `{type, session_id, job_id, data}`.
 
 ## Crawler
 

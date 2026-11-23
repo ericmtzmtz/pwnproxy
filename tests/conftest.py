@@ -11,10 +11,36 @@ Without either flag the perf test is skipped (never runs in normal CI).
 import os
 import tempfile
 import uuid
+from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+
+#: ``sys.path`` roots where this session installed a fake plugin distribution.
+#: The autouse :func:`isolated_installed_plugins` filter only lets entry points
+#: from these roots through, so the suite never sees the developer's own
+#: installed plugins (``pwnproxy-pro``, a marketplace plugin, ...).
+FAKE_DIST_ROOTS: set[str] = set()
+
+
+def _installed_by_this_suite(entry_point) -> bool:
+    """Return ``True`` when ``entry_point`` comes from a fake test distribution.
+
+    The distribution's location is the directory that holds its ``.dist-info``
+    (``Distribution.locate_file("")``), i.e. the ``sys.path`` entry the fixture
+    prepended — ``tmp_path`` for a fake plugin, ``site-packages`` for a real one.
+    """
+    distribution = getattr(entry_point, "dist", None)
+    locate = getattr(distribution, "locate_file", None)
+    if locate is None:
+        return False
+    try:
+        location = Path(locate("")).resolve()
+    except Exception:  # a metadata backend that cannot locate its files
+        return False
+    return any(location == Path(root).resolve() or Path(root).resolve() in location.parents
+               for root in FAKE_DIST_ROOTS)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -30,6 +56,29 @@ def isolated_pwnproxy_config_dir():
     with tempfile.TemporaryDirectory(prefix="pwnproxy-config-") as config_dir:
         with mock.patch.dict(os.environ, {"PWNPROXY_CONFIG_DIR": config_dir}):
             yield config_dir
+
+
+@pytest.fixture(scope="session", autouse=True)
+def isolated_installed_plugins():
+    """Make the plugin catalog see only the distributions this suite installs.
+
+    ``discover_plugins`` reads the ``pwnproxy.plugins`` entry points of the live
+    environment, so without this a developer who installed a real plugin
+    (``pip install pwnproxy-pro``) would see assertions like "the catalog is only
+    the built-ins" fail — the suite would depend on the machine it runs on.
+    Nothing is uninstalled: the enumeration seam is patched to drop entry points
+    whose distribution does not live under a directory
+    :func:`install_fake_plugin` put on ``sys.path``.
+    """
+    from pwnproxy.plugins.core import catalog
+
+    real_iter = catalog._iter_entry_points
+
+    def only_test_distributions():
+        return [ep for ep in real_iter() if _installed_by_this_suite(ep)]
+
+    with mock.patch.object(catalog, "_iter_entry_points", only_test_distributions):
+        yield
 
 
 @pytest.fixture
@@ -92,6 +141,9 @@ def install_fake_plugin(tmp_path, monkeypatch):
             encoding="utf-8",
         )
         monkeypatch.syspath_prepend(str(tmp_path))
+        # Register the root so the session-wide entry-point filter lets this
+        # fake distribution through (see ``isolated_installed_plugins``).
+        FAKE_DIST_ROOTS.add(str(tmp_path))
         return SimpleNamespace(
             module=module,
             plugin_name=plugin_name,

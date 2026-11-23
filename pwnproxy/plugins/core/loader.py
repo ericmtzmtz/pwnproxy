@@ -21,6 +21,7 @@ from pwnproxy.plugins.core.config import (
     load_activation,
     set_plugin_enabled,
 )
+from pwnproxy.shared.findings.events import publish_stored_finding
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
 
@@ -243,6 +244,21 @@ class UniversalPluginLoader:
             async for result in plugin.on_flow(flow):
                 yield result
 
+    def _events_session_id(self) -> str | None:
+        """Return the session name outgoing events should be tagged with.
+
+        Prefers the running scan job's session (headless scans can name a
+        session explicitly, and concurrent sessions must not cross), falling
+        back to the manager's active session. Never a UUID: the rest of the bus
+        and the WS rooms filter by session *name*.
+        """
+        sid = getattr(self, "_current_scan_session", None)
+        if not sid:
+            sm = getattr(self, "_session_manager", None)
+            if sm and getattr(sm, "active_name", None):
+                sid = sm.active_name
+        return sid
+
     async def _publish_results(self, plugin: PwnPlugin, result: Any) -> None:
         """Publish plugin results to appropriate channels."""
         if result is None:
@@ -253,11 +269,7 @@ class UniversalPluginLoader:
         # over the global active_name, to handle concurrent sessions correctly.
         tagged = result
         if isinstance(result, dict) and "session_id" not in result:
-            sid = getattr(self, "_current_scan_session", None)
-            if not sid:
-                sm = getattr(self, "_session_manager", None)
-                if sm and getattr(sm, "active_name", None):
-                    sid = sm.active_name
+            sid = self._events_session_id()
             if sid:
                 tagged = {**result, "session_id": sid}
 
@@ -550,16 +562,28 @@ class UniversalPluginLoader:
                         finding = await q.get()
                         if isinstance(finding, dict) and "id" in finding:
                             # Already persisted by its producer (``POST
-                            # /api/v1/findings`` publishes the saved row so the WS
-                            # handlers can forward it); saving it again would
-                            # duplicate the finding. A dict *without* ``id`` is a
-                            # raw finding from a plugin and is still stored.
+                            # /api/v1/findings`` publishes the saved row and
+                            # announces it on ``finding.stored`` itself);
+                            # saving it again would duplicate the finding. A
+                            # dict *without* ``id`` is a raw finding from a
+                            # plugin and is still stored.
                             continue
                         try:
                             storage = FindingStorage(sm.get_scanner_engine())
-                            await storage.save(finding)
+                            record_id = await storage.save(finding)
+                            row = await storage.get(record_id)
                         except Exception as e:
+                            # No row, no event: the UI must never show a finding
+                            # that is not in the session database.
                             logger.error("Failed to save finding: %s", e)
+                            continue
+                        if row is None:
+                            logger.warning(
+                                "Saved finding %s could not be re-read; no live event emitted",
+                                record_id,
+                            )
+                            continue
+                        publish_stored_finding(self.hook_bus, row, self._events_session_id())
                 asyncio.create_task(_consume_findings())
         except Exception as e:
             logger.error("Failed to wire FindingStorage: %s", e)

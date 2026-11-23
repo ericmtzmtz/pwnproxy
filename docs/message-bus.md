@@ -33,8 +33,14 @@ Every message is wrapped in an `Envelope`:
 |-------|----------|-------------|---------|
 | `proxy.flow` | `proxy_worker.py` | Scanner plugins | `Flow` (as dict over TCP, deserialized at bridge) |
 | `finding.new` | Scanner plugins | `FindingStorage`, WS broadcaster | `Finding` |
+| `finding.stored` | whoever saves the row (loader's storage consumer, `POST /api/v1/findings`) | `/ws/findings`, `/ws/events`, `RoomDispatcher` | stored row as `dict` (+ `session_id`) |
 | `scan.request` | API | Scanner plugins | `ScanRequest` |
 | `proxy.status` | `proxy_worker.py` | Health endpoint | heartbeat |
+
+`finding.stored` is the **only** finding channel the WebSocket relays read. The raw `finding`
+HookBus channel (a `Finding` dataclass from a plugin) stays for plugins that declare
+`consumes=["finding"]`; the event for the UI is published after the row exists, so `id` is always
+real. QoS class: `CRITICAL` (`HOOKBUS_QOS` in `shared/bus/topics.py`).
 
 ### Topic Naming Convention
 
@@ -120,6 +126,10 @@ Used for: proxy subprocess → main process event forwarding.
 10. If a Finding is produced, `_publish_results` calls `hook_bus.publish("finding", finding)`
 11. `_consume_findings` task receives the Finding and calls `FindingStorage.save(finding)`
 12. Finding is now in the session's `scanner_results.db` and visible at `GET /api/v1/findings`
+13. Right after the save, `_consume_findings` re-reads the row by its `id` and publishes it on
+    `finding.stored`; `/ws/findings`, `/ws/events` and the `findings:{session}` room forward it as
+    `{"type": "finding", ...row}`. `POST /api/v1/findings` does the same publish (plus the raw
+    `finding` one, which the storage consumer skips because the row already carries `id`)
 
 ## Migration Path
 
