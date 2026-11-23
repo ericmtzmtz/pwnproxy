@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -16,7 +15,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     app.state.hook_bus = hook_bus
 
@@ -55,7 +54,7 @@ def test_app():
 
         asyncio.run(_seed())
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client
 
         asyncio.run(traffic_engine.dispose())

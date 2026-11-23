@@ -4,7 +4,6 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.shared.hooks import HookBus
@@ -13,7 +12,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     app.state.hook_bus = hook_bus
 
@@ -27,7 +26,7 @@ def test_app():
         app.state.traffic_engine = traffic_engine
         app.state.scanner_engine = scanner_engine
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client, hook_bus
 
         asyncio.run(traffic_engine.dispose())

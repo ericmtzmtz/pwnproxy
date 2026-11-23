@@ -17,7 +17,6 @@ import importlib
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 from pwnproxy.plugins.core.config import config_path
 from pwnproxy.plugins.core.loader import PluginLoader
@@ -53,7 +52,7 @@ class FakeScanner(ScannerPlugin):
 
 
 @pytest.fixture
-def make_client(monkeypatch):
+def make_client(monkeypatch, api_client):
     """Return a factory that mounts a real ``PluginLoader`` on the API app."""
 
     def build(*, plugins_path=None):
@@ -64,7 +63,7 @@ def make_client(monkeypatch):
         app.state.plugin_loader = loader
         app.state.session_manager = MagicMock()
         app.state.callback_port = 17173
-        client = TestClient(app)
+        client = api_client(app)
         return client, loader
 
     yield build
@@ -162,10 +161,10 @@ def test_an_installed_plugin_is_disabled_until_it_is_activated(make_client, inst
     ) == ("installed", "pwnproxy-pro", "2.0.0", False, None, False)
 
 
-def test_without_a_loader_the_reason_is_returned_with_200(monkeypatch):
+def test_without_a_loader_the_reason_is_returned_with_200(monkeypatch, api_client):
     app.state.plugin_loader = None
 
-    with TestClient(app) as client:
+    with api_client(app) as client:
         response = client.get("/api/v1/plugins")
 
     assert (response.status_code, response.json()) == (

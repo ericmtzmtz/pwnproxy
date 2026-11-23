@@ -32,9 +32,11 @@ import tempfile
 import tomllib
 from pathlib import Path
 
+from pwnproxy.shared.config_dir import CONFIG_DIR_ENV  # noqa: F401 - re-exported, ``import *`` users
+from pwnproxy.shared.config_dir import config_dir as shared_config_dir
+
 logger = logging.getLogger(__name__)
 
-CONFIG_DIR_ENV = "PWNPROXY_CONFIG_DIR"
 CONFIG_FILE_NAME = "config.toml"
 ACTIVATION_HEADER = "[plugin.activation]"
 
@@ -55,11 +57,14 @@ class ActivationConfigError(RuntimeError):
 
 
 def config_dir() -> Path:
-    """Return the configuration directory (``PWNPROXY_CONFIG_DIR`` wins)."""
-    override = os.environ.get(CONFIG_DIR_ENV)
-    if override:
-        return Path(override)
-    return Path.home() / ".pwnproxy"
+    """Return the configuration directory (``PWNPROXY_CONFIG_DIR`` wins).
+
+    Delegates to :func:`pwnproxy.shared.config_dir.config_dir`: the API token
+    layer needs the same directory and ``shared/`` may not import ``plugins/``
+    (layering guard), so the implementation lives in ``shared/`` and this
+    function stays for the plugin modules that already import it.
+    """
+    return shared_config_dir()
 
 
 def config_path() -> Path:

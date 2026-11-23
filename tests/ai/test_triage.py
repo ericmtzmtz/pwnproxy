@@ -3,7 +3,6 @@ import asyncio
 import json
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -361,7 +360,7 @@ class TestMigration:
 
 class TestApi:
     @pytest.fixture
-    def client(self):
+    def client(self, api_client):
         async def _init():
             engine, st = await _make_storage()
             f1 = _finding(evidence="q" * 140 + " PWN", payload="PWN", confidence="confident")
@@ -380,7 +379,7 @@ class TestApi:
                 return engine
 
         app.state.session_manager = _SM()
-        with TestClient(app) as c:
+        with api_client(app) as c:
             yield c, st, id1, id2, bus
         FindingStorage.on_saved = None
         asyncio.run(engine.dispose())
@@ -441,12 +440,12 @@ class TestApi:
 
 
 class TestWsEvent:
-    def test_triage_updated_reaches_ws_client(self):
+    def test_triage_updated_reaches_ws_client(self, api_client):
         from pwnproxy.shared.hooks import HookBus
         bus = HookBus()
         app.state.hook_bus = bus
         FindingStorage.on_saved = None
-        with TestClient(app) as c, c.websocket_connect("/ws/events") as ws:
+        with api_client(app) as c, c.websocket_connect("/ws/events") as ws:
             bus.publish("triage.updated", {
                 "finding_id": 7, "verdict": "false_positive",
                 "method": "llm", "score": 0.85, "reason": "scanner_noise",

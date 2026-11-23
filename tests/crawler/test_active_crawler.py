@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.crawler.engine import CrawlConfig, CrawlEngine
@@ -472,9 +471,9 @@ class TestWorkerCrawlE2E:
 
 class TestCrawlerAPI:
     @pytest.mark.asyncio
-    async def test_start_without_seeds_422(self):
+    async def test_start_without_seeds_422(self, api_client):
         from pwnproxy.transport.rest.app import app
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
 
         sm = MagicMock()
         sm.get_crawler_engine.return_value = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -488,7 +487,7 @@ class TestCrawlerAPI:
         assert resp.status_code == 422
 
     @pytest.mark.asyncio
-    async def test_start_no_active_job(self):
+    async def test_start_no_active_job(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -503,7 +502,7 @@ class TestCrawlerAPI:
         crawler_mock.send_to_worker.return_value = True
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/start", json={"seeds": ["https://target.com"]})
         assert resp.status_code == 200
         data = resp.json()
@@ -512,7 +511,7 @@ class TestCrawlerAPI:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_stop_no_active_job(self):
+    async def test_stop_no_active_job(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -522,7 +521,7 @@ class TestCrawlerAPI:
         sm.get_crawler_engine.return_value = engine
         app.state.session_manager = sm
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
         # Idempotent: no active job = success
@@ -530,7 +529,7 @@ class TestCrawlerAPI:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_status_shows_active_jobs(self):
+    async def test_status_shows_active_jobs(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -548,7 +547,7 @@ class TestCrawlerAPI:
         crawler_mock.status.return_value = {"running": True, "pid": 1234}
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.get("/api/v1/crawler/status")
         data = resp.json()
         assert data["running"] is True
@@ -1096,7 +1095,7 @@ class TestWorkerCrawlE2EExtended:
 
 class TestCrawlerAPIConflict:
     @pytest.mark.asyncio
-    async def test_start_conflict_409(self):
+    async def test_start_conflict_409(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1114,13 +1113,13 @@ class TestCrawlerAPIConflict:
         crawler_mock.running = True
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/start", json={"seeds": ["https://target.com"]})
         assert resp.status_code == 409
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_stop_sends_intent_when_worker_alive(self):
+    async def test_stop_sends_intent_when_worker_alive(self, api_client):
         """Ownership: with the worker alive the API only sends the stop
         intent; the worker owns the RUNNING→STOPPING→CANCELLED transition."""
         from pwnproxy.transport.rest.app import app
@@ -1141,7 +1140,7 @@ class TestCrawlerAPIConflict:
         crawler_mock.send_to_worker.return_value = True
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
         assert resp.json()["stopped"] is True
@@ -1157,7 +1156,7 @@ class TestCrawlerAPIConflict:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_stop_transitions_job_when_worker_dead(self):
+    async def test_stop_transitions_job_when_worker_dead(self, api_client):
         """Ownership fallback: with the worker dead the API transitions the
         job itself so it never stays RUNNING forever."""
         from pwnproxy.transport.rest.app import app
@@ -1177,7 +1176,7 @@ class TestCrawlerAPIConflict:
         crawler_mock.running = False
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
         assert resp.json()["state"] == "cancelled"
@@ -1823,7 +1822,7 @@ class TestBruteforceWorkerE2E:
 
 class TestBruteforceAPICrossStop:
     @pytest.mark.asyncio
-    async def test_bruteforce_stop_does_not_stop_crawl_job(self):
+    async def test_bruteforce_stop_does_not_stop_crawl_job(self, api_client):
         """POST /bruteforce/stop must not touch a running crawl job."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -1839,7 +1838,7 @@ class TestBruteforceAPICrossStop:
         app.state.session_manager = sm
         app.state.crawler_process = MagicMock(running=True)
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
         # Idempotent: no bruteforce job = success (crawl job untouched)
@@ -1850,7 +1849,7 @@ class TestBruteforceAPICrossStop:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_crawl_stop_does_not_stop_bruteforce_job(self):
+    async def test_crawl_stop_does_not_stop_bruteforce_job(self, api_client):
         """POST /crawler/stop must not touch a running bruteforce job."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -1866,7 +1865,7 @@ class TestBruteforceAPICrossStop:
         app.state.session_manager = sm
         app.state.crawler_process = MagicMock(running=True)
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/crawler/stop")
         assert resp.status_code == 200
         # Idempotent: no crawl job = success (bruteforce job untouched)
@@ -1877,7 +1876,7 @@ class TestBruteforceAPICrossStop:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_bruteforce_stop_sends_intent_when_worker_alive(self):
+    async def test_bruteforce_stop_sends_intent_when_worker_alive(self, api_client):
         """Ownership: worker alive → API sends intent, worker writes state."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -1896,7 +1895,7 @@ class TestBruteforceAPICrossStop:
         crawler_mock.running = True
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
         data = resp.json()
@@ -1914,7 +1913,7 @@ class TestBruteforceAPICrossStop:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_bruteforce_stop_transitions_job_when_worker_dead(self):
+    async def test_bruteforce_stop_transitions_job_when_worker_dead(self, api_client):
         """Ownership fallback: worker dead → API cancels the job itself."""
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
@@ -1930,7 +1929,7 @@ class TestBruteforceAPICrossStop:
         app.state.session_manager = sm
         app.state.crawler_process = MagicMock(running=False)
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
         assert resp.json()["state"] == "cancelled"
@@ -1959,7 +1958,7 @@ class TestWordlistLazyLoading:
 
 class TestBruteforceAPI:
     @pytest.mark.asyncio
-    async def test_start_422_no_base_urls(self):
+    async def test_start_422_no_base_urls(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1971,13 +1970,13 @@ class TestBruteforceAPI:
         crawler_mock = MagicMock()
         crawler_mock.running = True
         app.state.crawler_process = crawler_mock
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/start", json={"base_urls": []})
         assert resp.status_code == 422
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_start_409_job_already_active(self):
+    async def test_start_409_job_already_active(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -1991,13 +1990,13 @@ class TestBruteforceAPI:
         crawler_mock = MagicMock()
         crawler_mock.running = True
         app.state.crawler_process = crawler_mock
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/start", json={"base_urls": ["https://target.com"]})
         assert resp.status_code == 409
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_start_200_success(self):
+    async def test_start_200_success(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -2010,7 +2009,7 @@ class TestBruteforceAPI:
         crawler_mock.running = True
         crawler_mock.send_to_worker.return_value = True
         app.state.crawler_process = crawler_mock
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/start", json={"base_urls": ["https://target.com"]})
         assert resp.status_code == 200
         data = resp.json()
@@ -2020,7 +2019,7 @@ class TestBruteforceAPI:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_stop_no_active(self):
+    async def test_stop_no_active(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -2028,7 +2027,7 @@ class TestBruteforceAPI:
         sm = MagicMock()
         sm.get_crawler_engine.return_value = engine
         app.state.session_manager = sm
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.post("/api/v1/bruteforce/stop")
         assert resp.status_code == 200
         # Idempotent: no active job = success
@@ -2036,9 +2035,9 @@ class TestBruteforceAPI:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_wordlists_endpoint(self):
+    async def test_wordlists_endpoint(self, api_client):
         from pwnproxy.transport.rest.app import app
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.get("/api/v1/bruteforce/wordlists")
         assert resp.status_code == 200
         data = resp.json()
@@ -2048,7 +2047,7 @@ class TestBruteforceAPI:
         assert "large" in names
 
     @pytest.mark.asyncio
-    async def test_status_shows_bruteforce_job(self):
+    async def test_status_shows_bruteforce_job(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -2062,7 +2061,7 @@ class TestBruteforceAPI:
         crawler_mock = MagicMock()
         crawler_mock.status.return_value = {"running": True, "pid": 1234}
         app.state.crawler_process = crawler_mock
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.get("/api/v1/crawler/status")
         data = resp.json()
         assert data["running"] is True

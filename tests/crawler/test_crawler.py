@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.crawler.extractor import (
@@ -252,9 +251,9 @@ class TestStorage:
 
 class TestApiCrawler:
     @pytest.mark.asyncio
-    async def test_list_urls_empty(self):
+    async def test_list_urls_empty(self, api_client):
         from pwnproxy.transport.rest.app import app
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         # Mock session_manager with a real storage engine
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -273,7 +272,7 @@ class TestApiCrawler:
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_list_urls_with_data(self):
+    async def test_list_urls_with_data(self, api_client):
         from pwnproxy.transport.rest.app import app
         engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
         st = DiscoveredURLStorage(engine)
@@ -286,20 +285,20 @@ class TestApiCrawler:
         app.state.session_manager = sm
         app.state.crawler_process = MagicMock(return_value={"running": False})
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.get("/api/v1/crawler/urls")
         data = resp.json()
         assert data["total"] == 2
         await engine.dispose()
 
     @pytest.mark.asyncio
-    async def test_crawler_status(self):
+    async def test_crawler_status(self, api_client):
         from pwnproxy.transport.rest.app import app
         crawler_mock = MagicMock()
         crawler_mock.status.return_value = {"running": True, "pid": 12345}
         app.state.crawler_process = crawler_mock
 
-        client = TestClient(app, raise_server_exceptions=False)
+        client = api_client(app, raise_server_exceptions=False)
         resp = client.get("/api/v1/crawler/status")
         assert resp.json()["running"] is True
         assert resp.json()["pid"] == 12345

@@ -12,7 +12,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from pwnproxy.services.session.store import TaskStore
@@ -45,7 +44,7 @@ def _seed(store: TaskStore, task_type: str, config: dict, result: dict, session:
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         traffic_engine = create_async_engine(f"sqlite+aiosqlite:///{Path(tmp) / 'traffic.db'}")
         scanner_engine = create_async_engine(f"sqlite+aiosqlite:///{Path(tmp) / 'scanner.db'}")
@@ -89,7 +88,7 @@ def test_app():
         app.state.session_manager = session_mgr
         app.state.plugin_loader = None
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client, {"first": first, "second": second, "foreign": foreign}
 
         asyncio.run(traffic_engine.dispose())

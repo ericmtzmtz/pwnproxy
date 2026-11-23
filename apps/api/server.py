@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from pwnproxy.ai.llm import create_client_from_config
 from pwnproxy.ai.llm.usage import UsageLedger, default_ledger_engine
+from pwnproxy.shared.api_token import SCOPE_FULL, ensure_tokens
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.ports import DEFAULT_API_PORT, DEFAULT_CALLBACK_PORT, DEFAULT_PROXY_PORT
 from pwnproxy.transport.rest.app import app
@@ -67,7 +68,21 @@ async def start_api_server(
     proxy_port: int = DEFAULT_PROXY_PORT,
     callback_port: int = DEFAULT_CALLBACK_PORT,
 ) -> asyncio.Task:
-    """Start the FastAPI/Uvicorn server in a background task."""
+    """Start the FastAPI/Uvicorn server in a background task.
+
+    Creates ``api-token`` and ``mcp-token`` in the configuration directory when
+    they do not exist yet (never rotates an existing one). Only the **path** is
+    logged: the token is a secret and the API answers ``503`` with the fix
+    command if nobody could create the files.
+    """
+    try:
+        token_paths = ensure_tokens()
+        app.state.api_token_path = token_paths[SCOPE_FULL]
+        logger.info("API token file: %s", token_paths[SCOPE_FULL])
+    except OSError as exc:
+        app.state.api_token_path = None
+        logger.error("Could not create the API token files: %s", exc)
+
     if traffic_engine is None:
         traffic_engine = _create_traffic_engine()
     if scanner_engine is None:

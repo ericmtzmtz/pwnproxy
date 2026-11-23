@@ -16,12 +16,41 @@ from types import SimpleNamespace
 from unittest import mock
 
 import pytest
+from fastapi.testclient import TestClient
+
+#: Token every test authenticates with. It enters through
+#: ``PWNPROXY_API_TOKEN`` (see :func:`api_token_env`) so the suite never writes a
+#: token file — the session already redirects ``PWNPROXY_CONFIG_DIR`` to a
+#: temporary directory, and nothing may touch the developer's ``~/.pwnproxy``.
+TEST_API_TOKEN = "test-api-token-1c9f4a7be2d8460f9b3a5"
+
+#: Subprotocols a WebSocket client must offer: the plain name the server answers
+#: plus the one carrying the token.
+WS_SUBPROTOCOLS = ["pwnproxy", f"pwnproxy-token.{TEST_API_TOKEN}"]
 
 #: ``sys.path`` roots where this session installed a fake plugin distribution.
 #: The autouse :func:`isolated_installed_plugins` filter only lets entry points
 #: from these roots through, so the suite never sees the developer's own
 #: installed plugins (``pwnproxy-pro``, a marketplace plugin, ...).
 FAKE_DIST_ROOTS: set[str] = set()
+
+
+class AuthenticatedTestClient(TestClient):
+    """``TestClient`` that talks to the authenticated API like a real client.
+
+    Every request carries ``Authorization: Bearer <TEST_API_TOKEN>`` and every
+    ``websocket_connect`` offers :data:`WS_SUBPROTOCOLS` (unless the test passes
+    its own, which the negative tests do). Tests that need to see the ``401`` or
+    the ``4401`` use a plain ``TestClient`` on purpose: that is the only way to
+    prove the guard exists.
+    """
+
+    def __init__(self, app, *, headers: dict[str, str] | None = None, **kwargs) -> None:
+        merged = {"Authorization": f"Bearer {TEST_API_TOKEN}", **(headers or {})}
+        super().__init__(app, headers=merged, **kwargs)
+
+    def websocket_connect(self, url, subprotocols=None, **kwargs):
+        return super().websocket_connect(url, subprotocols=subprotocols or WS_SUBPROTOCOLS, **kwargs)
 
 
 def _installed_by_this_suite(entry_point) -> bool:
@@ -56,6 +85,35 @@ def isolated_pwnproxy_config_dir():
     with tempfile.TemporaryDirectory(prefix="pwnproxy-config-") as config_dir:
         with mock.patch.dict(os.environ, {"PWNPROXY_CONFIG_DIR": config_dir}):
             yield config_dir
+
+
+@pytest.fixture(scope="session", autouse=True)
+def api_token_env():
+    """Export the suite token so nothing has to write a token file.
+
+    ``PWNPROXY_API_TOKEN`` is the CI path of the contract: the server accepts it
+    as a ``full`` token and never persists it. Autouse and session-scoped, so
+    every ``(Authenticated)TestClient`` in every module authenticates without
+    each file having to opt in.
+    """
+    with mock.patch.dict(os.environ, {"PWNPROXY_API_TOKEN": TEST_API_TOKEN}):
+        yield TEST_API_TOKEN
+
+
+@pytest.fixture(scope="session")
+def test_api_token(api_token_env) -> str:
+    """The suite token, for tests that build headers or subprotocols by hand."""
+    return api_token_env
+
+
+@pytest.fixture(scope="session")
+def api_client():
+    """Factory: a ``TestClient`` that sends the token (HTTP and WebSocket).
+
+    Usage: ``with api_client(app) as client:`` — same object as ``TestClient``
+    plus the credentials, so a test only changes the construction of its client.
+    """
+    return AuthenticatedTestClient
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -1,18 +1,17 @@
 import pytest
-from fastapi.testclient import TestClient
 
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     app.state.hook_bus = hook_bus
     app.state.plugin_loader = None
     app.state.proxy_port = 19999
 
-    with TestClient(app) as client:
+    with api_client(app) as client:
         yield client
 
 
@@ -54,7 +53,7 @@ class TestHealth:
         response = test_app.get("/api/v1/health")
         assert response.json()["checks"]["proxy"]["port"] == 19999
 
-    def test_health_proxy_port_falls_back_to_the_default(self):
+    def test_health_proxy_port_falls_back_to_the_default(self, api_client):
         """Without a configured port, the check reports the shared default."""
         from pwnproxy.shared.ports import DEFAULT_PROXY_PORT
 
@@ -63,7 +62,7 @@ class TestHealth:
         if had_port:
             delattr(app.state, "proxy_port")
         try:
-            with TestClient(app) as client:
+            with api_client(app) as client:
                 data = client.get("/api/v1/health").json()
         finally:
             app.state.proxy_port = previous

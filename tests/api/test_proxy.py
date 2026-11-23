@@ -2,13 +2,12 @@ import tempfile
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 
 from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     # Setup temporary session manager with proxy_config
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True):
         # Mock proxy engine
@@ -31,7 +30,7 @@ def test_app():
         session_mgr.mark_unsaved = MagicMock()
 
         app.state.session_manager = session_mgr
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client
         # cleanup automatically
 

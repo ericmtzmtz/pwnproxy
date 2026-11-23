@@ -5,7 +5,6 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -15,7 +14,7 @@ from pwnproxy.transport.rest.app import app
 
 
 @pytest.fixture
-def test_app():
+def test_app(api_client):
     hook_bus = HookBus()
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         traffic_db = str(Path(tmp) / "traffic.db")
@@ -57,7 +56,7 @@ def test_app():
         app.state.intruder_engine = None
         app.state.session_manager = session_mgr
 
-        with TestClient(app) as client:
+        with api_client(app) as client:
             yield client
 
         asyncio.run(traffic_engine.dispose())
