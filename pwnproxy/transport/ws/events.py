@@ -6,6 +6,8 @@ from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from pwnproxy.shared.bus.topics import FINDING_STORED
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["websocket"])
@@ -85,7 +87,7 @@ class RoomDispatcher:
         "flow",
         "done",
         "flow_stored",
-        "finding",
+        FINDING_STORED,
         "triage.updated",
         "scan.started",
         "scan.completed",
@@ -111,12 +113,19 @@ class RoomDispatcher:
         "flow": "traffic",
         "done": "traffic",
         "flow_stored": "traffic",
-        "finding": "findings",
+        FINDING_STORED: "findings",
         "triage.updated": "findings",
         "crawler.url": "traffic",
         "comment.created": "traffic",
         "comment.updated": "traffic",
         "comment.deleted": "traffic",
+    }
+
+    #: Room envelope ``type`` per channel, when it differs from the channel name.
+    #: ``finding.stored`` keeps announcing itself as ``finding`` so a room client
+    #: reads the same event shape it already knows from ``/ws/events``.
+    _EVENT_TYPE: dict[str, str] = {
+        FINDING_STORED: "finding",
     }
 
     def __init__(self, hook_bus, room_mgr: RoomManager):
@@ -184,7 +193,15 @@ class RoomDispatcher:
                     # Include session_id already captured
                 else:
                     payload_data = data
-                envelope = json.dumps({"type": channel, "session_id": session_id, "job_id": job_id, "data": payload_data}, default=str)
+                envelope = json.dumps(
+                    {
+                        "type": self._EVENT_TYPE.get(channel, channel),
+                        "session_id": session_id,
+                        "job_id": job_id,
+                        "data": payload_data,
+                    },
+                    default=str,
+                )
             except Exception as exc:
                 logger.debug("RoomDispatcher envelope failed for %s: %s", channel, exc)
                 continue
@@ -251,12 +268,20 @@ async def ws_traffic(ws: WebSocket):
 async def ws_findings(ws: WebSocket):
     await findings_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
-    finding_queue = hook_bus.register("finding")
+    # ``finding.stored`` (the persisted row), never the raw ``finding`` channel:
+    # a plugin publishes a ``Finding`` dataclass there before it is saved.
+    finding_queue = hook_bus.register(FINDING_STORED)
 
     try:
         while True:
-            finding_data = await finding_queue.get()
-            payload = json.dumps({"type": "finding", **finding_data}, default=str)
+            row = await finding_queue.get()
+            try:
+                payload = json.dumps({"type": "finding", **row}, default=str)
+            except Exception:
+                # A message the relay cannot serialise must never close the
+                # socket: log it and keep serving the stream.
+                logger.warning("ws/findings: skipping a non-serialisable event", exc_info=True)
+                continue
             await ws.send_text(payload)
     except WebSocketDisconnect:
         findings_manager.disconnect(ws)
@@ -269,7 +294,7 @@ async def ws_events(ws: WebSocket):
     await events_manager.connect(ws)
     hook_bus = ws.app.state.hook_bus
     flow_queue = hook_bus.register("flow_stored")
-    finding_queue = hook_bus.register("finding")
+    finding_queue = hook_bus.register(FINDING_STORED)
     scan_started_queue = hook_bus.register("scan.started")
     scan_completed_queue = hook_bus.register("scan.completed")
     autoscan_started_queue = hook_bus.register("autoscan.started")
@@ -317,64 +342,73 @@ async def ws_events(ws: WebSocket):
             for task in pending:
                 task.cancel()
             for task in done:
-                result = task.result()
                 payload = None
-                if task is flow_task:
-                    if isinstance(result, dict):
-                        flow_payload: dict = {
-                            "type": "flow",
-                            "id": result.get("id"),
-                            "method": result.get("method", ""),
-                            "url": result.get("url", ""),
-                            "status_code": result.get("status_code"),
-                        }
-                        if result.get("session_id"):
-                            flow_payload["session_id"] = result["session_id"]
-                        payload = json.dumps(flow_payload, default=str)
-                elif task is finding_task:
-                    if isinstance(result, dict) and "scanner" in result:
-                        payload = json.dumps({"type": "finding", **result}, default=str)
-                elif task is started_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "scan.started", **result}, default=str)
-                elif task is completed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "scan.completed", **result}, default=str)
-                elif task is autoscan_started_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "autoscan.started", **result}, default=str)
-                elif task is autoscan_completed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "autoscan.completed", **result}, default=str)
-                elif task is triage_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "triage.updated", **result}, default=str)
-                elif task is crawler_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "crawler.url", **result}, default=str)
-                elif task is crawl_started_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "crawl.started", **result}, default=str)
-                elif task is crawl_progress_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "crawl.progress", **result}, default=str)
-                elif task is crawl_completed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "crawl.completed", **result}, default=str)
-                elif task is crawl_failed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "crawl.failed", **result}, default=str)
-                elif task is bruteforce_started_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "bruteforce.started", **result}, default=str)
-                elif task is bruteforce_progress_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "bruteforce.progress", **result}, default=str)
-                elif task is bruteforce_completed_task:
-                    if isinstance(result, dict):
-                        payload = json.dumps({"type": "bruteforce.completed", **result}, default=str)
-                elif task is bruteforce_failed_task and isinstance(result, dict):
-                    payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
+                try:
+                    result = task.result()
+                    if task is flow_task:
+                        if isinstance(result, dict):
+                            flow_payload: dict = {
+                                "type": "flow",
+                                "id": result.get("id"),
+                                "method": result.get("method", ""),
+                                "url": result.get("url", ""),
+                                "status_code": result.get("status_code"),
+                            }
+                            if result.get("session_id"):
+                                flow_payload["session_id"] = result["session_id"]
+                            payload = json.dumps(flow_payload, default=str)
+                    elif task is finding_task:
+                        # ``finding.stored`` carries the persisted row; the UI
+                        # keeps receiving the same flat ``type: "finding"`` event.
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "finding", **result}, default=str)
+                    elif task is started_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "scan.started", **result}, default=str)
+                    elif task is completed_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "scan.completed", **result}, default=str)
+                    elif task is autoscan_started_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "autoscan.started", **result}, default=str)
+                    elif task is autoscan_completed_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "autoscan.completed", **result}, default=str)
+                    elif task is triage_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "triage.updated", **result}, default=str)
+                    elif task is crawler_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "crawler.url", **result}, default=str)
+                    elif task is crawl_started_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "crawl.started", **result}, default=str)
+                    elif task is crawl_progress_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "crawl.progress", **result}, default=str)
+                    elif task is crawl_completed_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "crawl.completed", **result}, default=str)
+                    elif task is crawl_failed_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "crawl.failed", **result}, default=str)
+                    elif task is bruteforce_started_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "bruteforce.started", **result}, default=str)
+                    elif task is bruteforce_progress_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "bruteforce.progress", **result}, default=str)
+                    elif task is bruteforce_completed_task:
+                        if isinstance(result, dict):
+                            payload = json.dumps({"type": "bruteforce.completed", **result}, default=str)
+                    elif task is bruteforce_failed_task and isinstance(result, dict):
+                        payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
+                except Exception:
+                    # An event this relay cannot serialise (or a queue that blew
+                    # up) is logged and skipped: closing the socket would take
+                    # every other event stream down with it.
+                    logger.warning("ws/events: skipping an event that could not be serialised", exc_info=True)
+                    payload = None
 
                 if payload:
                     await ws.send_text(payload)

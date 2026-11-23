@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
+from pwnproxy.shared.findings.events import publish_stored_finding
 from pwnproxy.shared.findings.storage import FindingORM
 
 logger = logging.getLogger(__name__)
@@ -143,7 +144,7 @@ def _known_scanner_names(request: Request) -> set[str]:
     responses={
         409: {"description": "No active session"},
         422: {"description": "Invalid body, or scanner not in the plugin catalog"},
-        500: {"description": "The finding could not be stored (nothing is published)"},
+        500: {"description": "The finding could not be stored; the body is the fixed detail 'could not save finding' (nothing is published)"},
     },
 )
 async def create_finding(payload: FindingCreate, request: Request):
@@ -151,13 +152,15 @@ async def create_finding(payload: FindingCreate, request: Request):
 
     Same path as an internal scanner finding: ``FindingStorage.save`` persists
     the row (which fires the triage callback) and only **after** a successful
-    save the row is published on the ``finding`` channel, so it reaches
-    ``/ws/findings`` and ``/ws/events`` like any other finding.
+    save the row is announced on the ``finding.stored`` channel — the one
+    ``/ws/findings`` and ``/ws/events`` forward — and, for plugins that declare
+    ``consumes=["finding"]``, on the raw ``finding`` channel as before.
 
     ``scanner`` must be a name in the plugin catalog (``422`` otherwise, with a
     pointer to ``GET /api/v1/plugins``); no active session is a ``409`` (writing
     into the default ``~/.pwnproxy/scanner_results.db`` would leave a file with
-    no owner); a storage failure is a ``500`` and publishes nothing.
+    no owner); a storage failure is a ``500`` with a fixed message (the
+    exception goes to the log only) and publishes nothing.
 
     There is **no deduplication**: two identical POSTs create two rows.
 
@@ -204,19 +207,25 @@ async def create_finding(payload: FindingCreate, request: Request):
         finding_id = await storage.save(finding)
     except Exception as exc:  # storage is the boundary: no row, no event, 500
         logger.warning("could not persist finding from '%s': %s", payload.scanner, exc)
-        raise HTTPException(status_code=500, detail=f"could not save finding: {exc}") from exc
+        raise HTTPException(status_code=500, detail="could not save finding") from exc
 
-    row = await storage.get(finding_id) or {
-        "id": finding_id,
-        "scanner": finding.scanner,
-        "url": finding.url,
-    }
+    row = await storage.get(finding_id)
+    if row is None:  # saved but unreadable: announce what we know, never fail
+        logger.warning("saved finding %s could not be re-read; announcing a partial row", finding_id)
+        row = {"id": finding_id, "scanner": finding.scanner, "url": finding.url}
+
     hook_bus = getattr(request.app.state, "hook_bus", None)
     if hook_bus is not None:
+        # Raw channel (historical contract): plugins with ``consumes=["finding"]``
+        # receive the stored row, and the loader's storage consumer skips it
+        # because it already carries ``id`` (no second row).
         try:
             hook_bus.publish("finding", {**row, "session_id": session_id})
         except Exception:  # a dead subscriber must not fail a persisted finding
             logger.debug("could not publish the finding event", exc_info=True)
+    # Stored channel: the only one the WebSocket relays read, so the UI gets the
+    # row exactly once even when no plugin consumes findings.
+    publish_stored_finding(hook_bus, row, session_id)
 
     return {"id": finding_id, "scanner": payload.scanner, "session_id": session_id}
 

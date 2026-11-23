@@ -53,6 +53,14 @@ AUTOSCAN_COMPLETED = "autoscan.completed"
 FINDING_CREATED = "finding.created"
 TRIAGE_UPDATED = "triage.updated"
 
+#: A finding row that is already persisted in the session database. This is the
+#: only finding channel the WebSocket relays (``/ws/findings``, ``/ws/events``
+#: and the ``findings:`` rooms) read: the payload is the stored row as a ``dict``
+#: (columns of the ``findings`` table plus ``session_id``), never the raw
+#: ``Finding`` dataclass a plugin yields. The raw ``finding`` hook channel stays
+#: for plugins that declare ``consumes=["finding"]``.
+FINDING_STORED = "finding.stored"
+
 
 # ── QoS classification ─────────────────────────────────────────────
 # Every topic MUST have a QoS class. New topics added without one
@@ -73,6 +81,7 @@ TOPIC_QOS: dict[str, QoSClass] = {
     SCAN_COMPLETED:        QoSClass.CRITICAL,
     AUTOSCAN_STARTED:      QoSClass.IMPORTANT,
     AUTOSCAN_COMPLETED:    QoSClass.IMPORTANT,
+    FINDING_STORED:        QoSClass.CRITICAL,
 
     # IMPORTANT — coalesce by key (e.g. progress:{job_id}) on congestion
     CRAWL_PROGRESS:        QoSClass.IMPORTANT,

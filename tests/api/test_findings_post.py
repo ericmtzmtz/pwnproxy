@@ -295,9 +295,11 @@ def test_a_storage_failure_is_500_and_publishes_no_event(api, monkeypatch):
 
     response = client.post("/api/v1/findings", json=VALID_BODY)
 
+    # Fixed message since live-plugin-findings: the exception (SQL, paths, schema)
+    # stays in the server log instead of leaking into the response body.
     assert (
         response.status_code,
-        response.json()["detail"].startswith("could not save finding:"),
+        response.json(),
         published,
         saved,
-    ) == (500, True, [], [])
+    ) == (500, {"detail": "could not save finding"}, [], [])
