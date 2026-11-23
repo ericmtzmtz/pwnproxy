@@ -1,10 +1,11 @@
 import json
 import logging
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
@@ -16,6 +17,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["findings"])
 
 VALID_TRIAGE_VERDICTS = ("true_positive", "false_positive")
+
+#: Same vocabulary the scanners use; anything else is a client bug, not a finding.
+SEVERITIES = ("low", "medium", "high", "critical")
+CONFIDENCES = ("tentative", "inferred", "confirmed")
+#: Anti-garbage caps (D9): a local process must not be able to inflate the
+#: session database with one request.
+MAX_EVIDENCE_CHARS = 65_536
+MAX_JSON_BYTES = 65_536
+MAX_URL_CHARS = 8_192
 
 
 def _severity_clause(severity: str | None) -> list:
@@ -55,6 +65,160 @@ class TriageFeedbackResponse(BaseModel):
 
     ok: bool = True
     finding: dict[str, Any] = Field(default_factory=dict)
+
+
+class FindingCreate(BaseModel):
+    """A finding published by an external producer (a plugin, the premium UI).
+
+    The ten obligatory fields are exactly the ones ``Finding`` has no default
+    for; ``timestamp``, ``extra`` and ``request_data`` are optional. Unknown
+    fields are rejected (``extra="forbid"``) so a typo cannot slip into the
+    session database as a silently ignored column.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    scanner: str = Field(min_length=1, max_length=255)
+    url: str = Field(min_length=1, max_length=MAX_URL_CHARS)
+    method: str = Field(min_length=1, max_length=10)
+    param_name: str = Field(min_length=1, max_length=255)
+    param_location: str = Field(min_length=1, max_length=50)
+    technique: str
+    severity: Literal["low", "medium", "high", "critical"]
+    confidence: Literal["tentative", "inferred", "confirmed"]
+    payload: str = Field(max_length=MAX_EVIDENCE_CHARS)
+    evidence: str = Field(max_length=MAX_EVIDENCE_CHARS)
+    timestamp: datetime | None = None
+    extra: dict[str, Any] = Field(default_factory=dict)
+    request_data: dict[str, Any] | None = None
+
+    @field_validator("method")
+    @classmethod
+    def _upper_method(cls, value: str) -> str:
+        """Normalise the HTTP method: ``get`` and ``GET`` are the same finding."""
+        return value.upper()
+
+    @field_validator("extra", "request_data")
+    @classmethod
+    def _bounded_json(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Reject oversized JSON blobs (serialised size, not character count)."""
+        if value is None:
+            return value
+        size = len(json.dumps(value, default=str, ensure_ascii=False).encode("utf-8"))
+        if size > MAX_JSON_BYTES:
+            raise ValueError(f"serialised JSON is {size} bytes (max {MAX_JSON_BYTES})")
+        return value
+
+
+class FindingCreateResponse(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: int
+    scanner: str
+    session_id: str
+
+
+def _known_scanner_names(request: Request) -> set[str]:
+    """Plugin names the catalog knows (built-in or installed, enabled or not).
+
+    ``scanner`` is the key the UI and the reports filter and group by, so an
+    unknown name would create a column nobody can filter (D9). The live loader
+    is preferred; a fresh catalog covers the endpoint being hit before the
+    loader has discovered anything and the tests that run without one.
+    """
+    loader = getattr(request.app.state, "plugin_loader", None)
+    names = {record.name for record in loader.catalog()} if loader is not None else set()
+    if not names:
+        from pwnproxy.plugins.core.catalog import discover_plugins
+
+        names = {record.name for record in discover_plugins()}
+    return names
+
+
+@router.post(
+    "/findings",
+    response_model=FindingCreateResponse,
+    status_code=201,
+    summary="Publish a finding from an external producer",
+    responses={
+        409: {"description": "No active session"},
+        422: {"description": "Invalid body, or scanner not in the plugin catalog"},
+        500: {"description": "The finding could not be stored (nothing is published)"},
+    },
+)
+async def create_finding(payload: FindingCreate, request: Request):
+    """Publish a finding from an external producer.
+
+    Same path as an internal scanner finding: ``FindingStorage.save`` persists
+    the row (which fires the triage callback) and only **after** a successful
+    save the row is published on the ``finding`` channel, so it reaches
+    ``/ws/findings`` and ``/ws/events`` like any other finding.
+
+    ``scanner`` must be a name in the plugin catalog (``422`` otherwise, with a
+    pointer to ``GET /api/v1/plugins``); no active session is a ``409`` (writing
+    into the default ``~/.pwnproxy/scanner_results.db`` would leave a file with
+    no owner); a storage failure is a ``500`` and publishes nothing.
+
+    There is **no deduplication**: two identical POSTs create two rows.
+
+    Security: the whole API has no authentication. It binds to ``127.0.0.1`` by
+    default; exposing it outside the machine turns this endpoint into a way to
+    inject findings. Body and catalog validation reduce garbage, they are not
+    access control.
+    """
+    session_manager = getattr(request.app.state, "session_manager", None)
+    session_id = getattr(session_manager, "active_name", None) if session_manager is not None else None
+    if not session_id:
+        raise HTTPException(status_code=409, detail="no active session")
+
+    if payload.scanner not in _known_scanner_names(request):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"unknown scanner '{payload.scanner}': it is not in the plugin catalog "
+                "(see GET /api/v1/plugins)"
+            ),
+        )
+
+    from pwnproxy.plugins.core.base import Finding
+    from pwnproxy.shared.findings.storage import FindingStorage
+
+    finding = Finding(
+        scanner=payload.scanner,
+        url=payload.url,
+        method=payload.method,
+        param_name=payload.param_name,
+        param_location=payload.param_location,
+        technique=payload.technique,
+        severity=payload.severity,
+        confidence=payload.confidence,
+        payload=payload.payload,
+        evidence=payload.evidence,
+        timestamp=payload.timestamp or datetime.now(UTC),
+        extra=dict(payload.extra or {}),
+        request_data=payload.request_data,
+    )
+
+    storage = FindingStorage(session_manager.get_scanner_engine())
+    try:
+        finding_id = await storage.save(finding)
+    except Exception as exc:  # storage is the boundary: no row, no event, 500
+        logger.warning("could not persist finding from '%s': %s", payload.scanner, exc)
+        raise HTTPException(status_code=500, detail=f"could not save finding: {exc}") from exc
+
+    row = await storage.get(finding_id) or {
+        "id": finding_id,
+        "scanner": finding.scanner,
+        "url": finding.url,
+    }
+    hook_bus = getattr(request.app.state, "hook_bus", None)
+    if hook_bus is not None:
+        try:
+            hook_bus.publish("finding", {**row, "session_id": session_id})
+        except Exception:  # a dead subscriber must not fail a persisted finding
+            logger.debug("could not publish the finding event", exc_info=True)
+
+    return {"id": finding_id, "scanner": payload.scanner, "session_id": session_id}
 
 
 @router.patch("/findings/{finding_id}/feedback", response_model=TriageFeedbackResponse)

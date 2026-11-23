@@ -118,6 +118,7 @@ class SessionManager:
         self.task_store: TaskStore | None = None
 
         self._plugin_loader: any | None = None
+        self._warned_legacy_plugins: bool = False
         self._interceptor_controller: any | None = None
         self._proxy_engine: any | None = None
         self._pending_module_state: dict | None = None
@@ -240,15 +241,16 @@ class SessionManager:
         await self._notify_change()
 
     def _gather_module_state(self) -> dict:
-        plugins = {}
-        if self._plugin_loader:
-            for name in self._plugin_loader.list_plugins():
-                info = self._plugin_loader.get_plugin_info(name)
-                if info:
-                    plugins[info["name"]] = {"disabled": info.get("disabled", False)}
+        """Return the session-scoped module state.
+
+        Plugin activation is **not** here any more: it is a machine-wide setting
+        stored in ``~/.pwnproxy/config.toml`` (``[plugin.activation]``). Keeping
+        it in ``modules.json`` mixed machine configuration with client evidence
+        and, with one loader per process, made switching sessions silently change
+        what scans the live traffic.
+        """
         return {
             "interceptor_enabled": self._interceptor_controller.enabled if self._interceptor_controller else True,
-            "plugins": plugins,
         }
 
     async def _apply_module_state(self, state: dict) -> None:
@@ -258,13 +260,16 @@ class SessionManager:
             if current != wanted:
                 self._interceptor_controller.set_enabled(wanted)
 
-        if self._plugin_loader and "plugins" in state:
-            for name, cfg in state["plugins"].items():
-                was_disabled = self._plugin_loader.watchdog_stats().get("disabled", [])
-                if cfg.get("disabled", False) and name not in was_disabled:
-                    self._plugin_loader.deactivate(name)
-                elif not cfg.get("disabled", False) and name in was_disabled:
-                    await self._plugin_loader.activate(name)
+        if "plugins" in state and not self._warned_legacy_plugins:
+            # Sessions written before the activation moved to config.toml. The
+            # key is ignored on purpose (the config file is the only source of
+            # truth) and the file is left untouched; warn once, not per load.
+            logger.warning(
+                "Ignoring the legacy 'plugins' key in modules.json of session '%s': "
+                "plugin activation now lives in ~/.pwnproxy/config.toml [plugin.activation]",
+                self._active_name or "?",
+            )
+            self._warned_legacy_plugins = True
 
     async def save(self) -> None:
         if not self._active_name:

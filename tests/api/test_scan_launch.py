@@ -52,8 +52,8 @@ async def test_scan_launch_with_method_body_content_type(tmp_path):
     store = TaskStore(engine)
     await store.init()
 
-    with patch("apps.terminal.cli.scan._scan_target", new=AsyncMock(return_value=[])) as scan_target, \
-         patch("apps.terminal.cli.scan._build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
+    with patch("pwnproxy.services.scan.runner.scan_target", new=AsyncMock(return_value=[])) as scan_target, \
+         patch("pwnproxy.plugins.core.catalog.build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
         resp, task = await _launch_scan(
             store,
             url="http://target.local/xxe",
@@ -90,8 +90,8 @@ async def test_scan_launch_get_is_default(tmp_path):
     store = TaskStore(engine)
     await store.init()
 
-    with patch("apps.terminal.cli.scan._scan_target", new=AsyncMock(return_value=[])) as scan_target, \
-         patch("apps.terminal.cli.scan._build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
+    with patch("pwnproxy.services.scan.runner.scan_target", new=AsyncMock(return_value=[])) as scan_target, \
+         patch("pwnproxy.plugins.core.catalog.build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
         resp, task = await _launch_scan(
             store,
             url="http://target.local/",
@@ -113,8 +113,8 @@ async def test_scan_launch_get_with_body_discards_body(tmp_path):
     store = TaskStore(engine)
     await store.init()
 
-    with patch("apps.terminal.cli.scan._scan_target", new=AsyncMock(return_value=[])) as scan_target, \
-         patch("apps.terminal.cli.scan._build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
+    with patch("pwnproxy.services.scan.runner.scan_target", new=AsyncMock(return_value=[])) as scan_target, \
+         patch("pwnproxy.plugins.core.catalog.build_scan_loader", new=AsyncMock(return_value=_NULL_LOADER)):
         resp, task = await _launch_scan(
             store,
             url="http://target.local/",

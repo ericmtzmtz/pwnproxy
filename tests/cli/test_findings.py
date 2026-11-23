@@ -74,14 +74,55 @@ def test_findings_filter_sqli(findings_dir):
         asyncio.run(_list_findings("sqli", 20))
 
 
-def test_findings_unknown_scanner():
+def test_findings_unknown_scanner_does_not_abort(findings_dir):
+    """``--scanner`` is free text: the names come from the catalog, not from here.
+
+    The old behaviour exited with an error against a hardcoded list of five
+    scanners, which made every third-party finding unfilterable. An unknown name
+    now just finds nothing and points at the scanners the database does have.
+    """
+    from unittest.mock import patch
+
+    from pwnproxy.plugins.core.base import Finding
+    from pwnproxy.shared.findings.storage import FindingStorage
+
+    engine = create_async_engine(
+        f"sqlite+aiosqlite:///{findings_dir / '.pwnproxy' / 'scanner_results.db'}"
+    )
+
+    async def _seed():
+        storage = FindingStorage(engine)
+        await storage.create_table()
+        await storage.save(
+            Finding(
+                scanner="sqli",
+                url="http://test.com?id=1",
+                method="GET",
+                param_name="id",
+                param_location="query",
+                technique="error-based",
+                severity="high",
+                confidence="confirmed",
+                payload="1=1",
+                evidence="error in response",
+            )
+        )
+
+    asyncio.run(_seed())
+    asyncio.run(engine.dispose())
+
     from typer.testing import CliRunner
 
     from apps.terminal.cli import app
-    runner = CliRunner()
-    result = runner.invoke(app, ["findings", "--scanner", "unknown"])
-    assert result.exit_code != 0
-    assert "unknown" in result.output.lower()
+
+    with patch("apps.terminal.cli.findings.Path.home", return_value=findings_dir):
+        result = CliRunner().invoke(app, ["findings", "--scanner", "unknown"])
+
+    assert (
+        result.exit_code,
+        "No findings for scanner: unknown" in result.output,
+        "Scanners present in this database: sqli" in result.output,
+    ) == (0, True, True)
 
 
 def test_findings_empty(findings_dir):

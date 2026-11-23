@@ -15,14 +15,15 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
     <ReportGenerator client:load />
   </Card>
 
-  <div class="mb-4 mt-6 flex items-center gap-2">
+  <div class="mb-4 mt-6 flex flex-wrap items-center gap-2">
     <span class="text-xs font-semibold uppercase tracking-wider text-neutral-400">Raw findings</span>
-    {["sqli", "xss", "lfi", "xxe", "ssrf", "all"].map((s) => (
+    <div id="scanner-filters" class="flex flex-wrap items-center gap-2" aria-busy="true">
       <button
-        data-scanner={s}
-        class={`scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${s === "all" ? "bg-primary-600 text-white" : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"}`}
-      >{s === "all" ? "All" : s.toUpperCase()}</button>
-    ))}
+        type="button"
+        data-scanner="all"
+        class="scanner-filter rounded-md bg-primary-600 px-3 py-1.5 text-xs font-medium text-white transition-colors"
+      >All</button>
+    </div>
   </div>
 
   <Card>
@@ -37,23 +38,69 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
 
 <script>
   import { listFindings } from "@/api/findings/calls";
+  import { listPlugins } from "@/api/plugins/calls";
 
   function esc(v: unknown): string {
     return String(v ?? "-").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   const findingsDiv = document.getElementById("findings-content") as HTMLDivElement;
-  const filters = document.querySelectorAll(".scanner-filter") as NodeListOf<HTMLButtonElement>;
+  const filtersDiv = document.getElementById("scanner-filters");
 
-  filters.forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      filters.forEach((b) => {
-        b.className = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-neutral-800 text-neutral-400 hover:bg-neutral-700";
-      });
-      btn.className = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-primary-600 text-white";
-      const scanner = btn.dataset.scanner ?? "all";
-      await loadFindings(scanner);
+  const FILTER_ACTIVE = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-primary-600 text-white";
+  const FILTER_IDLE = "scanner-filter rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-neutral-800 text-neutral-400 hover:bg-neutral-700";
+
+  function note(text: string): HTMLSpanElement {
+    const span = document.createElement("span");
+    span.className = "text-[11px] text-neutral-500";
+    span.textContent = text;
+    return span;
+  }
+
+  /**
+   * The filter list comes from the plugin catalog, never from a literal: a
+   * scanner added as an installed package gets a filter here with no code change.
+   * Disabled and broken plugins stay in the list on purpose — findings they
+   * produced before are still in the database.
+   */
+  async function loadFilters(): Promise<void> {
+    if (!filtersDiv) return;
+    try {
+      const data = await listPlugins();
+      if (data.error !== null) {
+        filtersDiv.append(note(`Plugin catalog unavailable: ${data.error}`));
+        return;
+      }
+      for (const plugin of data.plugins) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.scanner = plugin.name;
+        button.className = FILTER_IDLE;
+        button.textContent = plugin.name.toUpperCase();
+        if (plugin.error !== null && plugin.error.length > 0) {
+          button.title = `Broken plugin: ${plugin.error}`;
+        } else if (!plugin.enabled) {
+          button.title = "Disabled plugin — findings it produced earlier are still listed";
+        }
+        filtersDiv.append(button);
+      }
+    } catch (err: unknown) {
+      filtersDiv.append(note(`Could not list scanners: ${err instanceof Error ? err.message : String(err)}`));
+    } finally {
+      filtersDiv.setAttribute("aria-busy", "false");
+    }
+  }
+
+  filtersDiv?.addEventListener("click", async (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLButtonElement) || !filtersDiv.contains(target)) return;
+    const scanner = target.dataset.scanner;
+    if (!scanner) return;
+    filtersDiv.querySelectorAll<HTMLButtonElement>("button.scanner-filter").forEach((b) => {
+      b.className = FILTER_IDLE;
     });
+    target.className = FILTER_ACTIVE;
+    await loadFindings(scanner);
   });
 
   async function loadFindings(scanner: string) {
@@ -95,7 +142,7 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
               </tr>
             </thead>
             <tbody class="divide-y divide-neutral-800">
-              ${items.map((f: any) => {
+              ${items.map((f) => {
                 const sevColor: Record<string, string> = { critical: "text-red-400", high: "text-orange-400", medium: "text-yellow-400", low: "text-blue-400", info: "text-neutral-400" };
                 return `<tr class="bg-neutral-950 hover:bg-neutral-900/50">
                   <td class="px-2 py-1.5 font-mono uppercase text-neutral-300">${esc(f.scanner)}</td>
@@ -109,14 +156,15 @@ import { ReportGenerator } from "@/components/reports/ReportGenerator";
             </tbody>
           </table>
         </div>`;
-    } catch (err: any) {
+    } catch (err: unknown) {
       findingsDiv.innerHTML = `
         <div class="rounded-md border border-red-800 bg-red-900/20 p-3">
           <p class="text-sm font-medium text-danger-500">Error loading findings</p>
-          <p class="mt-1 text-xs text-neutral-400">${esc(err.message)}</p>
+          <p class="mt-1 text-xs text-neutral-400">${esc(err instanceof Error ? err.message : String(err))}</p>
         </div>`;
     }
   }
 
   loadFindings("all");
+  void loadFilters();
 </script>

@@ -13,7 +13,23 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1", tags=["scanners"])
 
-VALID_SCANNERS = ["sqli", "xss", "lfi", "xxe", "ssrf"]
+
+def _available_scanners(request: Request) -> set[str]:
+    """Names the plugin catalog knows about (lower-cased), never a literal list.
+
+    The catalog is the single registry (built-ins plus installed packages by
+    entry point), so ``command-injection`` and any active commercial plugin are
+    accepted here without touching this module. The live loader is preferred
+    because it already resolved discovery; a fresh catalog is only built when it
+    has none yet (endpoint hit before the loader starts, or in tests).
+    """
+    loader = getattr(request.app.state, "plugin_loader", None)
+    names = {record.name for record in loader.catalog()} if loader is not None else set()
+    if not names:
+        from pwnproxy.plugins.core.catalog import discover_plugins
+
+        names = {record.name for record in discover_plugins()}
+    return {name.lower() for name in names}
 
 
 class TriggerRequest(BaseModel):
@@ -78,11 +94,12 @@ async def trigger_scanners(request: Request, body: TriggerRequest):
     if flow is None:
         raise HTTPException(status_code=404, detail=f"Flow {body.flow_id} not found")
 
-    unknown = [s for s in body.scanners if s.lower() not in VALID_SCANNERS]
+    available = _available_scanners(request)
+    unknown = [s for s in body.scanners if s.lower() not in available]
     if unknown:
         raise HTTPException(
             status_code=400,
-            detail=f"Unknown scanner(s): {unknown}. Available: {VALID_SCANNERS}",
+            detail=f"Unknown scanner(s): {unknown}. Available: {sorted(available)}",
         )
 
     hook_bus = request.app.state.hook_bus

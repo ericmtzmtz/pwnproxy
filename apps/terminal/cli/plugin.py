@@ -46,23 +46,62 @@ def install(
 
 @app.command(name="list")
 def list_plugins():
-    plugins = discover_installed()
-    if not plugins:
+    """List installed packages and every plugin the catalog can load.
+
+    Two answers to "what do I have?" used to exist: ``discover_installed`` (pip
+    packages with a ``[tool.pwnproxy]`` table) and the loader's own view. Now the
+    plugin catalog (built-ins + entry points) is shown next to the installed
+    distributions, so a package that is installed but declares no entry point is
+    visible as such instead of silently missing.
+    """
+    from pwnproxy.plugins.core.catalog import discover_plugins
+    from pwnproxy.plugins.core.config import load_activation, plugin_enabled
+
+    installed = discover_installed()
+    catalog = discover_plugins()
+    if not installed and not catalog:
         console.print("[yellow]No pwnproxy plugins installed[/yellow]")
         raise typer.Exit(0)
-    table = Table(title="Installed Plugins")
-    table.add_column("Name", style="cyan")
-    table.add_column("Version", style="green")
-    table.add_column("Category", style="blue")
-    table.add_column("Summary")
-    for p in plugins:
-        table.add_row(
-            p.get("name", ""),
-            p.get("version", ""),
-            p.get("category", ""),
-            p.get("summary", ""),
+
+    if installed:
+        table = Table(title="Installed Packages")
+        table.add_column("Name", style="cyan")
+        table.add_column("Version", style="green")
+        table.add_column("Category", style="blue")
+        table.add_column("Summary")
+        for p in installed:
+            table.add_row(
+                p.get("name", ""),
+                p.get("version", ""),
+                p.get("category", ""),
+                p.get("summary", ""),
+            )
+        console.print(table)
+
+    activation = load_activation()
+    catalog_table = Table(title="Plugin Catalog (built-in + installed entry points)")
+    catalog_table.add_column("Name", style="cyan")
+    catalog_table.add_column("Source", style="magenta")
+    catalog_table.add_column("Package")
+    catalog_table.add_column("Version", style="green")
+    catalog_table.add_column("Enabled")
+    catalog_table.add_column("Error", style="red")
+    for record in catalog:
+        enabled = plugin_enabled(record.name, record.source, activation)
+        catalog_table.add_row(
+            record.name,
+            record.source,
+            record.package,
+            record.version,
+            "yes" if enabled else ("no" if not record.error else "no (broken)"),
+            record.error or "",
         )
-    console.print(table)
+    console.print(catalog_table)
+    console.print(
+        "[dim]Enable or disable a plugin with `pwnproxy plugins` in the Web UI "
+        "(POST /api/v1/plugins/{name}/toggle); the state lives in "
+        "~/.pwnproxy/config.toml [plugin.activation].[/dim]"
+    )
 
 
 @app.command()
@@ -208,6 +247,13 @@ build-backend = "setuptools.backends._legacy:_Backend"
 name = "pwnproxy-{type}-{name}"
 version = "0.1.0"
 description = "pwnproxy {type} plugin: {name}"
+
+# Declare the plugin so pwnproxy finds it after `pip install .`:
+#   [project.entry-points."pwnproxy.plugins"]
+#   {name} = "your_package.plugin:{name}Plugin"
+# Point it at the module that actually contains the class. The entry point
+# resolves to a PwnPlugin subclass (instantiated without arguments) or to an
+# already built instance.
 
 [tool.pwnproxy]
 category = "{type}"

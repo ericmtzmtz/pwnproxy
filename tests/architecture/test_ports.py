@@ -96,7 +96,7 @@ PORT_CONTEXT_PATTERNS = (
 #: Every entry is a *legitimate* false positive: a third-party example or a
 #: value that is not a pwnproxy service port at all.
 WHITELIST: dict[str, str] = {
-    "apps/web/src/pages/settings/index.astro:43": (
+    "apps/web/src/pages/settings/index.astro:49": (
         "placeholder http://proxy:8080 — ejemplo de un proxy de upstream ajeno, "
         "no el puerto de pwnproxy"
     ),

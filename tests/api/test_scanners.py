@@ -72,12 +72,38 @@ class TestScannerTrigger:
         assert response.json()["status"] == "triggered"
         assert response.json()["flow_id"] == 1
 
+    def test_trigger_accepts_command_injection(self, test_app):
+        """The sixth built-in exists; the old literal list of five did not have it."""
+        response = test_app.post(
+            "/api/v1/scanners/trigger",
+            json={"flow_id": 1, "scanners": ["command-injection"]},
+        )
+
+        assert (response.status_code, response.json()["status"]) == (200, "triggered")
+
+    def test_trigger_accepts_a_plugin_that_only_exists_in_the_catalog(
+        self, test_app, install_fake_plugin
+    ):
+        """An installed plugin is a valid name without touching this module."""
+        fake = install_fake_plugin()
+
+        response = test_app.post(
+            "/api/v1/scanners/trigger",
+            json={"flow_id": 1, "scanners": [fake.plugin_name]},
+        )
+
+        assert (response.status_code, response.json()["status"]) == (200, "triggered")
+
     def test_trigger_unknown_scanner(self, test_app):
         response = test_app.post(
             "/api/v1/scanners/trigger",
             json={"flow_id": 1, "scanners": ["unknown"]},
         )
-        assert response.status_code == 400
+        assert (response.status_code, response.json()["detail"]) == (
+            400,
+            "Unknown scanner(s): ['unknown']. Available: "
+            "['command-injection', 'lfi', 'sqli', 'ssrf', 'xss', 'xxe']",
+        )
 
     def test_trigger_nonexistent_flow(self, test_app):
         response = test_app.post(

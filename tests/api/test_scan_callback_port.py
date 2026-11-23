@@ -15,7 +15,7 @@ from unittest.mock import patch
 import pytest
 from starlette.requests import Request as StarletteRequest
 
-from apps.terminal.cli.scan import _resolve_scanner_config
+from pwnproxy.plugins.core.catalog import scan_config
 from pwnproxy.services.session.store import TaskStore
 from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 from pwnproxy.shared.task_model import create_task_engine, init_task_db
@@ -68,7 +68,7 @@ async def _launch_ssrf_scan(tmp_path, callback_port):
         return []
 
     try:
-        with patch("apps.terminal.cli.scan._scan_target", new=fake_scan_target):
+        with patch("pwnproxy.services.scan.runner.scan_target", new=fake_scan_target):
             resp = await plugins_rest.launch_scan(
                 url="http://target.local/product?url=http://example.com",
                 request=request,
@@ -102,20 +102,35 @@ async def test_scan_falls_back_to_the_shared_callback_port(tmp_path):
     assert DEFAULT_CALLBACK_PORT == 17173
 
 
-def test_resolve_scanner_config_carries_the_callback_port():
-    assert _resolve_scanner_config("deep", "aggressive", 19994) == {
+def test_scan_config_carries_the_callback_port():
+    """The config the scan builds from the request reaches the plugins' on_load."""
+    assert scan_config("deep", "aggressive", 19994) == {
         "depth": "deep",
         "evasion_level": "aggressive",
         "callback_port": 19994,
     }
 
 
-def test_resolve_scanner_config_defaults_to_the_shared_callback_port():
-    assert _resolve_scanner_config() == {
+def test_scan_config_defaults_to_the_shared_callback_port():
+    assert scan_config() == {
         "depth": "fast",
         "evasion_level": "none",
         "callback_port": DEFAULT_CALLBACK_PORT,
     }
+
+
+def test_deprecated_aliases_still_delegate_to_the_catalog():
+    """``apps.terminal.cli.scan`` keeps one release of compatibility aliases.
+
+    They moved to ``pwnproxy.plugins.core.catalog`` so the transport layer stops
+    importing ``apps/``; an out-of-tree caller of the old names must keep
+    working during the transition.
+    """
+    from apps.terminal.cli.scan import _resolve_scanner_config
+
+    assert _resolve_scanner_config("standard", "light", 19995) == scan_config(
+        "standard", "light", 19995
+    )
 
 
 def test_api_server_stores_the_callback_port_on_app_state():

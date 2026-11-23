@@ -413,31 +413,82 @@ Related helpers:
 - A finding MUST carry the exact triggering request in `request_data`
   (`build_payload_request()` + serialize) so it is reproducible.
 - Do not publish findings directly from a stage; return them in `StageResult`.
+- A plugin that does **not** run inside the proxy process (an external producer, a
+  premium module, a script) publishes through `POST /api/v1/findings` instead of
+  writing the database itself: the endpoint validates the body, checks the `scanner`
+  against this catalog, persists with the same `FindingStorage.save` (triage included)
+  and only then publishes the `finding` event with the active `session_id`. See
+  `docs/api.md`.
 
 ---
 
 ## 11. Registration and parity
 
-Two load paths exist and **must expose the same scanner set**:
+Discovery lives in **one** place: `pwnproxy/plugins/core/catalog.py`
+(`discover_plugins()`). Every load path consumes it and exposes the same set:
 
 | Path | How scanners load | Where |
 |---|---|---|
-| Live proxy / autoscan | `discover_scanners()` scans `plugins/scanners/*/plugin.py` | `pwnproxy/plugins/core/loader.py:224`, called from `start()` (`:263`) |
-| Standalone CLI / REST `/scan` | `_build_scan_loader()` constructs a fresh loader per call | `apps/terminal/cli/scan.py:79` |
+| Live proxy / autoscan | `UniversalPluginLoader.start()` → `refresh_catalog()` loads the enabled catalog records | `pwnproxy/plugins/core/loader.py` |
+| Standalone CLI / REST `/scan` | `build_scan_loader()` builds a fresh loader from the catalog | `pwnproxy/plugins/core/catalog.py` |
+| TUI / `GET /api/v1/plugins` | read the catalog itself | `apps/terminal/tui/scanner_widget.py`, `transport/rest/plugins.py` |
+
+The catalog has two sources:
+
+1. **Drop-in** — a package under `pwnproxy/plugins/scanners/<name>/plugin.py` (the six
+   built-ins: `command-injection`, `lfi`, `sqli`, `ssrf`, `xss`, `xxe`). `source` is
+   `"builtin"` and `package` is `pwnproxy`.
+2. **Installed package** — any distribution that declares an entry point in the
+   `pwnproxy.plugins` group:
+
+   ```toml
+   [project.entry-points."pwnproxy.plugins"]
+   authorization-matrix = "pwnproxy_pro.matrix:AuthorizationMatrixPlugin"
+   ```
+
+   The value resolves to a `PwnPlugin` subclass (instantiated without arguments) or to
+   an already built instance; anything else is a catalog entry with `error`, never a
+   crash. `source` is `"installed"` and `package`/`version` come from the distribution
+   metadata. A package **without** an entry point is invisible: the name is not a
+   contract, the entry point is. `discover_installed()` (the `pwnproxy plugin list`
+   view of `[tool.pwnproxy]` packages) is not a discovery path.
+
+   Resolving an entry point imports the package, so module-level code runs even while
+   the plugin is disabled. A class entry point is only instantiated when the loader
+   actually loads it (unless its `metadata` is not a class attribute).
+
+**Activation** is machine-wide and lives in `~/.pwnproxy/config.toml`:
+
+```toml
+[plugin.activation]
+sqli = false
+authorization-matrix = true
+```
+
+Absent name ⇒ built-in enabled, installed **disabled**. It is not part of
+`modules.json` and does not change when the user switches session: there is one loader
+per process. Enabling/disabling is `POST /api/v1/plugins/{name}/toggle`, which persists
+first and only then applies the change in memory.
 
 **Normative rules**
 
-- Adding a scanner MUST NOT require editing a hardcoded registry. Discovery is the
-  registry; both paths MUST agree.
-- The standalone path MUST forward the resolved scan config (depth, evasion, and the
-  rest) into `load_builtin(plugin, config=...)`.
+- Adding a scanner MUST NOT require editing a hardcoded registry; there is none left
+  (`tests/architecture/test_scanner_registries.py` fails if one comes back).
+- Both load paths MUST agree, and both MUST forward the resolved scan config (depth,
+  evasion, callback port) into `load_builtin(plugin, config=...)`.
+- A broken plugin (import, instantiation or `on_load` failure) MUST be recorded in the
+  catalog with its reason and skipped; the proxy keeps starting and the other plugins
+  keep scanning.
+- A name collision is resolved in favour of the built-in; the installed one stays in the
+  catalog with `error` and never loads.
 
 ---
 
 ## 12. Conformance status
 
-These are **known deviations** from the contract above. Each is a fix task tracked by
-`fix/scanner-depth-integrity`. Do not build on the deviating behavior.
+These are **known deviations** from the contract above. The first block was tracked by
+`fix/scanner-depth-integrity`; C14 and C15 by `installed-plugin-discovery`. Do not build
+on the deviating behavior.
 
 | # | Contract broken | Evidence | Status |
 |---|---|---|---|
@@ -447,15 +498,17 @@ These are **known deviations** from the contract above. Each is a fix task track
 | C4 | depth is a ceiling | `BudgetChain._depth_allows` treats depth as a floor → `deep` skips error-based — `chain.py:267` | ✅ fixed — `chain_from_depth` starts at FAST, `max_depth=<requested>` |
 | C5 | `budget_ms` is whole-chain | `WAVE_BUDGET_MS` name implies per-wave — `chain.py:201` | ✅ fixed — renamed to `BUDGET_MS` (alias kept) |
 | C6 | Every looping stage honors the deadline | only `BooleanBlindStage` overrides `set_deadline` — `sqli_stages.py:246` | ✅ fixed — base stores deadline, all stages check `_deadline_exceeded()` |
-| C7 | Standalone == discovery set | `_build_scan_loader` hardcodes 5 scanners; `command_injection` is discovered live but never loaded standalone — `scan.py:88` | ✅ fixed — both use discovery, `command-injection` included |
+| C7 | Standalone == discovery set | `_build_scan_loader` hardcoded 5 scanners; `command_injection` was discovered live but never loaded standalone — `scan.py:88` | ✅ fixed twice: first by sharing discovery, then by removing both registries — `discover_plugins()` is now the only source (`pwnproxy/plugins/core/catalog.py`), and the loader, the CLI, the REST `/scan`, `/scanners/trigger`, the TUI and `GET /plugins` all read it (see §11) |
 | C8 | `payloads.py` is the single source | unused getters: XXE `get_error/oob/xinclude_payloads` (`xxe/payloads.py:81-98`), LFI `get_payloads` (`lfi/payloads.py:40`), SQLi `get_time_payloads` (`sqli/payloads.py:90`), SSRF `PayloadGenerator` (`ssrf/payloads.py:12`); stages inline lists instead | ✅ fixed — getters wired/removed, `STORED_PAYLOADS` moved, SSRF generator removed |
 | C9 | Stages must not own payload lists | `xxe_stages`/`ssrf_stages`/xss `StoredStage` inline payloads — `xxe_stages.py:50`, `ssrf_stages.py`, `xss_stages.py:25` | ✅ fixed — templates moved to `payloads.py` |
 | C10 | Injection helpers must work | `shared/scan/utils.py` query branch is a silent no-op (`:56`) and form branch raises `NameError` (`:83`); `XxeReplayer` fallback calls the nonexistent `point.inject()` — `xxe.py:58` | ✅ fixed — query/form branches corrected, `XxeReplayer` uses `super()._build_request()` |
 | C11 | Test path == production path | golden tests construct `PluginContext(config=...)` directly and use `depth="standard"` — `tests/golden/test_scanner_targets.py:37,86,98,110` | ✅ fixed — converged to `load_builtin(plugin, config=...)` |
 | C12 | Dead contracts removed | warn-only placeholders `load_from_package`, `list_available`, `run_hooks_request/response` — `loader.py:387,432,475` | ✅ fixed — removed |
 | C13 | No phantom subsystems | second-order `PayloadStore` is never written by any scanner; REST endpoints only report empty stats — `shared/scan/payload_store.py`, `transport/rest/scanners.py:130` | ✅ fixed — store and endpoints removed |
+| C14 | One registry, not four | the catalog did not exist and the list of scanner names was copied in `cli/scan.py` (dict of 6), `cli/findings.py` (`VALID_SCANNERS`), `tui/scanner_widget.py` (`SCANNER_NAMES`) and `transport/rest/scanners.py` (`VALID_SCANNERS`), while the loader walked the tree by itself | ✅ fixed — `pwnproxy/plugins/core/catalog.py` is the only source, consumed by the loader, the CLI, the REST endpoints, the TUI and `GET /plugins`; `tests/architecture/test_scanner_registries.py` and `TestSingleDiscoverySource` guard it |
+| C15 | Activation is machine-wide, not session state | `SessionManager._gather_module_state()` wrote a `plugins` map into `modules.json` and `_apply_module_state()` activated/deactivated plugins on every session switch, although one loader serves the whole process | ✅ fixed — `[plugin.activation]` in `~/.pwnproxy/config.toml`, written by the toggle before it answers; a legacy `plugins` key is ignored with a single warning |
 
-All C-items resolved on `fix/scanner-depth-integrity`; §12 remains as the audit record.
+All C-items are resolved; §12 remains as the audit record.
 
 ---
 
@@ -493,14 +546,21 @@ All C-items resolved on `fix/scanner-depth-integrity`; §12 remains as the audit
    ```
 
    `on_flow` takes **no** depth/evasion arguments.
-6. **Make it discoverable**: placing the package under `plugins/scanners/` is enough for
-   `discover_scanners()`. Do **not** add it to a hardcoded list (see C7).
+6. **Make it discoverable**: either drop the package under `plugins/scanners/`, or ship
+   it as its own distribution with an entry point in the `pwnproxy.plugins` group
+   (§11). Do **not** add it to a hardcoded list (see C7/C14).
 7. **Write tests** ([§14](#14-testing-requirements-the-gate)).
 8. **Run** `poetry run pytest -q tests/`.
 
 Non-negotiables: fixed chain built once in `on_load`; config only via
 `PluginContext.config`; data injected into stages; replayer created in `on_load` and
 closed in `on_unload`; `payloads.py` is the only payload source.
+
+**Trust boundary.** A plugin runs inside the proxy process, with the user's permissions
+and no sandbox: it can read the database, the traffic and the file system. Resolving its
+entry point already imports the package. Enabling a plugin — including one installed
+from a package — is a decision to trust that code, which is why installed plugins start
+disabled and the state is machine-wide.
 
 ---
 
@@ -513,7 +573,9 @@ Three tiers:
 2. **Integration (real path)** — MUST go through the loader:
 
    ```python
-   loader = await _build_scan_loader(scanners, config={"depth": "standard"})
+   from pwnproxy.plugins.core.catalog import build_scan_loader
+
+   loader = await build_scan_loader(scanners, config={"depth": "standard"})
    findings = await loader.run_scan(flow)          # flow only — no depth arg
    ```
 
@@ -545,7 +607,8 @@ promises behavior the assertion does not check, fix the test.
 - Defining payload lists inline in stages instead of `payloads.py`.
 - Defining an accessor/helper nobody calls (delete it or wire it).
 - Constructing `PluginContext(config=...)` in an integration test.
-- Adding a scanner to a hardcoded registry instead of relying on discovery.
+- Adding a scanner to a hardcoded registry instead of relying on discovery (C14).
+- Reading `config.toml` activation from anywhere but `plugins/core/config.py`.
 - Creating an API endpoint without the engine behind it (see C13).
 - Leaving warn-only placeholder methods as "compatibility".
 
@@ -556,10 +619,11 @@ promises behavior the assertion does not check, fix the test.
 ```
 pwnproxy/plugins/core/          plugin framework
   base.py                       PwnPlugin, ScannerPlugin, PluginMetadata, PluginContext (+ re-export Finding)
+  catalog.py                    discover_plugins (built-ins + entry points), PluginRecord, build_scan_loader, scan_config
+  config.py                     config.toml: [plugin] legacy block + [plugin.activation] (plugin_enabled, set_plugin_enabled, atomic write)
   contracts.py                  consumer mixins (Flow/Finding/Surface/Evidence)
-  loader.py                     UniversalPluginLoader, PluginLoader (load_builtin, run_scan, discover_scanners)
+  loader.py                     UniversalPluginLoader, PluginLoader (refresh_catalog, toggle, run_scan)
   chain.py                      DetectionChain, BudgetChain, chain_from_depth (+ re-exports from shared/scan/stage.py)
-  config.py                     legacy [plugin] config reader (not wired to scanners)
   discovery.py / watchdog.py    PyPI discovery / hot-reload
 
 pwnproxy/plugins/scanners/<name>/

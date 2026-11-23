@@ -1,16 +1,15 @@
 import asyncio
 import logging
 import time
-import uuid
 
-import httpx
 import typer
 from rich.console import Console
 
 from pwnproxy.plugins.core.base import Finding
+from pwnproxy.plugins.core.catalog import build_scan_loader, scan_config
 from pwnproxy.plugins.core.loader import PluginLoader
 from pwnproxy.services.findings.engine import ExportEngine
-from pwnproxy.shared.models import Flow
+from pwnproxy.services.scan.runner import scan_target
 from pwnproxy.shared.ports import DEFAULT_CALLBACK_PORT
 
 logger = logging.getLogger(__name__)
@@ -35,8 +34,8 @@ def url(
     evasion_level: str = typer.Option("none", "--evasion", help="Evasion level: none, light, aggressive"),
 ):
     async def _run():
-        _cfg = _resolve_scanner_config(detection_depth, evasion_level)
-        loader = await _build_scan_loader(set(scanners.split(",")) if scanners else None, config=_cfg)
+        _cfg = scan_config(detection_depth, evasion_level)
+        loader = await build_scan_loader(set(scanners.split(",")) if scanners else None, config=_cfg)
         extra_headers: dict[str, str] = {}
         if cookies:
             joined = "; ".join(c.strip().rstrip(";") for c in cookies if c and c.strip())
@@ -81,18 +80,12 @@ def _resolve_scanner_config(
     evasion_level: str = "none",
     callback_port: int = DEFAULT_CALLBACK_PORT,
 ) -> dict:
-    """Map request params to the plugin config keys used in on_load().
+    """Deprecated alias of :func:`pwnproxy.plugins.core.catalog.scan_config`.
 
-    ``callback_port`` is the port this process' OOB callback listener is bound
-    to; only the SSRF plugin reads it (it goes into the OOB payloads), the rest
-    ignore the extra key. Without it the SSRF payloads would knock on the
-    default port while the listener sits elsewhere.
+    Kept for one release so out-of-tree callers keep working; new code must
+    import ``scan_config`` from the catalog.
     """
-    return {
-        "depth": detection_depth,
-        "evasion_level": evasion_level,
-        "callback_port": callback_port,
-    }
+    return scan_config(detection_depth, evasion_level, callback_port)
 
 
 async def _build_scan_loader(
@@ -100,41 +93,13 @@ async def _build_scan_loader(
     disabled_plugins: list[str] | None = None,
     config: dict | None = None,
 ) -> PluginLoader:
-    from pwnproxy.plugins.core.loader import PluginLoader
-    from pwnproxy.plugins.scanners.command_injection.plugin import (
-        CommandInjectionScannerPlugin,
-    )
-    from pwnproxy.plugins.scanners.lfi.plugin import LFIScannerPlugin
-    from pwnproxy.plugins.scanners.sqli.plugin import SQLiScannerPlugin
-    from pwnproxy.plugins.scanners.ssrf.plugin import SSRFScannerPlugin
-    from pwnproxy.plugins.scanners.xss.plugin import XSSScannerPlugin
-    from pwnproxy.plugins.scanners.xxe.plugin import XXEScannerPlugin
+    """Deprecated alias of :func:`pwnproxy.plugins.core.catalog.build_scan_loader`.
 
-    loader = PluginLoader()
-    builtin_plugins = {
-        "sqli": SQLiScannerPlugin,
-        "xss": XSSScannerPlugin,
-        "lfi": LFIScannerPlugin,
-        "xxe": XXEScannerPlugin,
-        "ssrf": SSRFScannerPlugin,
-        "command-injection": CommandInjectionScannerPlugin,
-    }
-    # Allow both "command_injection" and "command-injection" as input
-    alias = {"command_injection": "command-injection"}
-    disabled_set = set(disabled_plugins or [])
-    cfg = config or {}
-    if scanners:
-        for raw in scanners:
-            name = alias.get(raw, raw)
-            if name not in builtin_plugins:
-                raise ValueError(f"Unknown scanner: {raw}")
-            if name not in disabled_set:
-                await loader.load_builtin(builtin_plugins[name](), config=cfg)
-    else:
-        for name, plugin_cls in builtin_plugins.items():
-            if name not in disabled_set:
-                await loader.load_builtin(plugin_cls(), config=cfg)
-    return loader
+    The scanner registry used to live here as a hardcoded dict; it now comes
+    from the plugin catalog (built-ins + installed entry points). Kept for one
+    release so out-of-tree callers keep working.
+    """
+    return await build_scan_loader(scanners, disabled_plugins, config)
 
 
 async def _scan_target(
@@ -145,39 +110,46 @@ async def _scan_target(
     method: str = "GET",
     body: str | None = None,
 ) -> list[Finding]:
+    """Print the scan banner and delegate to the shared one-shot runner."""
     console.print(f"[cyan]Scanning:[/cyan] {target}")
     start = time.monotonic()
-
-    headers = {"host": httpx.URL(target).host or ""}
-    if extra_headers:
-        headers.update(extra_headers)
-
-    body_bytes = body.encode() if body else None
-    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout), follow_redirects=True) as client:
-        try:
-            resp = await client.request(method, target, headers=headers, content=body_bytes)
-        except Exception as e:
-            console.print(f"[red]Request failed:[/red] {e}")
-            raise
-
-    flow = Flow(
-        id=str(uuid.uuid4()),
-        method=method,
-        url=target,
-        request_headers=headers,
-        request_body=body_bytes,
-        status_code=resp.status_code,
-        response_headers=dict(resp.headers),
-        response_body=resp.content,
-        duration_ms=(time.monotonic() - start) * 1000,
-        tls=target.startswith("https"),
-    )
-
-    all_findings = await loader.run_scan(flow)
+    try:
+        findings = await scan_target(
+            loader, target, timeout,
+            extra_headers=extra_headers, method=method, body=body,
+        )
+    except Exception as exc:
+        console.print(f"[red]Request failed:[/red] {exc}")
+        raise
     elapsed = time.monotonic() - start
-    console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(all_findings)}[/bold] finding(s)")
-    _print_xss_scope_note(all_findings)
-    return all_findings
+    console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(findings)}[/bold] finding(s)")
+    _print_xss_scope_note(findings)
+    return findings
+
+
+async def _scan_target(
+    loader: PluginLoader,
+    target: str,
+    timeout: int,
+    extra_headers: dict[str, str] | None = None,
+    method: str = "GET",
+    body: str | None = None,
+) -> list[Finding]:
+    """Print the scan banner and delegate to the shared one-shot runner."""
+    console.print(f"[cyan]Scanning:[/cyan] {target}")
+    start = time.monotonic()
+    try:
+        findings = await scan_target(
+            loader, target, timeout,
+            extra_headers=extra_headers, method=method, body=body,
+        )
+    except Exception as exc:
+        console.print(f"[red]Request failed:[/red] {exc}")
+        raise
+    elapsed = time.monotonic() - start
+    console.print(f"[cyan]Completed in[/cyan] {elapsed:.1f}s — [bold]{len(findings)}[/bold] finding(s)")
+    _print_xss_scope_note(findings)
+    return findings
 
 
 def _print_xss_scope_note(findings: list[Finding]) -> None:

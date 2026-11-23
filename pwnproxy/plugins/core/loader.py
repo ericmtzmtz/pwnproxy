@@ -1,10 +1,7 @@
 import asyncio
 import contextlib
-import importlib
-import importlib.util
 import logging
 from collections.abc import AsyncGenerator
-from pathlib import Path
 from typing import Any
 
 from pwnproxy.plugins.core.base import (
@@ -14,6 +11,16 @@ from pwnproxy.plugins.core.base import (
     PwnPlugin,
     ScannerPlugin,
 )
+from pwnproxy.plugins.core.catalog import (
+    SOURCE_BUILTIN,
+    PluginRecord,
+    discover_plugins,
+)
+from pwnproxy.plugins.core.config import (
+    ActivationConfigError,
+    load_activation,
+    set_plugin_enabled,
+)
 from pwnproxy.shared.hooks import HookBus
 from pwnproxy.shared.models import Flow
 
@@ -22,6 +29,40 @@ logger = logging.getLogger(__name__)
 
 class PluginLoadError(Exception):
     """Exception raised when a plugin fails to load."""
+
+
+class PluginNotFoundError(LookupError):
+    """Raised by :meth:`UniversalPluginLoader.toggle` for an unknown plugin name.
+
+    The API maps it to ``404``: the name is not in the catalog, so there is no
+    state to create.
+    """
+
+    def __init__(self, name: str) -> None:
+        super().__init__(name)
+        self.name = name
+
+
+class PluginUnavailableError(RuntimeError):
+    """Raised by :meth:`UniversalPluginLoader.toggle` when a plugin cannot run.
+
+    Covers a plugin whose discovery failed and one whose ``on_load()`` fails at
+    that moment. The API maps it to ``409`` with the reason.
+    """
+
+
+def _catalog_error(record: PluginRecord, error: str) -> PluginRecord:
+    """Return ``record`` with ``error`` set and its factory dropped."""
+    return PluginRecord(
+        name=record.name,
+        source=record.source,
+        package=record.package,
+        version=record.version,
+        entry_point=record.entry_point,
+        factory=None,
+        error=error,
+        metadata=record.metadata,
+    )
 
 
 def _implicit_consumes(plugin: PwnPlugin) -> list[str]:
@@ -57,6 +98,11 @@ class UniversalPluginLoader:
         # Set by the caller before start() when a runtime value (the SSRF
         # callback port) must reach a plugin that ``start`` loads by itself.
         self.plugin_configs: dict[str, dict] = {}
+        # Catalog (built-ins + installed entry points) and the activation table
+        # it was resolved against. Both come from ``pwnproxy.plugins.core``;
+        # the loader never walks the tree or reads the config on its own.
+        self._catalog: list[PluginRecord] = []
+        self._activation: dict[str, bool] = {}
 
     async def load(
         self, 
@@ -224,66 +270,267 @@ class UniversalPluginLoader:
                 except Exception:
                     logger.debug("autoscan report_finding failed", exc_info=True)
 
-    async def discover_scanners(self, scanners_path: str | None = None) -> None:
-        """Auto-discover ScannerPlugin subclasses from the scanners directory."""
-        path = scanners_path or self._scanners_path
-        if path is None:
-            from pwnproxy import __file__ as _pwnproxy_init
-            path = str(Path(_pwnproxy_init).parent / "plugins" / "scanners")
-            self._scanners_path = path
-        scanners_dir = Path(path)
-        if not scanners_dir.is_dir():
-            logger.warning("Scanners directory not found: %s", path)
-            return
+    # -- Catalog -----------------------------------------------------------
+    #
+    # ``discover_scanners`` used to walk ``plugins/scanners/*/plugin.py`` on its
+    # own; that made it a second (third, fourth...) source of truth next to the
+    # hardcoded registries in the CLI and the transport layer. Discovery now
+    # belongs to ``pwnproxy.plugins.core.catalog``: the loader only loads what
+    # the catalog found, honouring the machine-wide activation table.
 
-        for entry in sorted(scanners_dir.iterdir()):
-            if not entry.is_dir():
-                continue
-            plugin_file = entry / "plugin.py"
-            if not plugin_file.exists():
-                continue
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    f"{entry.name}.plugin", str(plugin_file)
+    def catalog(self) -> list[PluginRecord]:
+        """Return the catalog this loader resolved (built-ins first, then installed)."""
+        return list(self._catalog)
+
+    def get_record(self, name: str) -> PluginRecord | None:
+        """Return the catalog record for ``name`` (``None`` when unknown)."""
+        return next((record for record in self._catalog if record.name == name), None)
+
+    def known_names(self) -> list[str]:
+        """Return every plugin name in the catalog, broken ones included."""
+        return [record.name for record in self._catalog]
+
+    def plugin_enabled(self, name: str) -> bool:
+        """Return the effective state of ``name``: configured **and** able to run.
+
+        A plugin that failed to discover/load reports ``False`` even when the
+        configuration says ``true``: reporting it as enabled would promise
+        scanning that is not happening.
+        """
+        record = self.get_record(name)
+        if record is None or record.error:
+            return False
+        plugin = self._plugins.get(name)
+        if plugin is not None and plugin.metadata is not None and plugin.metadata.disabled:
+            return False
+        return self._activation.get(name, record.source == SOURCE_BUILTIN)
+
+    def disabled_names(self) -> list[str]:
+        """Return the names whose effective state is off (used by one-shot scans)."""
+        return [record.name for record in self._catalog if not self.plugin_enabled(record.name)]
+
+    def _replace_record(self, record: PluginRecord) -> None:
+        """Swap ``record`` into the catalog, keeping the catalog's order."""
+        for index, current in enumerate(self._catalog):
+            if current.name == record.name:
+                self._catalog[index] = record
+                return
+        self._catalog.append(record)
+        self._catalog.sort(key=lambda r: (0 if r.source == SOURCE_BUILTIN else 1, r.name))
+
+    def _set_catalog_error(self, name: str, error: str) -> None:
+        """Record a runtime load failure on the catalog entry for ``name``."""
+        record = self.get_record(name)
+        if record is not None:
+            self._replace_record(_catalog_error(record, error))
+
+    async def refresh_catalog(self, scanners_path: str | None = None) -> list[PluginRecord]:
+        """Rebuild the catalog and load every enabled plugin, isolating failures.
+
+        Args:
+            scanners_path: Override for the built-in scanners directory.
+
+        Returns:
+            The new catalog. A plugin that fails to import, instantiate or run
+            its ``on_load()`` gets its ``error`` recorded and is left out of the
+            loaded set; the rest (and the proxy) keep working.
+        """
+        path = scanners_path if scanners_path is not None else self._scanners_path
+        self._catalog = discover_plugins(path)
+        self._activation = load_activation()
+        for record in self._catalog:
+            if record.error:
+                logger.warning(
+                    "Plugin %s (%s) is unavailable: %s", record.name, record.package, record.error
                 )
-                if spec is None or spec.loader is None:
-                    continue
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
+                continue
+            if not self.plugin_enabled(record.name):
+                logger.debug("Plugin %s (%s) is disabled; not loading it", record.name, record.source)
+                continue
+            await self._load_record(record)
+        return list(self._catalog)
 
-                for _name, obj in vars(module).items():
-                    if isinstance(obj, type) and issubclass(obj, ScannerPlugin) and obj is not ScannerPlugin:
-                        plugin_instance = obj()
-                        await self.load_builtin(
-                            plugin_instance,
-                            config=self.plugin_configs.get(plugin_instance.metadata.name),
-                        )
-                        logger.info("Auto-discovered scanner: %s", plugin_instance.metadata.name)
-                        break
-            except Exception as e:
-                logger.warning("Failed to load scanner from %s: %s", entry.name, e)
+    async def _load_record(self, record: PluginRecord) -> bool:
+        """Load one catalog record. Returns ``False`` when it could not be loaded."""
+        if record.factory is None or record.error:
+            return False
+        if record.name in self._plugins:
+            return True
+        try:
+            plugin = record.factory()
+        except Exception as exc:
+            self._set_catalog_error(record.name, f"instantiation failed ({exc})")
+            logger.warning("Plugin %s (%s) could not be instantiated: %s", record.name, record.package, exc)
+            return False
+        try:
+            await self.load_builtin(plugin, config=self.plugin_configs.get(record.name))
+        except Exception as exc:
+            # ``load_builtin`` registers the plugin before ``on_load``; a
+            # half-loaded plugin must not stay in the loaded set.
+            self._plugins.pop(record.name, None)
+            with contextlib.suppress(Exception):
+                await plugin.on_unload()
+            self._set_catalog_error(record.name, f"on_load failed ({type(exc).__name__}: {exc})")
+            logger.warning(
+                "Plugin %s (%s) failed on_load and stays disabled: %s", record.name, record.package, exc
+            )
+            return False
+        logger.info("Loaded plugin %s (%s)", record.name, record.source)
+        return True
+
+    async def discover_scanners(self, scanners_path: str | None = None) -> None:
+        """Discover and load the scanners (kept as the historical entry point).
+
+        Kept because ``start()``, ``pwnproxy start`` and the port guard call it;
+        it is now a thin alias of :meth:`refresh_catalog` so there is exactly one
+        discovery path.
+        """
+        await self.refresh_catalog(scanners_path)
+
+    async def retry_load(self, name: str) -> str | None:
+        """Re-discover and try to load ``name`` once.
+
+        Returns:
+            ``None`` when the plugin is loaded, otherwise the reason it could
+            not be (also recorded in the catalog). No automatic retries: a
+            broken package must not hammer the log or the disk.
+        """
+        records = discover_plugins(self._scanners_path)
+        fresh = next((record for record in records if record.name == name), None)
+        if fresh is None:
+            return f"plugin '{name}' is no longer in the catalog"
+        self._replace_record(fresh)
+        if fresh.error:
+            return fresh.error
+        if name in self._plugins:
+            return None
+        loaded = await self._load_record(fresh)
+        if loaded:
+            return None
+        record = self.get_record(name)
+        return record.error if record is not None else f"plugin '{name}' could not be loaded"
+
+    async def toggle(self, name: str) -> str:
+        """Enable or disable ``name`` and persist the decision.
+
+        The decision is written to ``[plugin.activation]`` *before* the call is
+        reported as done: a failed write leaves the in-memory state untouched so
+        the process never disagrees with the file.
+
+        Args:
+            name: Plugin name as published by the catalog.
+
+        Returns:
+            ``"enabled"`` or ``"disabled"``.
+
+        Raises:
+            PluginNotFoundError: the name is not in the catalog.
+            PluginUnavailableError: the plugin is broken (discovery failed) or
+                its ``on_load()`` failed during this call; it stays disabled.
+            ActivationConfigError: the config file cannot be written.
+        """
+        record = self.get_record(name)
+        if record is None:
+            raise PluginNotFoundError(name)
+
+        if self.plugin_enabled(name):
+            set_plugin_enabled(name, False)  # may raise ActivationConfigError
+            self._activation[name] = False
+            self.deactivate(name)
+            return "disabled"
+
+        was_loaded = name in self._plugins
+        if record.error or not was_loaded:
+            error = await self.retry_load(name)
+            if error:
+                raise PluginUnavailableError(f"plugin '{name}' cannot run: {error}")
+        try:
+            set_plugin_enabled(name, True)
+        except ActivationConfigError:
+            if not was_loaded:
+                await self.unload(name)
+            raise
+        self._activation[name] = True
+        await self.activate(name)
+        return "enabled"
+
+    async def activate(self, name: str) -> bool:
+        """Start consuming for ``name`` (idempotent: no duplicate consumer tasks).
+
+        ``metadata.disabled`` is not enough to decide this: a plugin loaded after
+        ``start()`` (the ``toggle`` path) has never had consumers, yet its
+        metadata says enabled. The running consumer tasks are the truth, so this
+        only creates the ones that are missing.
+
+        Args:
+            name: Loaded plugin name.
+
+        Returns:
+            ``True`` when the plugin is active afterwards, ``False`` when it is
+            not loaded at all.
+        """
+        plugin = self._plugins.get(name)
+        if plugin is None:
+            logger.warning("Cannot activate unknown plugin: %s", name)
+            return False
+        plugin.metadata.disabled = False
+        implicit_consumes = _implicit_consumes(plugin)
+        all_consumes = list(plugin.metadata.consumes) + implicit_consumes
+        started = False
+        for consume_type in all_consumes:
+            task_key = f"{name}_{consume_type}"
+            if task_key in self._plugin_tasks:
+                continue
+            task = asyncio.create_task(self._run_consumer(plugin, consume_type, consume_type))
+            self._plugin_tasks[task_key] = task
+            started = True
+        if started:
+            logger.info("Activated plugin: %s", name)
+        else:
+            logger.debug("Plugin %s is already consuming", name)
+        return True
+
+    def deactivate(self, name: str) -> bool:
+        """Stop consuming for ``name`` by cancelling its consumer tasks.
+
+        The plugin stays loaded so it can be re-activated without reloading.
+        """
+        plugin = self._plugins.get(name)
+        if plugin is None:
+            logger.warning("Cannot deactivate unknown plugin: %s", name)
+            return False
+        if plugin.metadata.disabled:
+            logger.debug("Plugin %s is already disabled", name)
+            return True
+        plugin.metadata.disabled = True
+        for task_key in list(self._plugin_tasks.keys()):
+            if task_key.startswith(f"{name}_"):
+                task = self._plugin_tasks.pop(task_key)
+                task.cancel()
+        logger.info("Deactivated plugin: %s", name)
+        return True
+
+    def list_active(self) -> list[dict[str, Any]]:
+        """Return the loaded, enabled plugins with their metadata."""
+        return [self.get_plugin_info(name) for name in self.list_plugins()
+                if self.get_plugin_info(name) and not self._plugins[name].metadata.disabled]
+
+    def watchdog_stats(self) -> dict[str, Any]:
+        """Return the runtime-disabled plugin names."""
+        disabled = [name for name, p in self._plugins.items() if p.metadata.disabled]
+        return {"disabled": disabled}
 
     async def start(self, name: str | None = None) -> None:
         """Start consumer tasks for plugins and wire FindingStorage to HookBus."""
-        # Auto-discover scanners from filesystem
-        await self.discover_scanners()
+        # Build the catalog (built-ins + installed entry points) and load the
+        # enabled plugins. A broken plugin is recorded and skipped, never fatal.
+        await self.refresh_catalog()
 
         # Existing plugin consumer startup
-        plugins_to_start: dict[str, PwnPlugin] = {}
-        if name is not None:
-            plugin = self._plugins.get(name)
-            if plugin:
-                plugins_to_start[name] = plugin
-        else:
-            plugins_to_start = dict(self._plugins)
-        
-        for pname, plugin in plugins_to_start.items():
-            implicit_consumes = _implicit_consumes(plugin)
-            all_consumes = list(plugin.metadata.consumes) + implicit_consumes
-            for consume_type in all_consumes:
-                channel_name = consume_type
-                task = asyncio.create_task(self._run_consumer(plugin, consume_type, channel_name))
-                self._plugin_tasks[f"{pname}_{consume_type}"] = task
+        plugins_to_start = [name] if name is not None else list(self._plugins)
+        for pname in plugins_to_start:
+            if pname in self._plugins:
+                await self.activate(pname)
         
         # Wire FindingStorage to the "finding" channel if session manager is available
         try:
@@ -301,6 +548,13 @@ class UniversalPluginLoader:
                     q = self.hook_bus.register("finding")
                     while True:
                         finding = await q.get()
+                        if isinstance(finding, dict) and "id" in finding:
+                            # Already persisted by its producer (``POST
+                            # /api/v1/findings`` publishes the saved row so the WS
+                            # handlers can forward it); saving it again would
+                            # duplicate the finding. A dict *without* ``id`` is a
+                            # raw finding from a plugin and is still stored.
+                            continue
                         try:
                             storage = FindingStorage(sm.get_scanner_engine())
                             await storage.save(finding)
@@ -380,48 +634,6 @@ class PluginLoader(UniversalPluginLoader):
             from pwnproxy.shared.hooks import HookBus
             hook_bus = HookBus()
         super().__init__(hook_bus, bus=bus)
-
-    async def activate(self, name: str) -> bool:
-        plugin = self._plugins.get(name)
-        if plugin is None:
-            logger.warning("Cannot activate unknown plugin: %s", name)
-            return False
-        if not plugin.metadata.disabled:
-            logger.debug("Plugin %s is already enabled", name)
-            return True
-        plugin.metadata.disabled = False
-        implicit_consumes = _implicit_consumes(plugin)
-        all_consumes = list(plugin.metadata.consumes) + implicit_consumes
-        for consume_type in all_consumes:
-            channel_name = consume_type
-            task = asyncio.create_task(self._run_consumer(plugin, consume_type, channel_name))
-            self._plugin_tasks[f"{name}_{consume_type}"] = task
-        logger.info("Activated plugin: %s", name)
-        return True
-    
-    def deactivate(self, name: str) -> bool:
-        plugin = self._plugins.get(name)
-        if plugin is None:
-            logger.warning("Cannot deactivate unknown plugin: %s", name)
-            return False
-        if plugin.metadata.disabled:
-            logger.debug("Plugin %s is already disabled", name)
-            return True
-        plugin.metadata.disabled = True
-        for task_key in list(self._plugin_tasks.keys()):
-            if task_key.startswith(f"{name}_"):
-                task = self._plugin_tasks.pop(task_key)
-                task.cancel()
-        logger.info("Deactivated plugin: %s", name)
-        return True
-    
-    def list_active(self) -> list[dict[str, Any]]:
-        return [self.get_plugin_info(name) for name in self.list_plugins()
-                if self.get_plugin_info(name) and not self._plugins[name].metadata.disabled]
-    
-    def watchdog_stats(self) -> dict[str, Any]:
-        disabled = [name for name, p in self._plugins.items() if p.metadata.disabled]
-        return {"disabled": disabled}
     
     def get_scanner(self, name: str) -> PwnPlugin | None:
         """Get a scanner plugin (backward compatibility)."""
