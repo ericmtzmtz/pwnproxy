@@ -137,6 +137,7 @@ const nav: NavItem[] = [
 
 <script>
   import { API_BASE } from "@/core";
+  import { apiFetch } from "@/api/client";
 
   const nameEl = document.getElementById("sidebar-session-name");
   const toggleBtn = document.getElementById("sidebar-sessions-toggle");
@@ -158,7 +159,7 @@ const nav: NavItem[] = [
   function closeModal(el) { el.classList.add("hidden"); }
 
   async function loadSession(name) {
-    await fetch(`${API_BASE}/sessions/manage`, {
+    await apiFetch(`${API_BASE}/sessions/manage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "load", name }),
@@ -168,7 +169,7 @@ const nav: NavItem[] = [
   }
 
   async function createSession(name) {
-    await fetch(`${API_BASE}/sessions/manage`, {
+    await apiFetch(`${API_BASE}/sessions/manage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "create", name: name.trim() }),
@@ -179,7 +180,7 @@ const nav: NavItem[] = [
 
   async function fetchSession() {
     try {
-      const res = await fetch(`${API_BASE}/sessions/active`);
+      const res = await apiFetch(`${API_BASE}/sessions/active`);
       if (res.ok) {
         const data = await res.json();
         nameEl.textContent = data.name || "(none)";
@@ -198,8 +199,8 @@ const nav: NavItem[] = [
   /* ── Switch modal ── */
   document.getElementById("sidebar-session-switch")?.addEventListener("click", async () => {
     const [activeRes, sessions] = await Promise.all([
-      fetch(`${API_BASE}/sessions/active`),
-      (await fetch(`${API_BASE}/sessions`)).json(),
+      apiFetch(`${API_BASE}/sessions/active`),
+      (await apiFetch(`${API_BASE}/sessions`)).json(),
     ]);
     const activeData = activeRes.ok ? await activeRes.json() : null;
     const active = activeData?.name ?? null;

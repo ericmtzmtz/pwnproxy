@@ -1,4 +1,5 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 
 export interface WorkersResponse {
   tasks: {
@@ -19,7 +20,7 @@ export interface WorkersResponse {
 }
 
 export async function getWorkers(): Promise<WorkersResponse> {
-  const res = await fetch(`${API_BASE}/workers`);
+  const res = await apiFetch(`${API_BASE}/workers`);
   if (!res.ok) throw new Error(`Failed to get workers status: ${res.statusText}`);
   return res.json();
 }

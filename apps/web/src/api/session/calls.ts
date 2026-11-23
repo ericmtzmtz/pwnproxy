@@ -1,14 +1,15 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { SessionSummary } from "./types";
 
 export async function listSessions(): Promise<SessionSummary[]> {
-  const res = await fetch(`${API_BASE}/sessions`);
+  const res = await apiFetch(`${API_BASE}/sessions`);
   if (!res.ok) throw new Error("Failed to list sessions");
   return res.json();
 }
 
 export async function loadSession(name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/sessions/manage`, {
+  const res = await apiFetch(`${API_BASE}/sessions/manage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "load", name }),
@@ -20,7 +21,7 @@ export async function loadSession(name: string): Promise<void> {
 }
 
 export async function createSession(name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/sessions/manage`, {
+  const res = await apiFetch(`${API_BASE}/sessions/manage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ action: "create", name }),

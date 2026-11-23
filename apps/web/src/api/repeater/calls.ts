@@ -1,8 +1,9 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { RepeaterRequest, RepeaterResponse, RepeaterTab, CreateRepeaterTab, UpdateRepeaterTab } from "./types";
 
 export async function sendRequest(body: RepeaterRequest): Promise<RepeaterResponse> {
-  const res = await fetch(`${API_BASE}/repeater/send`, {
+  const res = await apiFetch(`${API_BASE}/repeater/send`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -15,13 +16,13 @@ export async function sendRequest(body: RepeaterRequest): Promise<RepeaterRespon
 }
 
 export async function listTabs(): Promise<RepeaterTab[]> {
-  const res = await fetch(`${API_BASE}/repeater/tabs`);
+  const res = await apiFetch(`${API_BASE}/repeater/tabs`);
   if (!res.ok) throw new Error("Failed to list tabs");
   return res.json();
 }
 
 export async function createTab(body: CreateRepeaterTab): Promise<RepeaterTab> {
-  const res = await fetch(`${API_BASE}/repeater/tabs`, {
+  const res = await apiFetch(`${API_BASE}/repeater/tabs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -34,7 +35,7 @@ export async function createTab(body: CreateRepeaterTab): Promise<RepeaterTab> {
 }
 
 export async function updateTab(id: number, body: UpdateRepeaterTab): Promise<RepeaterTab> {
-  const res = await fetch(`${API_BASE}/repeater/tabs/${id}`, {
+  const res = await apiFetch(`${API_BASE}/repeater/tabs/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -47,6 +48,6 @@ export async function updateTab(id: number, body: UpdateRepeaterTab): Promise<Re
 }
 
 export async function deleteTab(id: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/repeater/tabs/${id}`, { method: "DELETE" });
+  const res = await apiFetch(`${API_BASE}/repeater/tabs/${id}`, { method: "DELETE" });
   if (!res.ok) throw new Error(`Failed to delete tab ${id}`);
 }

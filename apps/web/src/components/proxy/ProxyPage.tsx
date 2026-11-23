@@ -1,9 +1,10 @@
 /** @jsxImportSource preact */
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 import { FlowTable } from "./FlowTable";
-import { API_BASE, API_HOST } from "@/core";
+import { API_HOST } from "@/core";
+import { wsUrl } from "@/api/client";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { listFlows, clearFlows } from "@/api/traffic/calls";
+import { clearFlows, listFlows, listFlowsSince } from "@/api/traffic/calls";
 import { getHealth } from "@/api/health/calls";
 import { getProxyStatus, startProxy, stopProxy } from "@/api/proxy/calls";
 import type { FlowRecord } from "@/api/traffic/types";
@@ -76,12 +77,10 @@ export function ProxyPage() {
     pollTimerRef.current = setInterval(async () => {
       try {
         if (maxFlowIdRef.current > 0) {
-          const newFlows = await (await fetch(
-            `${API_BASE}/flows?since_id=${maxFlowIdRef.current}`,
-          )).json();
+          const newFlows = await listFlowsSince(maxFlowIdRef.current);
           if (newFlows.length > 0) {
             setFlows((prev) => [...newFlows, ...prev].slice(0, 200));
-            maxFlowIdRef.current = Math.max(...newFlows.map((f: FlowRecord) => f.id));
+            maxFlowIdRef.current = Math.max(...newFlows.map((f) => f.id));
           }
         }
       } catch { /* silent */ }
@@ -140,7 +139,7 @@ const onWsMessage = useCallback(
   );
 
   const { connected } = useWebSocket({
-    url: `ws://${API_HOST}/ws/events`,
+    url: wsUrl("/ws/events"),
     onMessage: onWsMessage,
   });
 

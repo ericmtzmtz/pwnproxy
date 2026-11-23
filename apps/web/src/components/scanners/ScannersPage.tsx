@@ -7,7 +7,7 @@ import { PluginToggle } from "@/components/plugins/PluginToggle";
 import { listTasks, pollTask, cancelTask, deleteTask } from "@/api/task/calls";
 import type { TaskStatus, TaskSummary } from "@/api/task/types";
 import { useWebSocket } from "@/hooks/useWebSocket";
-import { API_HOST } from "@/core";
+import { wsUrl } from "@/api/client";
 
 const PER_PAGE = 10;
 const POLL_INTERVAL = 2000;
@@ -64,7 +64,7 @@ export function ScannersPage() {
   const pollTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
 
   useWebSocket({
-    url: `ws://${API_HOST}/ws/events`,
+    url: wsUrl("/ws/events"),
     onMessage(msg) {
       if (msg.type === "scan.started") {
         window.dispatchEvent(new CustomEvent("pwnproxy-toast", {

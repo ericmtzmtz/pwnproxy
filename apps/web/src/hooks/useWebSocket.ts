@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
+import { TOKEN_CHANGED_EVENT, getToken, reportUnauthorized, wsProtocols } from "@/api/client";
 
 export interface WsMessage {
   type: string;
   [key: string]: unknown;
 }
+
+/**
+ * Close code the server uses when the socket offered no token or a wrong one.
+ * Mirrors `WS_UNAUTHORIZED_CLOSE_CODE` in `pwnproxy/shared/api_token.py`.
+ */
+const WS_UNAUTHORIZED_CLOSE_CODE = 4401;
 
 interface UseWebSocketOptions {
   url: string;
@@ -12,6 +19,15 @@ interface UseWebSocketOptions {
   maxReconnectDelay?: number;
 }
 
+/**
+ * The only `new WebSocket` in the Web UI.
+ *
+ * The token rides in the `Sec-WebSocket-Protocol` header (`pwnproxy-token.<t>`),
+ * never in the query string. Without a token it does not connect at all, and a
+ * `4401` close means the token was rotated: it is dropped and the gate re-asks
+ * for it instead of retrying forever. When a token is stored later, the socket
+ * connects.
+ */
 export function useWebSocket({
   url,
   onMessage,
@@ -27,9 +43,10 @@ export function useWebSocket({
   onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
+    if (!getToken()) return;
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, wsProtocols());
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -47,9 +64,13 @@ export function useWebSocket({
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setConnected(false);
       wsRef.current = null;
+      if (event.code === WS_UNAUTHORIZED_CLOSE_CODE) {
+        reportUnauthorized();
+        return;
+      }
       timerRef.current = setTimeout(() => {
         retryRef.current = Math.min(retryRef.current * 1.5, maxReconnectDelay);
         connect();
@@ -74,6 +95,13 @@ export function useWebSocket({
       disconnect();
     };
   }, [connect, disconnect]);
+
+  // A token pasted in the gate makes the waiting sockets connect.
+  useEffect(() => {
+    const handler = () => connect();
+    window.addEventListener(TOKEN_CHANGED_EVENT, handler);
+    return () => window.removeEventListener(TOKEN_CHANGED_EVENT, handler);
+  }, [connect]);
 
   return { connected, lastMessage };
 }

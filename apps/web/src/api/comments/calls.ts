@@ -1,14 +1,15 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { Comment, CommentCreatePayload, CommentUpdatePayload } from "./types";
 
 export async function listComments(flowId: number): Promise<Comment[]> {
-  const res = await fetch(`${API_BASE}/flows/${flowId}/comments`);
+  const res = await apiFetch(`${API_BASE}/flows/${flowId}/comments`);
   if (!res.ok) throw new Error(`Failed to list comments for flow ${flowId}: ${res.statusText}`);
   return res.json();
 }
 
 export async function createComment(flowId: number, payload: CommentCreatePayload): Promise<Comment> {
-  const res = await fetch(`${API_BASE}/flows/${flowId}/comments`, {
+  const res = await apiFetch(`${API_BASE}/flows/${flowId}/comments`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -22,7 +23,7 @@ export async function updateComment(
   commentId: number,
   payload: CommentUpdatePayload,
 ): Promise<Comment> {
-  const res = await fetch(`${API_BASE}/flows/${flowId}/comments/${commentId}`, {
+  const res = await apiFetch(`${API_BASE}/flows/${flowId}/comments/${commentId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -32,7 +33,7 @@ export async function updateComment(
 }
 
 export async function deleteComment(flowId: number, commentId: number): Promise<void> {
-  const res = await fetch(`${API_BASE}/flows/${flowId}/comments/${commentId}`, {
+  const res = await apiFetch(`${API_BASE}/flows/${flowId}/comments/${commentId}`, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 204) throw new Error(`Failed to delete comment ${commentId}: ${res.statusText}`);

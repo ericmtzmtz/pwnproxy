@@ -1,4 +1,5 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { LaunchResponse, ScanTask, BurpImportResponse, ScanLaunchOptions } from "./types";
 
 export async function launchScan(url: string, scanners = "", opts?: ScanLaunchOptions): Promise<LaunchResponse> {
@@ -8,7 +9,7 @@ export async function launchScan(url: string, scanners = "", opts?: ScanLaunchOp
   if (opts?.body) params.set("body", opts.body);
   if (opts?.content_type) params.set("content_type", opts.content_type);
   if (opts?.cookies) params.set("cookies", opts.cookies);
-  const res = await fetch(`${API_BASE}/scan?${params}`, { method: "POST" });
+  const res = await apiFetch(`${API_BASE}/scan?${params}`, { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }));
     throw new Error(err.detail ?? "Failed to launch scan");
@@ -17,7 +18,7 @@ export async function launchScan(url: string, scanners = "", opts?: ScanLaunchOp
 }
 
 export async function pollScan(scanId: string): Promise<ScanTask> {
-  const res = await fetch(`${API_BASE}/scan/${scanId}`);
+  const res = await apiFetch(`${API_BASE}/scan/${scanId}`);
   if (!res.ok) {
     throw new Error(`Scan ${scanId} not found`);
   }
@@ -25,7 +26,7 @@ export async function pollScan(scanId: string): Promise<ScanTask> {
 }
 
 export async function importBurpConfig(configJson: string): Promise<BurpImportResponse> {
-  const res = await fetch(`${API_BASE}/import/burp`, {
+  const res = await apiFetch(`${API_BASE}/import/burp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ config: configJson }),

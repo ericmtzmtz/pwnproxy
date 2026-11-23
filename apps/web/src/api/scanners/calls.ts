@@ -1,8 +1,9 @@
 import { API_BASE } from "@/core";
+import { apiFetch } from "@/api/client";
 import type { TriggerRequest, TriggerResponse, FlowTriggerRequest, FlowTriggerResponse } from "./types";
 
 export async function triggerScanner(body: TriggerRequest): Promise<TriggerResponse> {
-  const res = await fetch(`${API_BASE}/scanners/trigger`, {
+  const res = await apiFetch(`${API_BASE}/scanners/trigger`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -15,7 +16,7 @@ export async function triggerScanner(body: TriggerRequest): Promise<TriggerRespo
 }
 
 export async function triggerFlowScan(body: FlowTriggerRequest): Promise<FlowTriggerResponse> {
-  const res = await fetch(`${API_BASE}/scanners/trigger-flow`, {
+  const res = await apiFetch(`${API_BASE}/scanners/trigger-flow`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
