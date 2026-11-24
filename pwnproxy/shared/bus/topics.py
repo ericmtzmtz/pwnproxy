@@ -61,6 +61,12 @@ TRIAGE_UPDATED = "triage.updated"
 #: for plugins that declare ``consumes=["finding"]``.
 FINDING_STORED = "finding.stored"
 
+#: A plugin's configuration changed through the API (settings, a collection item
+#: or an action). The payload carries the **names** of the keys that changed and
+#: never a value (see ``plugins/core/config_service.py``): it is the audit trail
+#: of the change, the plugin keeps the only store.
+PLUGIN_CONFIG_CHANGED = "plugin.config_changed"
+
 
 # ── QoS classification ─────────────────────────────────────────────
 # Every topic MUST have a QoS class. New topics added without one
@@ -82,6 +88,10 @@ TOPIC_QOS: dict[str, QoSClass] = {
     AUTOSCAN_STARTED:      QoSClass.IMPORTANT,
     AUTOSCAN_COMPLETED:    QoSClass.IMPORTANT,
     FINDING_STORED:        QoSClass.CRITICAL,
+
+    # CRITICAL — an audit trail (who changed what), not telemetry: losing the
+    # last change before a crash would lose the record of it.
+    PLUGIN_CONFIG_CHANGED: QoSClass.CRITICAL,
 
     # IMPORTANT — coalesce by key (e.g. progress:{job_id}) on congestion
     CRAWL_PROGRESS:        QoSClass.IMPORTANT,

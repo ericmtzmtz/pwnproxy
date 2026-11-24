@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
-from pwnproxy.shared.bus.topics import FINDING_STORED
+from pwnproxy.shared.bus.topics import FINDING_STORED, PLUGIN_CONFIG_CHANGED
 from pwnproxy.transport.rest.auth import authorize_websocket
 
 logger = logging.getLogger(__name__)
@@ -338,6 +338,10 @@ async def ws_events(ws: WebSocket):
     bruteforce_progress_queue = hook_bus.register("bruteforce.progress")
     bruteforce_completed_queue = hook_bus.register("bruteforce.completed")
     bruteforce_failed_queue = hook_bus.register("bruteforce.failed")
+    # A configuration change made by any channel (Web UI, MCP, CLI): an open
+    # settings tab refreshes itself instead of showing stale values. Keys only,
+    # never a value (``plugins/core/config_service.py``).
+    config_changed_queue = hook_bus.register(PLUGIN_CONFIG_CHANGED)
 
     try:
         while True:
@@ -358,6 +362,7 @@ async def ws_events(ws: WebSocket):
             bruteforce_progress_task = asyncio.create_task(bruteforce_progress_queue.get())
             bruteforce_completed_task = asyncio.create_task(bruteforce_completed_queue.get())
             bruteforce_failed_task = asyncio.create_task(bruteforce_failed_queue.get())
+            config_changed_task = asyncio.create_task(config_changed_queue.get())
 
             done, pending = await asyncio.wait(
                 [flow_task, finding_task, started_task, completed_task,
@@ -365,7 +370,8 @@ async def ws_events(ws: WebSocket):
                  crawler_task, crawl_started_task, crawl_progress_task,
                  crawl_completed_task, crawl_failed_task,
                  bruteforce_started_task, bruteforce_progress_task,
-                 bruteforce_completed_task, bruteforce_failed_task],
+                 bruteforce_completed_task, bruteforce_failed_task,
+                 config_changed_task],
                 return_when=asyncio.FIRST_COMPLETED,
             )
             for task in pending:
@@ -432,6 +438,12 @@ async def ws_events(ws: WebSocket):
                             payload = json.dumps({"type": "bruteforce.completed", **result}, default=str)
                     elif task is bruteforce_failed_task and isinstance(result, dict):
                         payload = json.dumps({"type": "bruteforce.failed", **result}, default=str)
+                    elif task is config_changed_task and isinstance(result, dict):
+                        # Same envelope as every other event; the payload already
+                        # carries ``plugin``/``kind``/``target``/``changed``/``scope``.
+                        payload = json.dumps(
+                            {"type": PLUGIN_CONFIG_CHANGED, **result}, default=str
+                        )
                 except Exception:
                     # An event this relay cannot serialise (or a queue that blew
                     # up) is logged and skipped: closing the socket would take

@@ -6,6 +6,7 @@ from pwnproxy.transport.rest.findings import router as findings
 from pwnproxy.transport.rest.health import router as health
 from pwnproxy.transport.rest.interceptor import router as interceptor
 from pwnproxy.transport.rest.intruder import router as intruder
+from pwnproxy.transport.rest.plugin_config import router as plugin_config
 from pwnproxy.transport.rest.plugins import router as plugins
 from pwnproxy.transport.rest.proxy import router as proxy
 from pwnproxy.transport.rest.repeater import router as repeater
@@ -25,6 +26,7 @@ __all__ = [
     "health",
     "interceptor",
     "intruder",
+    "plugin_config",
     "plugins",
     "proxy",
     "repeater",
