@@ -22,6 +22,7 @@ from pwnproxy.plugins.core.config_schema import (
     ACTION_SCOPES,
     DEFAULT_ACTION_SCOPE,
     FIELD_TYPES,
+    IMMUTABLE_FIELD_MESSAGE,
     SCHEMA_VERSION,
     SECRET_WRITE_REQUIRES_FULL_DETAIL,
     ActionSpec,
@@ -101,6 +102,10 @@ class TestConstants:
         )
         assert SECRET_WRITE_REQUIRES_FULL_DETAIL != FORBIDDEN_SCOPE_DETAIL
 
+    def test_the_immutable_message_is_the_documented_one(self):
+        """One wording: the core refuses it and the Web UI explains it."""
+        assert IMMUTABLE_FIELD_MESSAGE == "cannot change after the item is created"
+
     def test_a_plugin_can_import_the_contract_from_base(self):
         """A.1.2: plugins import from ``pwnproxy.plugins.core.base``, not internals."""
         from pwnproxy.plugins.core import base, config_schema
@@ -138,6 +143,7 @@ class TestSchemaVocabulary:
                     "required": False,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                     "help": "Dónde corre.",
                     "default": "lab",
                     "choices": ["lab", "staging"],
@@ -148,6 +154,7 @@ class TestSchemaVocabulary:
                     "required": False,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                     "minimum": 0,
                     "maximum": 5,
                 },
@@ -164,6 +171,7 @@ class TestSchemaVocabulary:
                             "required": True,
                             "secret": False,
                             "read_only": False,
+                            "immutable": False,
                             "max_length": 64,
                         },
                         {
@@ -172,6 +180,7 @@ class TestSchemaVocabulary:
                             "required": False,
                             "secret": False,
                             "read_only": False,
+                            "immutable": False,
                             "max_items": 32,
                             "items": "string",
                         },
@@ -181,6 +190,7 @@ class TestSchemaVocabulary:
                             "required": False,
                             "secret": False,
                             "read_only": True,
+                            "immutable": False,
                             "choices": ["active", "failing"],
                         },
                         {
@@ -189,6 +199,7 @@ class TestSchemaVocabulary:
                             "required": False,
                             "secret": True,
                             "read_only": False,
+                            "immutable": False,
                             "max_length": 4096,
                         },
                     ],
@@ -207,6 +218,7 @@ class TestSchemaVocabulary:
                             "required": True,
                             "secret": False,
                             "read_only": False,
+                            "immutable": False,
                         },
                         {
                             "key": "payload",
@@ -214,6 +226,7 @@ class TestSchemaVocabulary:
                             "required": True,
                             "secret": False,
                             "read_only": False,
+                            "immutable": False,
                             "max_length": 8192,
                         },
                     ],
@@ -246,6 +259,43 @@ class TestSchemaVocabulary:
         fields.append(FieldSpec(key="b", type="string"))
 
         assert [spec.key for spec in schema.settings] == ["a"]
+
+    # @escenario plugin-config/esquema-versionado/el-esquema-declarado-se-publica-completo
+    def test_an_immutable_collection_field_is_accepted_and_published(self):
+        schema = _schema(
+            collections=[
+                CollectionSpec(
+                    name="webhooks",
+                    max_items=1,
+                    item=[
+                        FieldSpec(key="name", type="string", required=True, immutable=True),
+                        FieldSpec(key="events", type="array", items="string"),
+                    ],
+                )
+            ]
+        )
+
+        validate_schema(schema)
+
+        assert schema.to_dict()["collections"][0]["item"] == [
+            {
+                "key": "name",
+                "type": "string",
+                "required": True,
+                "secret": False,
+                "read_only": False,
+                "immutable": True,
+            },
+            {
+                "key": "events",
+                "type": "array",
+                "required": False,
+                "secret": False,
+                "read_only": False,
+                "immutable": False,
+                "items": "string",
+            },
+        ]
 
     # @escenario plugin-config/esquema-versionado/un-esquema-invalido-no-se-publica
     @pytest.mark.parametrize(
@@ -291,6 +341,52 @@ class TestSchemaVocabulary:
             (
                 {"settings": [FieldSpec(key="auth_header", type="string", secret=True, default="x")]},
                 "field 'auth_header' is secret and declares a default: the schema is published",
+            ),
+            (
+                {"settings": [FieldSpec(key="endpoint", type="string", immutable=True)]},
+                "field 'endpoint' is immutable but it is not a collection item: "
+                "a setting can always change",
+            ),
+            (
+                {
+                    "actions": [
+                        ActionSpec(
+                            name="run",
+                            parameters=[FieldSpec(key="name", type="string", immutable=True)],
+                        )
+                    ]
+                },
+                "action parameter 'name' cannot be immutable",
+            ),
+            (
+                {
+                    "collections": [
+                        CollectionSpec(
+                            name="webhooks",
+                            max_items=1,
+                            item=[
+                                FieldSpec(key="name", type="string", immutable=True, read_only=True)
+                            ],
+                        )
+                    ]
+                },
+                "field 'name' is both immutable and read-only: nothing could ever write it",
+            ),
+            (
+                {
+                    "collections": [
+                        CollectionSpec(
+                            name="webhooks",
+                            max_items=1,
+                            item=[
+                                FieldSpec(
+                                    key="signing_key", type="string", immutable=True, secret=True
+                                )
+                            ],
+                        )
+                    ]
+                },
+                "field 'signing_key' is both immutable and secret: a secret has to stay replaceable",
             ),
             (
                 {"collections": [CollectionSpec(name="ids", max_items=0)]},
@@ -428,6 +524,29 @@ class TestValidateValues:
             validate_values(fields, {}, partial=False)
 
         assert (excinfo.value.field, excinfo.value.message) == ("name", "required field is missing")
+
+    # @escenario plugin-config/validacion-antes-del-plugin/escritura-parcial
+    def test_an_immutable_field_passes_a_create_and_is_refused_in_a_patch(self):
+        """The same value is refused too: the core never asks the plugin for it."""
+        fields = [FieldSpec(key="name", type="string", required=True, immutable=True)]
+
+        validate_values(fields, {"name": "app"}, partial=False)
+
+        with pytest.raises(SchemaViolation) as excinfo:
+            validate_values(fields, {"name": "app"}, partial=True)
+
+        assert (excinfo.value.field, excinfo.value.message) == (
+            "name",
+            "cannot change after the item is created",
+        )
+
+    def test_the_other_fields_of_an_item_stay_editable(self):
+        fields = [
+            FieldSpec(key="name", type="string", required=True, immutable=True),
+            FieldSpec(key="events", type="array", items="string"),
+        ]
+
+        validate_values(fields, {"events": ["finding"]}, partial=True)
 
     def test_a_non_object_payload_is_rejected(self):
         with pytest.raises(SchemaViolation) as excinfo:

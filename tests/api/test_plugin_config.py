@@ -37,7 +37,7 @@ from pwnproxy.shared.task_model import create_task_engine, init_task_db
 from pwnproxy.transport.rest.app import app
 from pwnproxy.transport.rest.auth import FORBIDDEN_SCOPE_DETAIL
 
-from ._plugin_config_fakes import CANARY, NAME, ConfigPlugin, NoSchemaPlugin
+from ._plugin_config_fakes import CANARY, NAME, ConfigPlugin, NoSchemaPlugin, immutable_schema
 
 #: The schema of ``tests/api/_plugin_config_fakes.py`` written out by hand, field
 #: by field: the published form is the contract, not a re-serialisation of the fake.
@@ -51,6 +51,7 @@ EXPECTED_SCHEMA = {
             "required": False,
             "secret": False,
             "read_only": False,
+            "immutable": False,
             "default": "lab",
             "choices": ["lab", "staging"],
         },
@@ -60,6 +61,7 @@ EXPECTED_SCHEMA = {
             "required": False,
             "secret": False,
             "read_only": False,
+            "immutable": False,
             "minimum": 0,
             "maximum": 5,
         },
@@ -69,6 +71,7 @@ EXPECTED_SCHEMA = {
             "required": False,
             "secret": True,
             "read_only": False,
+            "immutable": False,
             "max_length": 64,
         },
     ],
@@ -83,6 +86,7 @@ EXPECTED_SCHEMA = {
                     "required": True,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                     "max_length": 16,
                 },
                 {
@@ -91,6 +95,7 @@ EXPECTED_SCHEMA = {
                     "required": False,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                     "max_items": 4,
                     "items": "string",
                 },
@@ -100,6 +105,7 @@ EXPECTED_SCHEMA = {
                     "required": False,
                     "secret": False,
                     "read_only": True,
+                    "immutable": False,
                     "choices": ["active", "failing"],
                 },
                 {
@@ -108,6 +114,7 @@ EXPECTED_SCHEMA = {
                     "required": False,
                     "secret": True,
                     "read_only": False,
+                    "immutable": False,
                     "max_length": 64,
                 },
             ],
@@ -125,6 +132,7 @@ EXPECTED_SCHEMA = {
                     "required": True,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                 }
             ],
         },
@@ -139,6 +147,7 @@ EXPECTED_SCHEMA = {
                     "required": False,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                 }
             ],
         },
@@ -882,6 +891,151 @@ class TestCollections:
         assert (response.status_code, response.json()) == (
             404,
             {"detail": f"plugin '{NAME}' declares no collection 'schedules'"},
+        )
+
+
+class TestImmutableItemFields:
+    """``immutable`` over the wire: sent on the create, refused in every ``PATCH``.
+
+    The schema is ``immutable_schema()`` of ``_plugin_config_fakes.py``: the
+    contract's own schema plus ``webhooks.url`` frozen, the field the Web UI paints
+    disabled while editing an item.
+    """
+
+    # @escenario plugin-config/esquema-versionado/el-esquema-declarado-se-publica-completo
+    def test_the_schema_publishes_the_flag_the_editor_reads(self, plugin_config):
+        """What the Web UI needs to disable the input on an existing item."""
+        scene = plugin_config(ConfigPlugin(immutable_schema()))
+
+        response = scene.client.get(f"/api/v1/plugins/{NAME}/schema")
+
+        assert (response.status_code, response.json()["collections"][0]["item"][0]) == (
+            200,
+            {
+                "key": "url",
+                "type": "string",
+                "required": True,
+                "secret": False,
+                "read_only": False,
+                "immutable": True,
+                "max_length": 2048,
+            },
+        )
+
+    # @escenario plugin-config/validacion-del-nucleo/escritura-parcial
+    def test_the_create_accepts_the_immutable_field(self, plugin_config):
+        scene = plugin_config(ConfigPlugin(immutable_schema()))
+
+        response = scene.client.post(
+            f"/api/v1/plugins/{NAME}/collections/webhooks",
+            json={"values": {"name": "app", "url": "https://hooks.example.test/app"}},
+        )
+
+        assert (response.status_code, response.json(), scene.plugin.call_count("collection_create")) == (
+            201,
+            {
+                "id": "app",
+                "values": {
+                    "url": {"value": "https://hooks.example.test/app"},
+                    "name": {"value": "app"},
+                    "signing_key": {"set": False},
+                },
+            },
+            1,
+        )
+
+    def test_a_patch_carrying_the_immutable_field_is_422_without_asking_the_plugin(
+        self, plugin_config
+    ):
+        scene = plugin_config(ConfigPlugin(immutable_schema()))
+        created = scene.client.post(
+            f"/api/v1/plugins/{NAME}/collections/webhooks",
+            json={"values": {"name": "app", "url": "https://hooks.example.test/app"}},
+        )
+
+        response = scene.client.patch(
+            f"/api/v1/plugins/{NAME}/collections/webhooks/app",
+            json={"values": {"url": "https://hooks.example.test/otra"}},
+        )
+
+        assert (
+            created.status_code,
+            response.status_code,
+            response.json(),
+            scene.plugin.call_count("collection_update"),
+            scene.plugin.items,
+        ) == (
+            201,
+            422,
+            {"detail": {"field": "webhooks.url", "message": "cannot change after the item is created"}},
+            0,
+            [
+                {
+                    "id": "app",
+                    "url": "https://hooks.example.test/app",
+                    "name": "app",
+                    "signing_key__set": False,
+                }
+            ],
+        )
+
+    def test_the_value_it_already_has_is_refused_too(self, plugin_config):
+        """A ``PATCH`` that repeats the current value is still a ``422``.
+
+        The core would have to read the item from the plugin to tell "same" from
+        "different", so the rule is the simple one: the key does not belong in the
+        body of an update, and the clients do not send it.
+        """
+        scene = plugin_config(ConfigPlugin(immutable_schema()))
+        scene.client.post(
+            f"/api/v1/plugins/{NAME}/collections/webhooks",
+            json={"values": {"name": "app", "url": "https://hooks.example.test/app"}},
+        )
+
+        response = scene.client.patch(
+            f"/api/v1/plugins/{NAME}/collections/webhooks/app",
+            json={"values": {"url": "https://hooks.example.test/app"}},
+        )
+
+        assert (
+            response.status_code,
+            response.json(),
+            scene.plugin.call_count("collection_update"),
+        ) == (
+            422,
+            {"detail": {"field": "webhooks.url", "message": "cannot change after the item is created"}},
+            0,
+        )
+
+    # @escenario plugin-config/validacion-del-nucleo/escritura-parcial
+    def test_a_patch_of_the_other_fields_still_works(self, plugin_config):
+        scene = plugin_config(ConfigPlugin(immutable_schema()))
+        scene.client.post(
+            f"/api/v1/plugins/{NAME}/collections/webhooks",
+            json={"values": {"name": "app", "url": "https://hooks.example.test/app"}},
+        )
+
+        response = scene.client.patch(
+            f"/api/v1/plugins/{NAME}/collections/webhooks/app",
+            json={"values": {"events": ["finding"], "name": "app-2"}},
+        )
+
+        assert (
+            response.status_code,
+            response.json(),
+            scene.plugin.call_count("collection_update"),
+        ) == (
+            200,
+            {
+                "id": "app",
+                "values": {
+                    "url": {"value": "https://hooks.example.test/app"},
+                    "name": {"value": "app-2"},
+                    "events": {"value": ["finding"]},
+                    "signing_key": {"set": False},
+                },
+            },
+            1,
         )
 
 

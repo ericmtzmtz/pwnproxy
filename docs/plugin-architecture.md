@@ -258,6 +258,9 @@ WEBHOOKS = CollectionSpec(
     max_items=5,                   # capacity: the server answers 409 when it is full
     item=(
         FieldSpec("name", "string", required=True, max_length=64,
+                  # Written on the create and refused in a PATCH: the item's key
+                  # cannot change.
+                  immutable=True,
                   help="Unique; how the client addresses the item."),
         FieldSpec("url", "string", required=True, max_length=2048,
                   help="Where the test request goes. The plugin validates it."),
@@ -294,13 +297,13 @@ def config_schema(self) -> PluginConfigSchema:
 ```
 
 `FieldSpec` attributes: `key`, `type` (`string` \| `integer` \| `number` \| `boolean` \| `enum` \|
-`array`), `help`, `required`, `secret`, `read_only`, `default`, `choices`, `minimum`, `maximum`,
-`max_length`, `max_items`, `items`. `required` only bites on a **create**: a `PATCH` validates the
-keys it carries and leaves every other key alone. Array items are strings today.
+`array`), `help`, `required`, `secret`, `read_only`, `immutable`, `default`, `choices`, `minimum`,
+`maximum`, `max_length`, `max_items`, `items`. `required` only bites on a **create**: a `PATCH`
+validates the keys it carries and leaves every other key alone. Array items are strings today.
 
 The published form (`GET /api/v1/plugins/{name}/schema`) is `FieldSpec.to_dict()`: `key`, `type`,
-`required`, `secret` and `read_only` are **always** present — a client should not have to tell
-"absent" from `false` — while `help` and the type-specific attributes (`default`, `choices`,
+`required`, `secret`, `read_only` and `immutable` are **always** present — a client should not have
+to tell "absent" from `false` — while `help` and the type-specific attributes (`default`, `choices`,
 `minimum`, `maximum`, `max_length`, `max_items`, `items`) appear only when declared. The payload is
 `{"plugin", "schema_version", "settings", "collections", "actions"}` and nothing else;
 `schema_version` is `1`, and growing the shape (a new field type, a new attribute) means a new
@@ -337,19 +340,29 @@ no method simply has no configuration, and the routes answer `200` with empty li
 - **`secret` is only allowed on `string`**, so `{"set": bool}` can never be confused with a value,
   and a secret field **cannot declare a `default`** — the schema is published, so a default would
   leak it.
+- **`immutable` is written once, on the create.** It is only legal on a **collection item field**, and
+  the core refuses the key in every `PATCH` with `422` `{"field": "webhooks.name", "message": "cannot
+  change after the item is created"}` **before** your `collection_update` is called — the same value it
+  already has is refused too, because telling "same" from "different" would mean reading the item from
+  you on every write. The clients paint it disabled while editing and do not send it. Never combine it
+  with `read_only` (nothing could ever write it) nor with `secret` (a credential has to stay
+  replaceable: a typo in a frozen secret could not be fixed); the schema is rejected with `409`.
 - **A secret is write-only.** `render_values()` is the only place that builds the read form: for a
   secret field it emits `{"set": …}` from `"<key>__set"` and **discards whatever the plugin returned
   for that key**, so a plugin that forgets its half of the contract leaks nothing. Only key *names*
   reach the audit event and the log line.
-- **An action parameter can be neither `secret` nor `read_only`** (the schema is rejected with
-  `409`). A long action persists its parameters in the task store, so a secret there would be a
-  secret at rest outside the plugin's own store: an action uses a secret the plugin already holds.
+- **An action parameter can be neither `secret` nor `read_only` nor `immutable`** (the schema is
+  rejected with `409`). A long action persists its parameters in the task store, so a secret there
+  would be a secret at rest outside the plugin's own store: an action uses a secret the plugin
+  already holds. And an action's parameters are a fresh call every time, not an item with a key of
+  its own, so freezing one would have nothing to freeze.
 - **An action result never carries a secret.** The task store persists results and the MCP reads
   them: return the finding, the status code or the diff, never the credential that produced it.
 - **The core validates the shape; the plugin decides the business rule.** The core checks a
   declared key (`unknown field`), the JSON type, `choices`, `minimum`/`maximum`, `max_length`,
-  `max_items`, `required` on create, `read_only` refused, `null` refused, and the collection's
-  capacity (`409` `collection '<c>' is full (max <n> items)`). Everything else is yours: uniqueness,
+  `max_items`, `required` on create, `read_only` refused, `immutable` refused on a `PATCH`, `null`
+  refused, and the collection's capacity (`409` `collection '<c>' is full (max <n> items)`).
+  Everything else is yours: uniqueness,
   "webhook names must be unique", whether the URL answers, what "failing" means. Raise
   `PluginValidationError(field, message)` — the client receives **your** `422`
   `{"field", "message"}`, untouched — and do not widen a `SchemaViolation` nor invent an HTTP status.
@@ -815,6 +828,11 @@ path the REST routes, the MCP tools and the CLI take — and not by reaching int
 - **The collection respects `max_items`.** Fill it to the declared capacity and assert the next
   create is a `409` `collection 'webhooks' is full (max 5 items)`: the core enforces the count, the
   test proves the number you declared is the one you meant.
+- **An `immutable` field is accepted once and refused afterwards.** Create an item with the field (a
+  `201` that carries it), then `PATCH` the same key — the same value included — and assert the `422`
+  `{"field": "webhooks.name", "message": "cannot change after the item is created"}` with your
+  `collection_update` **not** called. A field you did not mark keeps changing normally: that pair is
+  what proves the rule is per field and not a frozen item.
 
 ---
 

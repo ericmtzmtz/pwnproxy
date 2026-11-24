@@ -15,6 +15,8 @@ import { bareField, humanize, rawValue } from "./format";
  * It starts from the server's values (a secret has none to copy, so it starts
  * empty and stays untouched unless the user types), sends only what the user
  * touched, and shows the server's `detail` next to the field a `422` names.
+ * An `immutable` field is `locked` while editing (the server refuses it in a
+ * `PATCH`) and is left out of the body; on the create it is a normal input.
  * The parent decides what to do after `onSaved` — this component does not know
  * how the collection is loaded.
  */
@@ -62,6 +64,10 @@ export function ItemEditor({
     const values: Record<string, unknown> = {};
     for (const field of spec.item) {
       if (field.read_only) continue;
+      // An immutable field travels only on the create: it is part of what the
+      // item is and the server answers `422` when a `PATCH` carries it. The
+      // edit form shows it (`locked`) and leaves it out of the body.
+      if (item !== undefined && field.immutable) continue;
       const value = draft[field.key];
       if (value === undefined) continue;
       if (field.secret && (typeof value !== "string" || value.length === 0)) continue;
@@ -114,6 +120,7 @@ export function ItemEditor({
             idPrefix={prefix}
             disabled={busy || (field.secret && !canWriteSecret)}
             disabledReason={field.secret && !canWriteSecret ? "Your token cannot write secrets." : undefined}
+            locked={item !== undefined && field.immutable}
             error={failure?.field && bareField(failure.field) === field.key ? failure.message : null}
             onChange={(value) => setDraft((previous) => ({ ...previous, [field.key]: value }))}
           />

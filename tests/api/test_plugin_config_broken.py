@@ -149,6 +149,7 @@ EXPECTED_SCHEMA = {
             "required": True,
             "secret": False,
             "read_only": False,
+            "immutable": False,
             "max_length": 128,
         },
         {
@@ -157,6 +158,7 @@ EXPECTED_SCHEMA = {
             "required": False,
             "secret": False,
             "read_only": False,
+            "immutable": False,
             "minimum": 0,
             "maximum": 5,
         },
@@ -172,6 +174,7 @@ EXPECTED_SCHEMA = {
                     "required": True,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                     "max_length": 16,
                 },
                 {
@@ -180,6 +183,7 @@ EXPECTED_SCHEMA = {
                     "required": False,
                     "secret": True,
                     "read_only": False,
+                    "immutable": False,
                     "max_length": 64,
                 },
             ],

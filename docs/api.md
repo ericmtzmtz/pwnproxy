@@ -343,27 +343,27 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/plugins/exa
   "schema_version": 1,
   "settings": [
     {"key": "environment", "type": "enum", "required": false, "secret": false,
-     "read_only": false, "default": "lab", "choices": ["lab", "staging"],
+     "read_only": false, "immutable": false, "default": "lab", "choices": ["lab", "staging"],
      "help": "Where the checks run."},
     {"key": "retries", "type": "integer", "required": false, "secret": false,
-     "read_only": false, "minimum": 0, "maximum": 5}
+     "read_only": false, "immutable": false, "minimum": 0, "maximum": 5}
   ],
   "collections": [
     {"name": "webhooks", "max_items": 5, "help": "Webhooks the plugin calls.",
      "item": [
        {"key": "name", "type": "string", "required": true, "secret": false,
-        "read_only": false, "max_length": 64, "help": "Unique."},
+        "read_only": false, "immutable": true, "max_length": 64, "help": "Unique."},
        {"key": "url", "type": "string", "required": true, "secret": false,
-        "read_only": false, "max_length": 2048},
+        "read_only": false, "immutable": false, "max_length": 2048},
        {"key": "events", "type": "array", "required": false, "secret": false,
-        "read_only": false, "items": "string", "max_items": 32},
+        "read_only": false, "immutable": false, "items": "string", "max_items": 32},
        {"key": "status", "type": "enum", "required": false, "secret": false,
-        "read_only": true, "choices": ["active", "failing"],
+        "read_only": true, "immutable": false, "choices": ["active", "failing"],
         "help": "The plugin recomputes it; a client that sends it gets 422."},
        {"key": "signing_key", "type": "string", "required": false, "secret": true,
-        "read_only": false, "max_length": 4096},
+        "read_only": false, "immutable": false, "max_length": 4096},
        {"key": "auth_header", "type": "string", "required": false, "secret": true,
-        "read_only": false, "max_length": 4096}
+        "read_only": false, "immutable": false, "max_length": 4096}
      ]}
   ],
   "actions": [
@@ -371,9 +371,9 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/plugins/exa
      "help": "Sends one test request to a webhook.",
      "parameters": [
        {"key": "name", "type": "string", "required": true, "secret": false,
-        "read_only": false},
+        "read_only": false, "immutable": false},
        {"key": "payload", "type": "string", "required": true, "secret": false,
-        "read_only": false, "max_length": 8192}
+        "read_only": false, "immutable": false, "max_length": 8192}
      ]}
   ]
 }
@@ -381,9 +381,14 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/plugins/exa
 
 - Always `200`, with **empty lists** when the plugin declares no configuration (never a `404`, so a
   client has one code path).
-- `key`, `type`, `required`, `secret` and `read_only` are always present; `help` and the
+- `key`, `type`, `required`, `secret`, `read_only` and `immutable` are always present; `help` and the
   type-specific attributes (`default`, `choices`, `minimum`, `maximum`, `max_length`, `max_items`,
   `items`) only when declared. Types: `string`, `integer`, `number`, `boolean`, `enum`, `array`.
+- `immutable` marks an item field that is written **once**, on the create, and refused in every
+  `PATCH` (`422`, even when the value is the one the item already has). It is only legal on a
+  collection item field and never together with `read_only` or `secret`: the plugin's schema is
+  rejected with `409` otherwise. A client shows it disabled while editing an item and does not send
+  it.
 - The schema is public and never contains a secret *value*: a `secret` field is `string` only and
   cannot declare a `default`.
 
@@ -433,9 +438,15 @@ curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/js
 The write answers with the settings again. A declared `secret` is written the same way — a
 collection item, `-d '{"values": {"signing_key": "<key>"}}'` — and comes back as `{"set": true}`,
 never as a value. An unknown key, a wrong type, a value outside
-`choices`/`minimum`/`maximum`/`max_length`/`max_items`, a missing `required` field on a create or a
-`read_only` field sent by the client is a `422` from the core; a rule of the plugin (uniqueness,
-"webhook names must be unique", …) is a `422` from the plugin, with its own message.
+`choices`/`minimum`/`maximum`/`max_length`/`max_items`, a missing `required` field on a create, a
+`read_only` field or an `immutable` field sent in a `PATCH` is a `422` from the core; a rule of the
+plugin (uniqueness, "webhook names must be unique", …) is a `422` from the plugin, with its own
+message.
+
+An `immutable` field goes in the `POST` (it is part of what the item *is*) and never in a `PATCH`:
+`-d '{"values": {"name": "app"}}'` against an existing `webhooks/app` answers `422`
+`{"detail": {"field": "webhooks.name", "message": "cannot change after the item is created"}}`
+without the plugin being called, and that includes sending the value the item already has.
 
 #### Actions
 

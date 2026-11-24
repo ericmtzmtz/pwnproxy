@@ -85,6 +85,29 @@ def default_schema() -> PluginConfigSchema:
     )
 
 
+def immutable_schema() -> PluginConfigSchema:
+    """The contract's schema with one frozen item field: ``webhooks.url``.
+
+    ``url`` is written on the create and refused afterwards (``immutable``), the
+    shape the Web UI paints as a disabled input while editing an item. Everything
+    else is :func:`default_schema`, so a test can tell the two schemas apart by
+    that one field. ``url`` is ``required`` on purpose: the pair
+    ``immutable`` + ``required`` is legal, because the value is demanded exactly
+    once, on the create.
+    """
+    base = default_schema()
+    webhooks = base.collections[0]
+    item = (
+        FieldSpec(key="url", type="string", required=True, immutable=True, max_length=2048),
+        *webhooks.item,
+    )
+    return PluginConfigSchema(
+        settings=base.settings,
+        collections=[CollectionSpec(name=webhooks.name, item=item, max_items=webhooks.max_items)],
+        actions=base.actions,
+    )
+
+
 class NoSchemaPlugin:
     """A plugin with no configuration contract at all (like the six scanners)."""
 
