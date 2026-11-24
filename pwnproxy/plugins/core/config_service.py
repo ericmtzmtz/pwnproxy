@@ -10,13 +10,16 @@ receives **the plugin's** message, untouched.
 Two rules shape this module:
 
 * **The plugin does not have to be loaded to be configured.** A plugin that
-  cannot load (no license, a bad value that breaks ``on_load()``) would otherwise
-  be impossible to fix through any channel except its own CLI. When it is not
+  cannot load — its ``on_load()`` fails because of its own configuration or
+  because an external requirement is not ready yet — would otherwise be
+  impossible to fix through any channel except its own CLI. When it is not
   loaded, one *disposable* instance is created with the catalog's factory and
   ``on_load()`` is **never** called on it (this is synchronous and the instance is
   dropped at the end of the call). Consequence for plugin authors: creating an
   instance must have no side effects — no network, no store opened in
-  ``__init__``. Actions are the exception: they need a live plugin (``409``).
+  ``__init__``. Actions are the exception: they need a live plugin (``409``), and
+  so does a plugin whose *constructor* failed: with no factory there is nothing
+  to ask (``409`` on every route).
 * **Writing does not reload the plugin.** ``config_write`` and ``collection_*``
   are the single seam: the plugin persists *and* applies the change to its live
   state there. Reloading would replay the events the bus buffered while the
@@ -63,7 +66,7 @@ from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from pwnproxy.plugins.core.catalog import PluginRecord
+from pwnproxy.plugins.core.catalog import FAILURE_ON_LOAD, PluginRecord
 from pwnproxy.plugins.core.config_schema import (
     CollectionSpec,
     InvalidPluginSchema,
@@ -640,16 +643,22 @@ class PluginConfigService:
         factory: ``on_load()`` is never called, the instance is not registered in
         the loader and it is dropped when the call ends.
 
+        A plugin whose ``on_load()`` failed is still configurable: the catalog
+        keeps its factory for exactly this reason (``record.failed_phase`` is
+        ``FAILURE_ON_LOAD``). Any other failure — discovery, or a factory that
+        raises — leaves nothing to ask, so every route answers ``409``.
+
         Raises:
             PluginNotFound: ``name`` is not in the catalog (``404``).
-            PluginCannotRun: The catalog reports an error or the factory raises (``409``).
+            PluginCannotRun: The catalog reports a failure that left no usable
+                factory, the factory raises, or there is no factory at all (``409``).
         """
         loader = self._require_loader()
         loaded = loader.get_plugin(name)
         if loaded is not None:
             return loaded
         record = self._record(name)
-        if record.error:
+        if record.error and record.failed_phase != FAILURE_ON_LOAD:
             raise PluginCannotRun(name, record.error)
         if record.factory is None:
             raise PluginCannotRun(name, "the catalog has no factory for it")

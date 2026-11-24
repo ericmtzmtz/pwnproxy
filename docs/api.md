@@ -480,12 +480,20 @@ without looking at the values, so no `422` can describe a secret.
 
 An unknown or absent scope fails closed (it is treated as insufficient).
 
-#### Configuration works while the plugin is disabled; actions do not
+#### Configuration works while the plugin is disabled or its `on_load()` fails; actions do not
 
-A plugin that cannot load — no license, or a value that breaks `on_load()` — would otherwise be
-impossible to fix outside its own CLI. So reads and writes build a **disposable** instance from the
-catalog's factory and never call `on_load()` on it. An action means "do it now", which a plugin that
-is off cannot promise: it answers `409` `plugin '<n>' is not loaded`.
+A plugin whose `on_load()` fails because of its own configuration — or because an external
+requirement is not met yet — would otherwise be impossible to fix outside its own CLI. So reads and
+writes build a **disposable** instance from the catalog's factory and never call `on_load()` on it.
+The plugin stays **broken** everywhere else: it is not loaded, `GET /api/v1/plugins` reports the same
+`error` and `enabled: false`, toggling it still answers `409`, and its actions answer `409`
+(`plugin '<n>' cannot run: <reason>`), because an action means "do it now" and a plugin that is off
+cannot promise it.
+
+The other failure is different: when the **constructor** raises (or discovery never produced a
+factory) there is no instance to ask, so every configuration route answers `409` with the catalog's
+reason. A plugin with no configuration contract at all is unaffected: it answers `200` with an empty
+schema and empty values, as before.
 
 A write **does not reload** the plugin: the plugin's own `config_write`/`collection_*` persists the
 change and applies it to the live state, which is the only seam. Activation stays a separate,

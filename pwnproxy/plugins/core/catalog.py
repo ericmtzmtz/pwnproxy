@@ -54,6 +54,19 @@ SOURCE_BUILTIN = "builtin"
 SOURCE_INSTALLED = "installed"
 BUILTIN_PACKAGE = "pwnproxy"
 
+#: Values of :attr:`PluginRecord.failed_phase` — the *runtime* phases a plugin
+#: can fail in. A record whose discovery failed (import, entry point, metadata)
+#: keeps ``failed_phase`` at ``None``: it never got a factory in the first place.
+#:
+#: ``FAILURE_ON_LOAD`` is the only one that **keeps** ``factory``, and on purpose:
+#: the plugin cannot run (the loader never loads a record whose ``error`` is set),
+#: but the configuration API can still build a disposable instance and let the
+#: user fix the setting that made ``on_load()`` fail. A plugin whose
+#: ``on_load()`` fails because of its own configuration or because an external
+#: requirement is not met yet must remain configurable.
+FAILURE_INSTANTIATION = "instantiation"
+FAILURE_ON_LOAD = "on_load"
+
 
 @dataclass(frozen=True)
 class PluginRecord:
@@ -68,12 +81,19 @@ class PluginRecord:
         entry_point: ``"module:Class"`` for installed plugins; the module path
             for built-ins.
         factory: Callable returning a plugin instance, or ``None`` when the
-            plugin could not be resolved (see ``error``).
+            plugin could not be resolved (see ``error``). A plugin that failed
+            ``on_load()`` keeps its factory: it cannot run, but it can still be
+            configured through a disposable instance (see ``failed_phase``).
         error: Why discovery failed, or ``None`` when the plugin is usable.
         metadata: Metadata captured at discovery time (``None`` for a plugin
             whose import or entry point failed). Used to publish the optional
             fields of ``GET /api/v1/plugins`` even when the plugin is disabled
             and therefore not instantiated by the loader.
+        failed_phase: Runtime phase that failed — ``FAILURE_INSTANTIATION``,
+            ``FAILURE_ON_LOAD`` — or ``None`` when the plugin was never loaded
+            or never failed at runtime. Together with ``error`` it is the one
+            datum that says whether a broken plugin can still be configured:
+            only ``FAILURE_ON_LOAD`` can.
     """
 
     name: str
@@ -84,6 +104,7 @@ class PluginRecord:
     factory: Any | None = None
     error: str | None = None
     metadata: PluginMetadata | None = None
+    failed_phase: str | None = None
 
 
 def builtin_scanners_path() -> Path:
@@ -328,11 +349,18 @@ def scan_config(
 
 
 def _catalog_enabled(records: Iterable[PluginRecord], activation: dict[str, bool]) -> set[str]:
-    """Return the names that are enabled according to ``[plugin.activation]``."""
+    """Return the names that are enabled according to ``[plugin.activation]``.
+
+    A record with an ``error`` is never included, even when it still carries a
+    factory: the factory of a plugin whose ``on_load()`` failed is kept for the
+    configuration API only, and nothing in the scan path may load that plugin.
+    """
     return {
         record.name
         for record in records
-        if record.factory is not None and activation.get(record.name, record.source == SOURCE_BUILTIN)
+        if record.error is None
+        and record.factory is not None
+        and activation.get(record.name, record.source == SOURCE_BUILTIN)
     }
 
 

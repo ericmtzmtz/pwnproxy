@@ -360,8 +360,12 @@ no method simply has no configuration, and the routes answer `200` with empty li
   tasks.
 - **`__init__` must have no side effects** (no network, no store opened). A plugin that is **not
   loaded** is still configurable: the core builds a *disposable* instance from the catalog's factory
-  and never calls `on_load()` on it. Actions are the exception — they need a live plugin (`409`
-  `plugin '<n>' is not loaded`).
+  and never calls `on_load()` on it. That includes a plugin whose **`on_load()` failed** — its
+  factory is kept on purpose, so a value or an external requirement that made `on_load()` raise can
+  be fixed through the API. It still does not run: the loader never loads a record that carries an
+  `error`, and its actions answer `409`. A plugin whose **constructor raised** has no factory (there
+  is nothing to ask), so every configuration route answers `409` with the catalog's reason. Actions
+  are the other exception — they need a live plugin (`409` `plugin '<n>' is not loaded`).
 - **Activation is not configuration.** The `toggle` flips the machine-wide `[plugin.activation]`
   flag; it does not touch your values and your `config_write` does not enable anything.
 
@@ -657,6 +661,9 @@ first and only then applies the change in memory.
 - A broken plugin (import, instantiation or `on_load` failure) MUST be recorded in the
   catalog with its reason and skipped; the proxy keeps starting and the other plugins
   keep scanning.
+- A record that failed `on_load()` keeps its **factory** for the configuration API (§3.4) and
+  still MUST NOT be loaded: every load path refuses a record whose `error` is set, whatever it
+  carries. A record whose instantiation failed keeps no factory at all.
 - A name collision is resolved in favour of the built-in; the installed one stays in the
   catalog with `error` and never loads.
 
