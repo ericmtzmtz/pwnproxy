@@ -67,6 +67,12 @@ SECRET_WRITE_REQUIRES_FULL_DETAIL = (
     "Secret fields can only be written with a token of scope 'full' (Web UI or CLI)"
 )
 
+#: Body of the ``422`` the core sends when a ``PATCH`` carries an ``immutable``
+#: field. Written here and not in the service so a client that refuses the key
+#: locally (the Web UI disables the input) can quote the same rule instead of
+#: inventing a second wording that could drift.
+IMMUTABLE_FIELD_MESSAGE = "cannot change after the item is created"
+
 
 class InvalidPluginSchema(Exception):
     """The plugin's schema breaks the vocabulary.
@@ -153,6 +159,12 @@ class FieldSpec:
             never be confused with a value. See :func:`render_values`.
         read_only: The plugin owns the value (e.g. a ``status`` it recomputes); a
             client that sends it gets ``422``.
+        immutable: Written once, on create, and never again (e.g. the ``name``
+            that addresses an item). Only a collection item field may declare it;
+            a client that sends it in a ``PATCH`` gets ``422`` even when the value
+            is the one the item already has. Never combinable with ``read_only``
+            (nothing could write it) nor with ``secret`` (a credential has to stay
+            replaceable, and a frozen one could not be fixed after a typo).
         default: Value the plugin reports when it has none. ``None`` means "no
             default declared"; a secret field cannot declare one, because the
             schema is published.
@@ -170,6 +182,7 @@ class FieldSpec:
     required: bool = False
     secret: bool = False
     read_only: bool = False
+    immutable: bool = False
     default: Any = None
     choices: Sequence[str] = ()
     minimum: int | float | None = None
@@ -197,6 +210,7 @@ class FieldSpec:
             "required": self.required,
             "secret": self.secret,
             "read_only": self.read_only,
+            "immutable": self.immutable,
         }
         if self.help:
             data["help"] = self.help
@@ -366,7 +380,7 @@ def validate_schema(schema: PluginConfigSchema) -> None:
             raise InvalidPluginSchema("collection name must be a non-empty string")
         if spec.max_items < 1:
             raise InvalidPluginSchema(f"collection '{spec.name}' must declare max_items >= 1")
-        _validate_fields(spec.item, where=f"collection '{spec.name}'")
+        _validate_fields(spec.item, where=f"collection '{spec.name}'", collection=True)
 
     _validate_unique([spec.name for spec in schema.actions], kind="action")
     for spec in schema.actions:
@@ -394,7 +408,8 @@ def validate_values(
             ``item`` of a collection).
         values: Flat mapping sent by the client.
         partial: ``True`` for a ``PATCH`` (only the keys present are validated);
-            ``False`` for a create, where every ``required`` field must be there.
+            ``False`` for a create, where every ``required`` field must be there
+            and an ``immutable`` field is accepted.
 
     Raises:
         SchemaViolation: The first broken rule. The message names the rule, never
@@ -413,6 +428,16 @@ def validate_values(
             if spec.required and not partial:
                 raise SchemaViolation(spec.key, "required field is missing")
             continue
+        # An immutable field is part of what the item is: it is sent on
+        # the create and never again. The core decides it here, from the schema
+        # and the body alone, so the plugin is not called and no client can
+        # forget the rule. `partial` is the whole signal: a create accepts it, a
+        # `PATCH` refuses it **even when the value is the one the item already
+        # has**, because the core would have to ask the plugin for the current
+        # value to tell the difference (an extra call on every write) and the
+        # clients do not send the key at all.
+        if partial and spec.immutable:
+            raise SchemaViolation(spec.key, IMMUTABLE_FIELD_MESSAGE)
         _validate_value(spec, values[spec.key])
 
 
@@ -492,6 +517,7 @@ def _validate_fields(
     *,
     where: str,
     action: bool = False,
+    collection: bool = False,
 ) -> None:
     """Validate the field list of one object (settings, a collection item, an action)."""
     _validate_unique([spec.key for spec in fields], kind="field")
@@ -509,6 +535,13 @@ def _validate_fields(
             )
         if action and spec.read_only:
             raise InvalidPluginSchema(f"action parameter '{spec.key}' cannot be read-only")
+        if action and spec.immutable:
+            raise InvalidPluginSchema(f"action parameter '{spec.key}' cannot be immutable")
+        if spec.immutable and not (collection or action):
+            raise InvalidPluginSchema(
+                f"field '{spec.key}' is immutable but it is not a collection item: "
+                "a setting can always change"
+            )
         _validate_attributes(spec)
 
 
@@ -523,6 +556,14 @@ def _validate_attributes(spec: FieldSpec) -> None:
     if spec.secret and spec.default is not None:
         raise InvalidPluginSchema(
             f"field '{name}' is secret and declares a default: the schema is published"
+        )
+    if spec.immutable and spec.read_only:
+        raise InvalidPluginSchema(
+            f"field '{name}' is both immutable and read-only: nothing could ever write it"
+        )
+    if spec.immutable and spec.secret:
+        raise InvalidPluginSchema(
+            f"field '{name}' is both immutable and secret: a secret has to stay replaceable"
         )
     if spec.choices and kind != "enum":
         raise InvalidPluginSchema(f"field '{name}' declares choices but is not an enum")

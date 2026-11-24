@@ -13,6 +13,9 @@ import { formatValue, initialValue, labelFor, rawValue, secretIsSet } from "./fo
  *   it. Only what the user types is sent (`PATCH` of the changed keys).
  * - A `read_only` field is text, not an input: the plugin owns it and the server
  *   answers `422` for any write.
+ * - An `immutable` field is a normal input while the item is being created and a
+ *   muted, non-editable one once it exists (`locked`): the server refuses it in a
+ *   `PATCH`, so the edit form does not send it.
  */
 
 export interface SchemaFieldProps {
@@ -24,6 +27,13 @@ export interface SchemaFieldProps {
   disabled?: boolean;
   /** Shown next to the control when it is disabled on purpose (e.g. `agent`). */
   disabledReason?: string;
+  /**
+   * `true` when the value can no longer change: an `immutable` field of an item
+   * that already exists (written on the create, refused by the server in a
+   * `PATCH`). The create form passes `false`, so the same field is a normal input
+   * there.
+   */
+  locked?: boolean;
   error?: string | null;
   /** Prefix for the generated ids (`useId()` of the owning form). */
   idPrefix: string;
@@ -46,6 +56,7 @@ export function SchemaField({
   draft,
   disabled = false,
   disabledReason,
+  locked = false,
   error,
   idPrefix,
   onChange,
@@ -76,6 +87,39 @@ export function SchemaField({
         <span class={LABEL_CLASS}>{label}</span>
         <p class="mt-1 text-sm text-neutral-200">{formatValue(value)}</p>
         <p class={HELP_CLASS}>Read-only — the plugin owns this value.</p>
+        {help}
+      </div>
+    );
+  }
+
+  if (locked) {
+    // Immutable on an existing item: it was written on the create and the server
+    // refuses it in a `PATCH` (`422` `cannot change after the item is created`),
+    // so the field is not part of the payload either.
+    //
+    // `readOnly` + `aria-disabled`, not `disabled`: `disabled` removes the
+    // control from the tab order entirely, so keyboard and screen-reader users
+    // could never land on it and the value (an item's `name`, a URL) is exactly
+    // what they may need to copy. The muted styling carries the same signal
+    // visually and the hint travels through `aria-describedby`.
+    const hintId = `${inputId}-immutable`;
+    return (
+      <div>
+        <label for={inputId} class={LABEL_CLASS}>
+          {label}
+        </label>
+        <input
+          id={inputId}
+          type="text"
+          value={formatValue(value)}
+          readOnly
+          aria-disabled="true"
+          aria-describedby={[hintId, helpId].filter(Boolean).join(" ")}
+          class={`mt-1 ${INPUT_CLASS} cursor-not-allowed border-neutral-800 bg-neutral-900 text-neutral-400`}
+        />
+        <p id={hintId} class={HELP_CLASS}>
+          Set when the item is created.
+        </p>
         {help}
       </div>
     );

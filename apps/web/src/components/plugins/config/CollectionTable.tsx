@@ -11,7 +11,8 @@ import { formatValue, humanize, labelFor } from "./format";
  * Everything is decided by the server: the capacity comes from the response
  * (`max_items`), the create button disables itself at the cap but a `409` is
  * still shown if it arrives, and a `read_only` field is painted as text because
- * no write of it would be accepted.
+ * no write of it would be accepted. An `immutable` field is edited once, in the
+ * create form, and shown frozen by the editor afterwards.
  */
 
 interface CollectionTableProps {

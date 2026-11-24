@@ -181,6 +181,29 @@ def _schema() -> PluginConfigSchema:
     )
 
 
+def _immutable_name_schema() -> PluginConfigSchema:
+    """``_schema()`` with ``name`` frozen: the field that addresses the item.
+
+    ``name`` is ``required`` and ``immutable``, so it is demanded exactly once, on
+    the create. ``events`` stays editable, which is what proves the rule does not
+    freeze the whole item.
+    """
+    return PluginConfigSchema(
+        settings=_schema().settings,
+        collections=[
+            CollectionSpec(
+                name="webhooks",
+                max_items=2,
+                item=[
+                    FieldSpec(key="name", type="string", required=True, max_length=16, immutable=True),
+                    FieldSpec(key="events", type="array", items="string", max_items=4),
+                ],
+            )
+        ],
+        actions=_schema().actions,
+    )
+
+
 class FakeLoader:
     """The only two things the service needs from a loader (D4's seam)."""
 
@@ -713,6 +736,42 @@ class TestCollections:
         assert plugin.items == [{"id": "app", "name": "app"}]
 
     @pytest.mark.asyncio
+    async def test_an_immutable_item_field_is_refused_before_the_plugin_is_called(self):
+        """The item exists and the value is the one it has: it is still a ``422``."""
+        plugin = FakePlugin(_immutable_name_schema())
+        plugin.items = [{"id": "app", "name": "app"}]
+        service, _ = _service(plugin)
+
+        with pytest.raises(SchemaViolation) as excinfo:
+            await service.update_item(NAME, "webhooks", "app", {"name": "app"})
+
+        assert (
+            error_response(excinfo.value, plugin=NAME),
+            plugin.calls.count("collection_update"),
+            plugin.items,
+        ) == (
+            (422, {"field": "webhooks.name", "message": "cannot change after the item is created"}),
+            0,
+            [{"id": "app", "name": "app"}],
+        )
+
+    @pytest.mark.asyncio
+    async def test_an_immutable_field_travels_on_the_create_and_the_rest_still_changes(self):
+        plugin = FakePlugin(_immutable_name_schema())
+        service, _ = _service(plugin)
+
+        created = await service.create_item(
+            NAME, "webhooks", {"name": "app", "events": ["finding"]}
+        )
+        updated = await service.update_item(NAME, "webhooks", "app", {"events": ["finding", "leak"]})
+
+        assert (created, updated["values"], plugin.calls.count("collection_update")) == (
+            {"id": "app", "values": {"name": {"value": "app"}, "events": {"value": ["finding"]}}},
+            {"name": {"value": "app"}, "events": {"value": ["finding", "leak"]}},
+            1,
+        )
+
+    @pytest.mark.asyncio
     async def test_a_create_requires_the_required_fields(self):
         plugin = FakePlugin()
         service, _ = _service(plugin)
@@ -934,6 +993,7 @@ class TestDisabledPluginIsConfigurable:
                     "required": False,
                     "secret": False,
                     "read_only": False,
+                    "immutable": False,
                 }
             ],
             "collections": [],

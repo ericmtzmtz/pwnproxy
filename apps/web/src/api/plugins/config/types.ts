@@ -29,6 +29,14 @@ export interface FieldSpec {
   secret: boolean;
   /** The plugin owns the value; the server rejects a write with `422`. */
   read_only: boolean;
+  /**
+   * Written once, on the create, and frozen after that: the server refuses it in
+   * a `PATCH` with `422` (`cannot change after the item is created`), so an edit
+   * form shows it as not editable and never sends it. Only a collection item
+   * field can declare it, and never together with `read_only` or `secret`
+   * (the plugin's schema is rejected server-side).
+   */
+  immutable: boolean;
   help?: string;
   /** Value the plugin reports when it has none (never set on a `secret`). */
   default?: unknown;
