@@ -1,6 +1,7 @@
 import { useMemo, useState } from "preact/hooks";
 import { listTasks } from "@/api/task/calls";
 import { repeaterResult } from "@/api/task/result";
+import { highlightBody } from "@/utils/escape";
 
 export interface HttpResponse {
   status_code: number;
@@ -65,15 +66,6 @@ function prettyBody(body: string, ct: string): string {
     return body;
   }
   return body;
-}
-
-function highlightBody(body: string, ct: string): string {
-  const esc = body.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  if (ct.includes("json")) {
-    // highlight keys and strings crudely
-    return esc.replace(/"([^"]+)":/g, '<span class="text-sky-400">"$1"</span>:');
-  }
-  return esc;
 }
 
 // --- Diff ---
@@ -326,6 +318,9 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps) {
             ) : bodyMode === "raw" || (bodyMode === "pretty" && !ct.includes("json")) ? (
               <pre class="flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-relaxed text-neutral-300">{response.body}</pre>
             ) : (
+              // The only HTML sink in apps/web/src (see tests/architecture/test_web_xss.py):
+              // `highlightBody` escapes the body before adding its fixed span, so nothing
+              // the target sends can become markup here.
               <pre class="flex-1 overflow-auto whitespace-pre-wrap p-3 font-mono text-[11px] leading-relaxed text-neutral-300" dangerouslySetInnerHTML={{ __html: highlightBody(prettyBody(response.body ?? "", ct), ct) }} />
             )}
           </div>
@@ -361,7 +356,20 @@ export function ResponseViewer({ response, loading }: ResponseViewerProps) {
         )}
 
         {tab === "render" && isHtml && (
-          <iframe class="h-full w-full border-0 bg-white" srcDoc={response.body} />
+          /*
+           * `sandbox=""` is deliberate and must stay empty: an empty allow-list
+           * puts the document in an opaque origin, so a `<script>` from the
+           * target cannot read `localStorage` (where the API token lives) or
+           * touch the UI. Never add `allow-scripts` or `allow-same-origin`.
+           * `referrerpolicy` keeps the UI's URL out of the target's logs.
+           */
+          <iframe
+            class="h-full w-full border-0 bg-white"
+            sandbox=""
+            referrerpolicy="no-referrer"
+            srcDoc={response.body}
+            title="Rendered response"
+          />
         )}
 
         {tab === "diff" && (

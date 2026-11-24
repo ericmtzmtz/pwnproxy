@@ -28,12 +28,6 @@ function extractHost(raw: string): string {
   return m ? m[1] : "?";
 }
 
-function escapeHtml(s: string): string {
-  const d = document.createElement("div");
-  d.textContent = s;
-  return d.innerHTML;
-}
-
 export function IntruderPage() {
   const [attacks, setAttacks] = useState<TaskStatus[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -544,7 +538,7 @@ async function handleSendToRepeater(rawReq: string) {
                           {filtered.map((r) => (
                             <tr key={r.request_id} class="bg-neutral-950 hover:bg-neutral-900/50">
                               <td class="px-3 py-1 lg:px-2 lg:py-1 text-neutral-500">{r.request_id}</td>
-                              <td class="max-w-[160px] truncate px-3 py-1 font-mono text-neutral-300 lg:max-w-[80px] lg:px-2 xl:max-w-[160px]" title={r.payload}>{escapeHtml(r.payload)}</td>
+                              <td class="max-w-[160px] truncate px-3 py-1 font-mono text-neutral-300 lg:max-w-[80px] lg:px-2 xl:max-w-[160px]" title={r.payload}>{r.payload}</td>
                               <td class={`px-3 py-1 font-semibold lg:px-2 ${statusColor(r.status_code)}`}>{r.status_code}</td>
                               <td class="px-3 py-1 text-neutral-400 lg:px-2">{fmtBytes(r.response_length)}</td>
                               <td class="px-3 py-1 text-neutral-500 lg:px-2">{r.timing_ms?.toFixed(0)}ms</td>
@@ -621,7 +615,16 @@ async function handleSendToRepeater(rawReq: string) {
                           </pre>
                         )}
                         {renderMode === "render" && isHtml && (
-                          <iframe sandbox="allow-same-origin" srcdoc={previewBody}
+                          /*
+                           * `sandbox=""` must stay empty: an empty allow-list gives the
+                           * document an opaque origin, so a payload `<script>` cannot read
+                           * the API token from `localStorage` or reach the UI. Adding
+                           * `allow-scripts`/`allow-same-origin` re-opens the XSS.
+                           */
+                          <iframe
+                            sandbox=""
+                            referrerpolicy="no-referrer"
+                            srcdoc={previewBody}
                             class="h-full w-full rounded border-0 bg-white"
                             title="Response preview"
                           />
