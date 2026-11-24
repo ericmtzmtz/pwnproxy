@@ -10,17 +10,32 @@ function PulsingDot({ color }: { color: string }) {
   );
 }
 
-function Chip({ label, detail, busy }: { label: string; detail: string; busy: boolean }) {
+function Chip({
+  label,
+  detail,
+  busy,
+  paused = false,
+  title,
+}: {
+  label: string;
+  detail: string;
+  busy: boolean;
+  paused?: boolean;
+  title?: string;
+}) {
+  const tone = paused
+    ? "border-warning-800/60 bg-warning-900/30"
+    : busy
+      ? "border-blue-800/60 bg-blue-900/30"
+      : "border-neutral-800 bg-neutral-900";
+  const labelTone = paused ? "text-warning-300" : busy ? "text-blue-300" : "text-neutral-500";
   return (
     <span
-      class={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${
-        busy
-          ? "border-blue-800/60 bg-blue-900/30 text-blue-300"
-          : "border-neutral-800 bg-neutral-900 text-neutral-500"
-      }`}
+      class={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${tone}`}
+      title={title}
     >
       {busy && <PulsingDot color="bg-blue-400" />}
-      <span class={busy ? "text-blue-300" : ""}>{label}</span>
+      <span class={labelTone}>{label}</span>
       <span class="font-mono text-[10px] text-neutral-400">{detail}</span>
     </span>
   );
@@ -52,6 +67,10 @@ export function WorkersStrip() {
   const activeTasks = data.tasks.filter((t) => t.status === "running" || t.status === "queued");
   const crawlerBusy = data.crawler_jobs.length > 0;
   const proxyBusy = data.proxy.running && data.proxy.capture_enabled;
+  // The backend decides: `false` means the auto-scan receives nothing. The
+  // strip only shows the verdict and the sentence it publishes.
+  const scanPaused = data.active_scan_allowed === false;
+  const pauseReason = data.active_scan_blocked_reason ?? "";
 
   return (
     <div class="flex flex-wrap items-center gap-2 rounded-lg border border-neutral-800 bg-neutral-950 px-3 py-2">
@@ -74,14 +93,23 @@ export function WorkersStrip() {
       <Chip
         label="Auto-scan"
         detail={
-          data.autoscan.running && data.autoscan.active
-            ? `${data.autoscan.active.flows} flows, ${data.autoscan.active.findings} findings`
-            : data.autoscan.last
-              ? `last: ${data.autoscan.last.flows} flows, ${data.autoscan.last.findings} findings`
-              : "idle"
+          scanPaused
+            ? "paused"
+            : data.autoscan.running && data.autoscan.active
+              ? `${data.autoscan.active.flows} flows, ${data.autoscan.active.findings} findings`
+              : data.autoscan.last
+                ? `last: ${data.autoscan.last.flows} flows, ${data.autoscan.last.findings} findings`
+                : "idle"
         }
-        busy={data.autoscan.running}
+        busy={!scanPaused && data.autoscan.running}
+        paused={scanPaused}
+        title={scanPaused ? pauseReason : undefined}
       />
+      {scanPaused ? (
+        <p role="status" class="w-full text-[11px] font-medium text-warning-300">
+          {pauseReason}
+        </p>
+      ) : null}
     </div>
   );
 }

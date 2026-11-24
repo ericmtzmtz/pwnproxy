@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "preact/hooks";
 import { listPlugins } from "@/api/plugins/calls";
 import type { PluginInfo } from "@/api/plugins/types";
+import { getScope } from "@/api/scope/calls";
 import { wsUrl } from "@/api/client";
 import { useWebSocket } from "@/hooks/useWebSocket";
 import { pluginOrigin, pluginState, pluginStatus, pluginStatusClass } from "@/utils/plugins";
@@ -123,6 +124,7 @@ export function PluginsSection() {
   const [selected, setSelected] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
+  const [scanBlockedReason, setScanBlockedReason] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -140,6 +142,17 @@ export function PluginsSection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Turning a plugin on is only half the story: with the scope off (or with no
+  // include rules) the flow never reaches it. The server publishes the verdict
+  // and the sentence; this panel only shows them.
+  useEffect(() => {
+    getScope()
+      .then((scope) => {
+        setScanBlockedReason(scope.active_scan_allowed ? null : scope.active_scan_blocked_reason);
+      })
+      .catch(() => setScanBlockedReason(null));
+  }, []);
 
   useWebSocket({
     url: wsUrl("/ws/events"),
@@ -167,6 +180,16 @@ export function PluginsSection() {
 
   return (
     <div>
+      {scanBlockedReason ? (
+        <div
+          role="status"
+          class="mb-3 rounded-md border border-warning-800/60 bg-warning-900/20 px-3 py-2"
+        >
+          <p class="text-xs font-medium text-warning-300">Active scanning is paused</p>
+          <p class="mt-0.5 text-[11px] text-neutral-300">{scanBlockedReason}</p>
+        </div>
+      ) : null}
+
       <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <p class="max-w-prose text-xs text-neutral-500">
           Scanner plugins found on this machine, built-in and installed. Activation is machine-wide

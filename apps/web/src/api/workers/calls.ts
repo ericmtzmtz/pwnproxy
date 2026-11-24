@@ -17,6 +17,13 @@ export interface WorkersResponse {
     last: { batch_id: string | null; flows: number; findings: number; duration_ms: number } | null;
   };
   proxy: { running: boolean; port: number | null; capture_enabled: boolean };
+  /**
+   * Same verdict as `GET /sessions/scope`: `false` means the auto-scan is
+   * paused (scope off or no include rules) and `active_scan_blocked_reason`
+   * carries the sentence to show. Server-owned; never derived here.
+   */
+  active_scan_allowed: boolean;
+  active_scan_blocked_reason: string | null;
 }
 
 export async function getWorkers(): Promise<WorkersResponse> {

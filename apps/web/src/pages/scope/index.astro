@@ -10,6 +10,7 @@ import Card from "@/ui/Card.astro";
   </div>
 
   <div id="scope-status-bar" class="w-full"></div>
+  <div id="scope-scan-warning" class="w-full"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     <Card>
@@ -83,7 +84,13 @@ import Card from "@/ui/Card.astro";
   import type { ScopeConfig } from "@/api/scope/calls";
   import { el } from "@/utils/dom";
 
-  let scope: ScopeConfig = { in_scope: [], out_of_scope: [], enabled: false };
+  let scope: ScopeConfig = {
+    in_scope: [],
+    out_of_scope: [],
+    enabled: false,
+    active_scan_allowed: false,
+    active_scan_blocked_reason: null,
+  };
 
   const includeList = document.getElementById("include-list") as HTMLDivElement;
   const excludeList = document.getElementById("exclude-list") as HTMLDivElement;
@@ -142,10 +149,29 @@ import Card from "@/ui/Card.astro";
   // Render the include/exclude lists and summary
   function renderAll() {
     renderScopeStatus();
+    renderScanWarning();
     renderList(includeList, scope.in_scope, "in");
     renderList(excludeList, scope.out_of_scope, "out");
     summaryInclude.textContent = String(scope.in_scope.length);
     summaryExclude.textContent = String(scope.out_of_scope.length);
+  }
+
+  // Why the active scanners are not receiving traffic, in the server's words.
+  // The rule lives in the backend (`active_scan_allowed`); this page only shows
+  // the verdict it publishes, so Scope and Settings never disagree.
+  function renderScanWarning() {
+    const box = document.getElementById("scope-scan-warning");
+    if (!box) return;
+    if (scope.active_scan_allowed || !scope.active_scan_blocked_reason) {
+      box.replaceChildren();
+      return;
+    }
+    const card = el("div", "mb-4 rounded-lg border border-warning-800/60 bg-warning-900/20 px-4 py-3");
+    card.append(
+      el("p", "text-sm font-medium text-warning-300", "Active scanning is paused"),
+      el("p", "mt-0.5 text-xs text-neutral-300", scope.active_scan_blocked_reason),
+    );
+    box.replaceChildren(card);
   }
 
   // Render include/exclude lists. Rules are typed by the user and echoed by the

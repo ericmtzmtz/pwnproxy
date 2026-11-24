@@ -6,6 +6,7 @@ import { WorkersStrip } from "@/components/workers/WorkersStrip";
 import { listFlows } from "@/api/traffic/calls";
 import { listFindings } from "@/api/findings/calls";
 import { listPlugins } from "@/api/plugins/calls";
+import { getScope } from "@/api/scope/calls";
 import { formatTimeOnly } from "@/utils/formatTimestamp";
 import type { FlowRecord } from "@/api/traffic/types";
 import type { Finding } from "@/api/findings/types";
@@ -15,6 +16,7 @@ export function Dashboard() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [totalFindings, setTotalFindings] = useState(0);
   const [scannerCount, setScannerCount] = useState(0);
+  const [scopeCount, setScopeCount] = useState(0);
   const loadedRef = useRef(false);
 
   const criticalCount = findings.filter((f) => f.severity === "critical").length;
@@ -38,6 +40,11 @@ export function Dashboard() {
     listPlugins()
       .then((data) => setScannerCount(data.plugins.filter((p) => p.enabled).length))
       .catch(() => {});
+    // "Scope — targets" is the number of **include rules**, the same figure the
+    // Scope page shows in its summary (it used to be a hardcoded 0).
+    getScope()
+      .then((scope) => setScopeCount(scope.in_scope.length))
+      .catch(() => {});
   }, []);
 
   return (
@@ -60,7 +67,7 @@ export function Dashboard() {
         lowCount={lowCount}
         infoCount={infoCount}
         scannerCount={scannerCount}
-        scopeCount={0}
+        scopeCount={scopeCount}
       />
 
       <div class="mt-8">
