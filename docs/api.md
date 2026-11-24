@@ -331,6 +331,13 @@ plugin it has never heard of.
 A `PATCH` writes only the keys it carries and leaves the rest alone; a `POST` requires every field
 the schema marks `required`.
 
+The fields always travel **inside `values`**. A write that carries nothing to write — `{}`,
+`{"values": {}}`, or the fields sent one level too high (`{"label": "x"}`) — answers `422` with
+`{"field": "values", "message": "Nothing to change: send the fields to write inside \"values\"."}`,
+naming the misplaced top-level keys when there are any (names only, never values). Such a request
+never reaches the plugin and leaves no audit line. On a `POST` an empty `values` is legal: the
+schema decides whether a field is required and answers its own `422`.
+
 #### Schema
 
 ```bash

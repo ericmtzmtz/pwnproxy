@@ -15,7 +15,10 @@ Two rules shape it:
   the same route accepts ``agent`` without secrets and refuses it with secrets.
 * **The ``403`` comes before any validation.** The secret keys are looked up in
   the body *before* the service validates the values, so an ``agent`` write that
-  carries a secret is refused without a ``422`` that could describe it.
+  carries a secret is refused without a ``422`` that could describe it. The one
+  exception is the body with **nothing to write** (``values`` empty and no extra
+  top-level keys to name): it is refused with a ``422`` first, because there is
+  no field for the scope matrix to look at.
 
 The scope comes from ``request.state.scope`` (set by the auth middleware) and an
 absent scope is treated as insufficient: this module fails closed.
@@ -28,7 +31,7 @@ from collections.abc import Awaitable, Mapping, Sequence
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from pwnproxy.plugins.core.config_schema import (
     SECRET_WRITE_REQUIRES_FULL_DETAIL,
@@ -104,11 +107,24 @@ class ValuesPayload(BaseModel):
 
     ``values`` is deliberately an untyped mapping: the schema of the plugin —not
     pydantic— decides whether a key is valid, and the transport has to be able to
-    look at the keys *before* any validation runs (scope rule). Extra top-level
-    keys are ignored rather than echoed back in a ``422``.
+    look at the keys *before* any validation runs (scope rule).
+
+    Extra top-level keys are **kept** (``extra="allow"``) instead of dropped: a
+    body like ``{"label": "x"}`` —the fields sent one level too high— is
+    otherwise silently discarded, the write becomes empty and the route answers
+    ``200`` without writing or auditing anything. :func:`_reject_empty_write`
+    names those keys in its ``422`` (names only, never values) so the client sees
+    what went wrong instead of a "success" that changed nothing.
     """
 
+    model_config = ConfigDict(extra="allow")
+
     values: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def top_level_keys(self) -> list[str]:
+        """Names of the extra top-level keys, sorted (never their values)."""
+        return sorted(str(key) for key in (self.model_extra or {}))
 
 
 class ParametersPayload(BaseModel):
@@ -134,8 +150,11 @@ _FORBIDDEN = {
 _VALIDATION = {
     422: {
         "description": (
-            "The values break the declared schema; `detail` is "
-            "`{\"field\": …, \"message\": …}`"
+            "The values break the declared schema, or the body carries nothing "
+            "to write (`values` empty or the fields sent outside `values`): "
+            "`detail` is `{\"field\": …, \"message\": …}` and a write with "
+            "nothing to write is refused before the plugin is called and leaves "
+            "no audit line"
         )
     }
 }
@@ -144,6 +163,53 @@ _ACTION_ERRORS = {
     **_WRITE_ERRORS,
     503: {"description": "No task store in this process for a long-running action"},
 }
+
+#: Message of the ``422`` for a body that has nothing to write.
+NOTHING_TO_CHANGE = 'Nothing to change: send the fields to write inside "values".'
+
+#: Same message when the fields arrived at the top level instead of inside
+#: ``values``; the names are appended (never their values).
+NOTHING_TO_CHANGE_TOP_LEVEL = (
+    'Nothing to change: send the fields to write inside "values" '
+    "(received at the top level: {keys})."
+)
+
+
+# --------------------------------------------------------------- write guard
+
+
+def _reject_empty_write(payload: ValuesPayload, *, require_extras: bool = False) -> None:
+    """Refuse a write whose body has nothing to write, before touching the plugin.
+
+    A ``PATCH`` that carries no value would otherwise reach the plugin with ``{}``
+    and answer ``200``: the plugin writes nothing, the audit line says
+    ``changed=[]`` and the client believes it saved. The check runs **first** in
+    the route — before the schema is read and before the scope matrix — so a
+    refused body neither calls the plugin nor leaves an audit line.
+
+    Args:
+        payload: The body of the write.
+        require_extras: ``True`` for a create, where an empty ``values`` is a
+            legal body (the plugin's schema decides whether every field is
+            optional, and its own ``422`` is the documented answer); the refusal
+            then only applies to the clearly-wrong body that sends the fields at
+            the top level.
+
+    Raises:
+        HTTPException: ``422`` with ``field`` ``values`` and the contract's
+            message, naming the extra top-level keys when there were any.
+    """
+    if payload.values:
+        return
+    extras = payload.top_level_keys
+    if not extras and require_extras:
+        return
+    message = (
+        NOTHING_TO_CHANGE_TOP_LEVEL.format(keys=", ".join(extras))
+        if extras
+        else NOTHING_TO_CHANGE
+    )
+    raise HTTPException(status_code=422, detail={"field": "values", "message": message})
 
 
 # ----------------------------------------------------------------- dependency
@@ -307,7 +373,10 @@ async def get_plugin_settings(
     description=(
         "Only the keys sent are written; a key that is not sent is not touched. "
         "Writing a `secret` field needs a token of scope `full`: with an `agent` "
-        "token the answer is `403` **before** the body is validated."
+        "token the answer is `403` **before** the body is validated. A body with "
+        "nothing to write (`{\"values\": {}}`, or the fields sent outside "
+        "`values`) is a `422`, not a silent `200`: the plugin is not called and "
+        "no audit line is written."
     ),
     responses=_WRITE_ERRORS,
 )
@@ -318,6 +387,7 @@ async def patch_plugin_settings(
     service: PluginConfigService = Depends(get_config_service),
 ) -> dict[str, Any]:
     """Write the settings present in the body and return the settings again."""
+    _reject_empty_write(payload)
     declared = await _call(name, service.declared_schema(name))
     _check_secret_scope(request, declared.settings, payload.values)
     return await _call(
@@ -351,7 +421,10 @@ async def get_plugin_collection(
     description=(
         "`409` when the collection already holds `max_items` items (the server "
         "checks it without asking the plugin); the plugin's own rules still "
-        "answer `422` with its message. A `secret` field needs scope `full`."
+        "answer `422` with its message. A `secret` field needs scope `full`. An "
+        "empty `values` is left to the schema (a field may be optional); the "
+        "clearly-wrong body that sends the fields at the top level is a `422` "
+        "that names them and calls no plugin."
     ),
     responses=_WRITE_ERRORS,
 )
@@ -363,6 +436,7 @@ async def post_plugin_collection_item(
     service: PluginConfigService = Depends(get_config_service),
 ) -> dict[str, Any]:
     """Create one item and return it rendered."""
+    _reject_empty_write(payload, require_extras=True)
     declared = await _call(name, service.declared_schema(name))
     spec = declared.collection(collection)
     if spec is not None:  # undeclared: the service answers the documented 404
@@ -377,6 +451,13 @@ async def post_plugin_collection_item(
     "/{name}/collections/{collection}/{item_id}",
     response_model=PluginItemResponse,
     summary="Change some fields of one item (partial)",
+    description=(
+        "Only the keys sent are written; a key that is not sent is not touched. "
+        "A body with nothing to write (`{\"values\": {}}`, or the fields sent "
+        "outside `values`) is a `422` that names the extra keys: the plugin is "
+        "not called and no audit line is written. A `secret` field needs scope "
+        "`full`."
+    ),
     responses=_WRITE_ERRORS,
 )
 async def patch_plugin_collection_item(
@@ -388,6 +469,7 @@ async def patch_plugin_collection_item(
     service: PluginConfigService = Depends(get_config_service),
 ) -> dict[str, Any]:
     """Write the fields present in the body and return the item rendered."""
+    _reject_empty_write(payload)
     declared = await _call(name, service.declared_schema(name))
     spec = declared.collection(collection)
     if spec is not None:
@@ -456,6 +538,8 @@ async def post_plugin_action(
 
 
 __all__ = [
+    "NOTHING_TO_CHANGE",
+    "NOTHING_TO_CHANGE_TOP_LEVEL",
     "ParametersPayload",
     "PluginActionResponse",
     "PluginCollectionResponse",

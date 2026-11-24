@@ -1309,3 +1309,201 @@ class TestAudit:
                 },
             ],
         )
+
+
+#: Message of the ``422`` for a body with nothing to write (contract, verbatim).
+NOTHING_TO_CHANGE = 'Nothing to change: send the fields to write inside "values".'
+
+
+class TestEmptyWrite:
+    """A write whose body has nothing to write is a ``422``, never a silent ``200``.
+
+    The bug these cover: ``{"label": "x"}`` —the fields sent one level too
+    high— was dropped by pydantic, ``values`` arrived empty, the route called the
+    plugin with ``{}``, answered ``200`` and audited ``changed=[]``. The client
+    believed it had saved.
+    """
+
+    @pytest.mark.parametrize("body", [{}, {"values": {}}])
+    def test_a_settings_patch_without_values_is_422(self, plugin_config, caplog, body):
+        scene = plugin_config()
+        queue = scene.bus.register(PLUGIN_CONFIG_CHANGED)
+
+        with caplog.at_level(logging.INFO, logger=CONFIG_LOGGER):
+            response = scene.client.patch(f"/api/v1/plugins/{NAME}/settings", json=body)
+
+        assert (
+            response.status_code,
+            response.json(),
+            scene.plugin.calls,
+            queue.has_data,
+            _config_log_lines(caplog),
+        ) == (
+            422,
+            {"detail": {"field": "values", "message": NOTHING_TO_CHANGE}},
+            [],
+            False,
+            [],
+        )
+
+    @pytest.mark.parametrize(
+        ("body", "names"),
+        [
+            # The exact shape that produced the pilot bug: the field one level up.
+            ({"label": CANARY}, "label"),
+            # Two of them, sorted, and the value never echoed back.
+            ({"retries": 4, "environment": CANARY}, "environment, retries"),
+        ],
+    )
+    def test_the_fields_sent_at_the_top_level_are_named_but_not_their_values(
+        self, plugin_config, caplog, body, names
+    ):
+        scene = plugin_config()
+        queue = scene.bus.register(PLUGIN_CONFIG_CHANGED)
+
+        with caplog.at_level(logging.INFO, logger=CONFIG_LOGGER):
+            response = scene.client.patch(f"/api/v1/plugins/{NAME}/settings", json=body)
+
+        assert (
+            response.status_code,
+            response.json(),
+            CANARY in response.text,
+            scene.plugin.calls,
+            queue.has_data,
+            _config_log_lines(caplog),
+        ) == (
+            422,
+            {
+                "detail": {
+                    "field": "values",
+                    "message": (
+                        'Nothing to change: send the fields to write inside "values" '
+                        f"(received at the top level: {names})."
+                    ),
+                }
+            },
+            False,
+            [],
+            False,
+            [],
+        )
+
+    @pytest.mark.parametrize(
+        ("body", "message"),
+        [
+            ({}, NOTHING_TO_CHANGE),
+            ({"values": {}}, NOTHING_TO_CHANGE),
+            (
+                {"name": "app-2", "events": ["finding"]},
+                'Nothing to change: send the fields to write inside "values" '
+                "(received at the top level: events, name).",
+            ),
+        ],
+    )
+    def test_an_item_patch_without_values_is_422_and_leaves_the_item_alone(
+        self, plugin_config, caplog, body, message
+    ):
+        scene = plugin_config()
+        queue = scene.bus.register(PLUGIN_CONFIG_CHANGED)
+        scene.client.post(
+            f"/api/v1/plugins/{NAME}/collections/webhooks",
+            json={"values": {"name": "app"}},
+        )
+        assert queue.get_nowait()["kind"] == "collection"  # the create's audit line
+        before = [dict(item) for item in scene.plugin.items]
+
+        with caplog.at_level(logging.INFO, logger=CONFIG_LOGGER):
+            response = scene.client.patch(
+                f"/api/v1/plugins/{NAME}/collections/webhooks/app", json=body
+            )
+
+        assert (
+            response.status_code,
+            response.json(),
+            scene.plugin.call_count("collection_update"),
+            scene.plugin.items,
+            queue.has_data,
+            _config_log_lines(caplog),
+        ) == (
+            422,
+            {"detail": {"field": "values", "message": message}},
+            0,
+            before,
+            False,
+            [],
+        )
+
+    @pytest.mark.parametrize("body", [{}, {"values": {}}])
+    def test_a_create_with_an_empty_values_is_left_to_the_plugins_schema(
+        self, plugin_config, body
+    ):
+        """An empty ``values`` is a legal create body: a field may be optional."""
+        scene = plugin_config()
+
+        response = scene.client.post(f"/api/v1/plugins/{NAME}/collections/webhooks", json=body)
+
+        assert (
+            response.status_code,
+            response.json(),
+            scene.plugin.call_count("collection_create"),
+            scene.plugin.items,
+        ) == (
+            422,
+            {"detail": {"field": "webhooks.name", "message": "required field is missing"}},
+            0,
+            [],
+        )
+
+    def test_a_create_with_the_fields_at_the_top_level_is_422_and_names_them(
+        self, plugin_config, caplog
+    ):
+        scene = plugin_config()
+        queue = scene.bus.register(PLUGIN_CONFIG_CHANGED)
+
+        with caplog.at_level(logging.INFO, logger=CONFIG_LOGGER):
+            response = scene.client.post(
+                f"/api/v1/plugins/{NAME}/collections/webhooks",
+                json={"name": "app", "events": [CANARY]},
+            )
+
+        assert (
+            response.status_code,
+            response.json(),
+            CANARY in response.text,
+            scene.plugin.calls,
+            queue.has_data,
+            _config_log_lines(caplog),
+        ) == (
+            422,
+            {
+                "detail": {
+                    "field": "values",
+                    "message": (
+                        'Nothing to change: send the fields to write inside "values" '
+                        "(received at the top level: events, name)."
+                    ),
+                }
+            },
+            False,
+            [],
+            False,
+            [],
+        )
+
+    def test_the_refusal_comes_before_the_catalog_is_consulted(self, plugin_config):
+        """An empty body is a ``422`` even for a name outside the catalog.
+
+        The guard runs before the service on purpose: reading the declared schema
+        would already call the plugin, and a body with nothing to write does not
+        need to know whether the plugin exists. It leaks nothing either — the
+        answer is the same ``422`` for a known and an unknown name.
+        """
+        scene = plugin_config()
+
+        response = scene.client.patch("/api/v1/plugins/nope/settings", json={})
+
+        assert (response.status_code, response.json(), scene.plugin.calls) == (
+            422,
+            {"detail": {"field": "values", "message": NOTHING_TO_CHANGE}},
+            [],
+        )
