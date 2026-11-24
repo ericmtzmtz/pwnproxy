@@ -1254,13 +1254,22 @@ class TestPersistCrawlFlow:
     @pytest.mark.asyncio
     async def test_publishes_done_when_scan_while_crawl(self):
         from pwnproxy.services.crawler.republish import persist_crawl_flow
+        from pwnproxy.services.session.manager import ScopeConfig
+        from pwnproxy.shared.flow_filter import FlowFilter
         from pwnproxy.shared.hooks import HookBus
 
         engine = await self._make_engine()
         hb = HookBus()
         q_done = hb.register("done")
+        # The auto-scan delivery needs a scope that authorises it: without a
+        # gate (or with the scope off) the crawl still stores, but nothing is
+        # handed to the scanners. Negative cases live in
+        # tests/proxy/test_auto_scan_gate.py::TestCrawlRepublishGate.
+        gate = FlowFilter(ScopeConfig({"enabled": True, "in_scope": ["target.com"]}))
         try:
-            db_id = await persist_crawl_flow(engine, hb, self._payload(_scan_while_crawl=True))
+            db_id = await persist_crawl_flow(
+                engine, hb, self._payload(_scan_while_crawl=True), scan_gate=gate
+            )
             assert db_id is not None
 
             done = await asyncio.wait_for(q_done.get(), timeout=1.0)

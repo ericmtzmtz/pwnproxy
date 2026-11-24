@@ -21,6 +21,16 @@ DEFAULT_SESSION_NAME = "default"
 LAST_SESSION_FILE = SESSIONS_ROOT / ".last_session"
 AUTO_SAVE_INTERVAL = 60
 
+#: Why active scanners are not receiving traffic, in words the user can act on.
+#: Published verbatim by ``GET /sessions/scope``, ``GET /workers`` and the Web UI:
+#: the client never recomputes the rule, it only shows these two sentences.
+ACTIVE_SCAN_BLOCKED_SCOPE_OFF = (
+    "Scope is off: active scanners only run on in-scope traffic. Turn the scope on."
+)
+ACTIVE_SCAN_BLOCKED_NO_RULES = (
+    "Scope has no include rules: add at least one target to scan."
+)
+
 
 class ScopeConfig:
     def __init__(self, data: dict | None = None) -> None:
@@ -73,6 +83,34 @@ class ScopeConfig:
             if any(self._match(pattern, t) for t in candidates):
                 return False
         return any(any(self._match(pattern, t) for t in candidates) for pattern in self.in_scope)
+
+    def active_scan_blocked_reason(self) -> str | None:
+        """Return why automatic scanning is not allowed right now, or ``None``.
+
+        This is **the** rule for "may an automatically captured flow be handed
+        to the scanners" (proxy, proxy worker and crawler all ask here, through
+        :meth:`pwnproxy.shared.flow_filter.FlowFilter.allow_active_scan`).
+        Capture and history are deliberately not part of it: with the scope off
+        traffic keeps being captured, stored and shown in the UI.
+
+        Returns:
+            ``ACTIVE_SCAN_BLOCKED_SCOPE_OFF`` when the scope is disabled,
+            ``ACTIVE_SCAN_BLOCKED_NO_RULES`` when it is enabled with no include
+            rule (nothing would ever match), otherwise ``None``.
+        """
+        if not self.enabled:
+            return ACTIVE_SCAN_BLOCKED_SCOPE_OFF
+        if not self.in_scope:
+            return ACTIVE_SCAN_BLOCKED_NO_RULES
+        return None
+
+    def active_scan_allowed(self) -> bool:
+        """Whether active scanners may receive automatically captured traffic.
+
+        Shorthand of ``active_scan_blocked_reason() is None`` so callers that
+        only need the verdict cannot disagree with the ones that need the words.
+        """
+        return self.active_scan_blocked_reason() is None
 
 
 class ProxyConfig:
@@ -160,6 +198,16 @@ class SessionManager:
 
     def get_proxy_engine(self):
         return self._proxy_engine
+
+    def get_scope(self) -> ScopeConfig:
+        """Return the scope in force, read on every call.
+
+        ``update_scope`` and ``load`` *replace* the ``ScopeConfig`` instance, so
+        anything that must follow the session scope live (the main-process
+        ``FlowFilter`` that gates the auto-scan) holds this method, not an
+        instance. Never returns a copy: the callers read, they do not mutate.
+        """
+        return self.scope
 
     async def _apply_proxy_config(self) -> None:
         if not self._proxy_engine:

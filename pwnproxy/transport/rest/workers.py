@@ -67,6 +67,36 @@ class WorkersResponse(BaseModel):
     crawler_jobs: list[CrawlerJob] = Field(default_factory=list)
     autoscan: AutoScanStatus = Field(default_factory=AutoScanStatus)
     proxy: ProxyStatus = Field(default_factory=ProxyStatus)
+    #: Same verdict (and same sentence) as ``GET /sessions/scope``: the strip
+    #: shows the auto-scan as paused with this reason instead of "idle".
+    active_scan_allowed: bool = Field(
+        default=True,
+        description=(
+            "Whether automatically captured traffic is delivered to the active "
+            "scanners. Same verdict as GET /sessions/scope."
+        ),
+    )
+    active_scan_blocked_reason: str | None = Field(
+        default=None,
+        description="Why the auto-scan is paused, ready to display; null when allowed.",
+    )
+
+
+def _active_scan_status(session_manager) -> tuple[bool, str | None]:
+    """Return ``(allowed, reason)`` for the auto-scan from the session scope.
+
+    Defensive on purpose (API edge): an app with no session manager or one
+    wired to a stand-in must not turn into a 500 on a status endpoint. When the
+    scope cannot be read, nothing is claimed to be blocked.
+    """
+    scope = getattr(session_manager, "scope", None)
+    if scope is None:
+        return True, None
+    try:
+        return bool(scope.active_scan_allowed()), scope.active_scan_blocked_reason()
+    except (AttributeError, TypeError) as exc:
+        logger.warning("workers: could not read the scope: %s", exc)
+        return True, None
 
 
 @router.get("/workers", response_model=WorkersResponse)
@@ -123,9 +153,13 @@ async def workers_status(request: Request):
                 capture_enabled=bool(getattr(sm.proxy_config, "capture_enabled", False)),
             )
 
+    active_scan_allowed, active_scan_blocked_reason = _active_scan_status(sm)
+
     return WorkersResponse(
         tasks=tasks,
         crawler_jobs=crawler_jobs,
         autoscan=autoscan,
         proxy=proxy,
+        active_scan_allowed=active_scan_allowed,
+        active_scan_blocked_reason=active_scan_blocked_reason,
     )

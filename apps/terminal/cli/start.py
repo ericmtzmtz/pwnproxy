@@ -15,13 +15,13 @@ from rich.prompt import Prompt
 from apps.api.server import start_api_server
 from pwnproxy.services.crawler.process import CrawlerProcess
 from pwnproxy.services.proxy.proxy_process import ProxyProcess
+from pwnproxy.services.proxy.relay import relay_worker_event
 from pwnproxy.shared.api_token import SCOPE_FULL, TOKEN_ENV, read_token, token_path
 from pwnproxy.shared.bus.transports.inprocess import InProcessBus
 from pwnproxy.shared.db import create_engine as create_traffic_engine
 from pwnproxy.shared.db import init_db
 from pwnproxy.shared.flow_filter import FlowFilter
 from pwnproxy.shared.hooks import HookBus
-from pwnproxy.shared.models import Flow
 from pwnproxy.shared.ports import DEFAULT_API_PORT, DEFAULT_CALLBACK_PORT, DEFAULT_PROXY_PORT, DEFAULT_WEB_PORT
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,11 @@ def start(
                 if topic == "crawler.flow" and isinstance(data, dict):
                     # Persist the crawled flow to traffic.db (2nd writer pattern).
                     from pwnproxy.services.crawler.republish import persist_crawl_flow
-                    asyncio.create_task(persist_crawl_flow(traffic_engine, hook_bus, data))
+                    # ``scan_gate`` is the auto-scan rule (scope on + in scope):
+                    # the crawl keeps storing, only the scan delivery is gated.
+                    asyncio.create_task(
+                        persist_crawl_flow(traffic_engine, hook_bus, data, scan_gate=flow_filter)
+                    )
                 else:
                     # bruteforce.started|progress|completed|failed are also forwarded here
                     hook_bus.publish(topic, data)
@@ -252,32 +256,20 @@ def start(
         crawler.set_event_callback(_on_crawler_event)
 
         def _on_proxy_event(topic: str, data: dict) -> None:
-            """Bridge events from proxy worker to HookBus (PluginLoader consumers)."""
+            """Bridge events from proxy worker to HookBus (PluginLoader consumers).
 
-            if topic in ("proxy.flow", "proxy.done"):
-                flow = Flow.from_dict(data)
-                # Tag flow with current session for WS rooms
-                if not flow.session_id:
-                    sid = session_manager.active_name
-                    if sid:
-                        flow.session_id = sid
-                channel = topic.split(".", 1)[1]
-                hook_bus.publish(channel, flow)
-                asyncio.create_task(bus.publish(channel, flow))
-            elif topic == "proxy.flow_stored":
-                if isinstance(data, dict) and "session_id" not in data:
-                    sid = session_manager.active_name
-                    if sid:
-                        data["session_id"] = sid
-                hook_bus.publish("flow_stored", data)
-            else:
-                if isinstance(data, dict) and "session_id" not in data:
-                    sid = session_manager.active_name
-                    if sid:
-                        data["session_id"] = sid
-                channel = topic.removeprefix("proxy.") if topic.startswith("proxy.") else topic
-                hook_bus.publish(channel, data)
-                asyncio.create_task(bus.publish(channel, data))
+            ``relay_worker_event`` owns the mapping and the auto-scan gate: an
+            automatically captured flow only reaches the plugins when the scope
+            is on, has include rules and the URL is in scope.
+            """
+            relay_worker_event(
+                topic,
+                data,
+                hook_bus=hook_bus,
+                bus=bus,
+                flow_filter=flow_filter,
+                session_name=session_manager.active_name,
+            )
 
             # Relay scope-filtered responses to the crawler worker.
             if topic == "proxy.flow" and crawler.running:
@@ -331,8 +323,11 @@ def start(
         session_manager.proxy_config.host = host
         session_manager.proxy_config.port = proxy_port
 
-        # Dynamic scope filter using FlowFilter, stays in sync with session scope
-        flow_filter = FlowFilter(session_manager.scope)
+        # Dynamic scope filter using FlowFilter, stays in sync with session scope.
+        # ``scope_provider`` makes every decision read the scope in force: the
+        # REST API replaces ``session_manager.scope`` on each change, and this
+        # filter is what gates the auto-scan delivery below.
+        flow_filter = FlowFilter(session_manager.scope, scope_provider=session_manager.get_scope)
 
         proxy = ProxyProcess()
         session_manager.set_proxy_engine(proxy)
