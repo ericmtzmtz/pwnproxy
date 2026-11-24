@@ -2,9 +2,11 @@
 
 The crawler worker publishes ``crawler.flow`` events; the main process
 persists them as normal ``FlowRecord`` rows and emits ``flow_stored`` so
-History / WS live / scanners see them like real proxy traffic. If the job
-was started with ``scan_while_crawl``, a ``done`` event is also published
-so (future) auto-scan consumers can act on it.
+History / WS live see them like real proxy traffic. If the job was started with
+``scan_while_crawl``, a ``done`` event is also published so the auto-scan
+consumers act on it — but only when the scope allows active scanning and the
+crawled URL is in scope (``scan_gate``, i.e. ``FlowFilter.allow_active_scan``).
+Storage is never gated.
 """
 
 from __future__ import annotations
@@ -20,13 +22,22 @@ from pwnproxy.shared.db import FlowRecord
 logger = logging.getLogger(__name__)
 
 
-async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> int | None:
+async def persist_crawl_flow(traffic_engine, hook_bus, data: dict, *, scan_gate=None) -> int | None:
     """Persist a ``crawler.flow`` payload into ``traffic.db``.
 
     Returns the new ``FlowRecord`` id, or ``None`` if persistence failed
     (the crawl continues; the flow is only lost from History).
-    Publishes ``flow_stored`` always, and ``done`` only when
-    ``_scan_while_crawl`` is set in the payload.
+    Publishes ``flow_stored`` always, and ``done`` — the auto-scan delivery —
+    only when ``_scan_while_crawl`` is set **and** ``scan_gate`` allows it.
+
+    Args:
+        traffic_engine: Async engine of the session's ``traffic.db``.
+        hook_bus: Main-process ``HookBus``.
+        data: ``crawler.flow`` payload sent by the crawler worker.
+        scan_gate: ``FlowFilter`` holding the session scope, asked through
+            ``allow_active_scan``. Defaults to ``None``, which **blocks** the
+            ``done`` event: a caller that forgets the gate loses auto-scan
+            (visible, harmless) instead of scanning a host nobody authorised.
     """
     try:
         body = data.get("response_body")
@@ -67,7 +78,10 @@ async def persist_crawl_flow(traffic_engine, hook_bus, data: dict) -> int | None
     if data.get("session_id"):
         flow_stored_payload["session_id"] = data["session_id"]
     hook_bus.publish("flow_stored", flow_stored_payload)
-    if data.get("_scan_while_crawl"):
+    scan_allowed = scan_gate is not None and scan_gate.allow_active_scan(
+        data.get("url", "")
+    )
+    if data.get("_scan_while_crawl") and scan_allowed:
         done_payload: dict[str, Any] = {
             "id": str(db_id),
             "method": data.get("method", "GET"),

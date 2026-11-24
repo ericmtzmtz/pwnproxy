@@ -71,6 +71,22 @@ class ScopeResponse(BaseModel):
     in_scope: list[str] = Field(default_factory=list)
     out_of_scope: list[str] = Field(default_factory=list)
     enabled: bool = False
+    #: Whether automatically captured traffic may reach the active scanners.
+    #: The server owns the rule (`ScopeConfig.active_scan_allowed`); the Web UI
+    #: only renders the verdict and the sentence below.
+    active_scan_allowed: bool = Field(
+        default=False,
+        description=(
+            "Whether automatically captured traffic is delivered to the active "
+            "scanners (scope on, at least one include rule). Capture and history "
+            "are not affected by this flag."
+        ),
+    )
+    #: Why active scanning is blocked, in words; ``None`` when it is allowed.
+    active_scan_blocked_reason: str | None = Field(
+        default=None,
+        description="Why active scanning is paused, ready to display; null when allowed.",
+    )
 
 
 async def _restart_crawler_for_scope(request: Request) -> None:
@@ -174,8 +190,19 @@ async def manage_session(request: Request, body: SessionManageRequest):
 
 @router.get("/sessions/scope", response_model=ScopeResponse)
 async def get_scope(request: Request):
+    """Return the session scope plus the auto-scan verdict and its reason.
+
+    ``active_scan_allowed`` / ``active_scan_blocked_reason`` are computed by the
+    server (``ScopeConfig.active_scan_allowed``), never by the client: the Web UI
+    shows the same sentence the delivery paths obey.
+    """
     manager = request.app.state.session_manager
-    return manager.scope.to_dict()
+    scope = manager.scope
+    return {
+        **scope.to_dict(),
+        "active_scan_allowed": scope.active_scan_allowed(),
+        "active_scan_blocked_reason": scope.active_scan_blocked_reason(),
+    }
 
 
 @router.put("/sessions/scope", response_model=SessionManageResponse)

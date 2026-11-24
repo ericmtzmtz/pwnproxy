@@ -21,6 +21,17 @@ class HookRelayAddon:
             return True
         return self._flow_filter.allow(url)
 
+    def _active_scan_allowed(self, url: str) -> bool:
+        """Whether this flow may be handed to the plugins (auto-scan rule).
+
+        The scope rule lives in ``FlowFilter.allow_active_scan``: nothing is
+        copied here. Behind an unwired filter (legacy/unit wiring) the flow is
+        let through, same as :meth:`_in_scope`.
+        """
+        if self._flow_filter is None:
+            return True
+        return self._flow_filter.allow_active_scan(url)
+
     def _tag(self, flow: Flow) -> Flow:
         if self._session_name_fn:
             try:
@@ -42,6 +53,12 @@ class HookRelayAddon:
             return
         flow = self._tag(Flow.from_mitmproxy(f))
         self.hook_bus.publish("response", flow)
+        # "done"/"flow" are the plugin auto-scan channels: with the scope off
+        # (or the URL outside it) the flow is still captured and published on
+        # "response", it just never reaches a plugin.
+        if not self._active_scan_allowed(f.request.pretty_url):
+            logger.debug("auto-scan blocked for %s", flow.url)
+            return
         self.hook_bus.publish("done", flow)
         self.hook_bus.publish("flow", flow)
 

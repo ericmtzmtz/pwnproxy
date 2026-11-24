@@ -42,6 +42,18 @@ class StorageAddon:
             return True
         return self._flow_filter.allow(url)
 
+    def _active_scan_allowed(self, url: str) -> bool:
+        """Whether this stored flow may be handed to the active scanners.
+
+        Only the ``done`` event is gated (see
+        :meth:`pwnproxy.shared.flow_filter.FlowFilter.allow_active_scan`); the
+        row and the ``flow_stored`` event are always emitted, so History and the
+        live UI are unaffected by the scope being off.
+        """
+        if self._flow_filter is None:
+            return True
+        return self._flow_filter.allow_active_scan(url)
+
     def response(self, f: mitmproxy.http.HTTPFlow):
         if not self._in_scope(f.request.url):
             logger.debug("StorageAddon: out of scope, skipping %s", f.request.url)
@@ -92,7 +104,7 @@ class StorageAddon:
                 if sid:
                     flow_stored_payload["session_id"] = sid
                 self.hook_bus.publish("flow_stored", flow_stored_payload)
-                if self._auto_scan:
+                if self._auto_scan and self._active_scan_allowed(flow.url):
                     done_payload: dict = {
                         "id": str(db_id),
                         "method": flow.method,
