@@ -222,6 +222,123 @@ pwnproxy plugin create --template scanner my-scanner
 | `install <name>` | Install a plugin via pip |
 | `create --template scanner\|hook <name>` | Scaffold a PyPI-ready plugin project |
 
+### pwnproxy plugin config
+
+Read and write the configuration a plugin publishes (its schema, its settings and its collections).
+
+```bash
+# Everything the plugin declares, plus its current values
+pwnproxy plugin config show example-checker
+
+# One collection instead of the settings
+pwnproxy plugin config show example-checker --collection webhooks
+
+# Write some settings (partial: only the keys named are sent)
+pwnproxy plugin config set example-checker environment=staging
+
+# One secret, read from stdin so it does not land in the shell history
+printf '%s\n' "$SIGNING_KEY" | pwnproxy plugin config collection update example-checker webhooks app signing_key=-
+
+# Items of a collection
+pwnproxy plugin config collection list example-checker webhooks
+pwnproxy plugin config collection add example-checker webhooks name=ci url=https://hooks.example.test/ci events=finding,scan
+pwnproxy plugin config collection update example-checker webhooks ci events=finding
+pwnproxy plugin config collection remove example-checker webhooks ci
+```
+
+`pwnproxy plugin config show example-checker`:
+
+```
+Plugin:  example-checker
+Schema:  version 1
+Settings:
+  environment: lab
+  retries: 1
+Collections:
+  webhooks: max 5 items
+Actions:
+  send_test: long-running, scope full
+  ping: inline, scope agent
+```
+
+A plugin that declares nothing prints `Plugin:  example-checker` and
+`Config:  none declared by the plugin`. A secret reads `set` or `unset` — the value never leaves the
+plugin, not even to the CLI.
+
+`pwnproxy plugin config set example-checker environment=staging`:
+
+```
+Updated example-checker: environment
+  environment: staging
+  retries: 1
+```
+
+`pwnproxy plugin config collection list example-checker webhooks`:
+
+```
+Collection: webhooks (2/5)
+  app:
+    auth_header: unset
+    events: finding
+    name: app
+    signing_key: set
+    status: active
+    url: https://hooks.example.test/app
+  ci:
+    auth_header: unset
+    events: scan, finding
+    name: ci
+    signing_key: unset
+    status: failing
+    url: https://hooks.example.test/ci
+```
+
+`collection add` and `collection update` print `Created webhooks/ci` / `Updated webhooks/ci`
+followed by that item's block; `collection remove` prints `Removed webhooks/ci`.
+
+**Values.** Every argument is `KEY=VALUE`; the type comes from the schema, so `retries=3` goes as an
+integer, `debug=true` as a boolean and `events=finding,scan` as an array (comma-separated). A value
+that does not parse exits `1` (`retries: expected an integer, got 'abc'`). `KEY=-` reads **one line**
+from stdin, so several `KEY=-` arguments consume one line each, in order:
+`printf '%s\n' "$SIGNING_KEY" | pwnproxy plugin config collection update example-checker webhooks app signing_key=-`.
+
+### pwnproxy plugin action
+
+Run an action a plugin declares, and read back a long one.
+
+```bash
+# A short action: its result is printed inline
+pwnproxy plugin action run example-checker ping name=app
+
+# A long action: it prints the task id and how to read it, and does not block
+pwnproxy plugin action run example-checker send_test name=app payload='{"event": "test"}'
+pwnproxy plugin action status 9f2c1a4e
+```
+
+```
+Status:  running
+Task:    9f2c1a4e
+Read it with: pwnproxy plugin action status 9f2c1a4e
+```
+
+```
+Status:  completed
+Result:
+{
+  "delivered": true,
+  "status_code": 204
+}
+```
+
+`status` prints the task's `Status:` and, when it failed, `Error:   <message>`; a `Result:` block
+follows once the task has one. An action's parameters are `KEY=VALUE` like the rest, and can never be
+a secret: an action uses a credential the plugin already stores.
+
+**Exit codes.** `0` success. `1` when the API answers `4xx`/`5xx` (the server's `detail` is printed
+on stderr, e.g. the `403` of a secret written with an `agent` token), when the API cannot be reached
+(`Cannot reach the pwnproxy API (…) — is it running?`), or when an argument is not `KEY=VALUE` or does
+not parse to the declared type.
+
 ## pwnproxy import burp
 
 Import Burp Suite configuration.

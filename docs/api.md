@@ -73,13 +73,13 @@ curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/auth/whoami
 ```
 
 `whoami` is how the MCP and the CLI diagnose "wrong token" without guessing. Routes that need
-`full` reject an `agent` token with the fixed `403` above. Today those routes are the plugin
-configuration API of the next change; the existing routes accept both scopes.
+`full` reject an `agent` token with the fixed `403` above. Today those routes are the ones that write
+a plugin's declared secret fields and those that run an action declared `requires_scope="full"`
+(see [Plugin configuration](#plugin-configuration)); every other route accepts both scopes.
 
-**The honest limit.** An agent with a shell on the same machine can read `~/.pwnproxy/api-token` and
-get `full`. The scope does not contain a malicious agent: it keeps the credentials of the test
-accounts from travelling through the MCP tools (the agent cannot read or write them without a route
-that demands `full`). To contain an agent, run it on another machine or under another user.
+**The honest limit.** The `agent` scope keeps secrets out of the MCP tools, but it does not contain
+an agent with a shell on the machine: such an agent can read `~/.pwnproxy/api-token` and get `full`.
+To contain an agent, run it on another machine or under another user.
 
 ### `PWNPROXY_API_TOKEN`
 
@@ -306,6 +306,204 @@ The state is **machine-wide** and persisted in `[plugin.activation]` of
 Codes: `404` the name is not in the catalog; `409` the plugin exists but cannot run
 (broken package or failing `on_load`), with the reason; `500` the config file cannot be
 written, in which case the in-memory state is left untouched.
+
+The **body is ignored**: the route flips the current state. There is no `enabled` field to send (a
+body carrying `{"enabled": false}` used to be honoured and turned a *disabled* plugin on); read the
+result from `GET /api/v1/plugins` after the call.
+
+## Plugin configuration
+
+Every plugin publishes its own configuration schema, and one generic set of routes reads and writes
+it. Nothing here is per-plugin: the shape comes from the schema, so a client can paint a form for a
+plugin it has never heard of.
+
+| Method | Path | Success | Body |
+|---|---|---|---|
+| `GET` | `/api/v1/plugins/{name}/schema` | `200` | — |
+| `GET` | `/api/v1/plugins/{name}/settings` | `200` | — |
+| `PATCH` | `/api/v1/plugins/{name}/settings` | `200` | `{"values": {...}}` (partial) |
+| `GET` | `/api/v1/plugins/{name}/collections/{collection}` | `200` | — |
+| `POST` | `/api/v1/plugins/{name}/collections/{collection}` | `201` | `{"values": {...}}` |
+| `PATCH` | `/api/v1/plugins/{name}/collections/{collection}/{item_id}` | `200` | `{"values": {...}}` (partial) |
+| `DELETE` | `/api/v1/plugins/{name}/collections/{collection}/{item_id}` | `204` | — |
+| `POST` | `/api/v1/plugins/{name}/actions/{action}` | `200` / `202` | `{"parameters": {...}}` |
+
+A `PATCH` writes only the keys it carries and leaves the rest alone; a `POST` requires every field
+the schema marks `required`.
+
+#### Schema
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/plugins/example-checker/schema
+```
+
+```json
+{
+  "plugin": "example-checker",
+  "schema_version": 1,
+  "settings": [
+    {"key": "environment", "type": "enum", "required": false, "secret": false,
+     "read_only": false, "default": "lab", "choices": ["lab", "staging"],
+     "help": "Where the checks run."},
+    {"key": "retries", "type": "integer", "required": false, "secret": false,
+     "read_only": false, "minimum": 0, "maximum": 5}
+  ],
+  "collections": [
+    {"name": "webhooks", "max_items": 5, "help": "Webhooks the plugin calls.",
+     "item": [
+       {"key": "name", "type": "string", "required": true, "secret": false,
+        "read_only": false, "max_length": 64, "help": "Unique."},
+       {"key": "url", "type": "string", "required": true, "secret": false,
+        "read_only": false, "max_length": 2048},
+       {"key": "events", "type": "array", "required": false, "secret": false,
+        "read_only": false, "items": "string", "max_items": 32},
+       {"key": "status", "type": "enum", "required": false, "secret": false,
+        "read_only": true, "choices": ["active", "failing"],
+        "help": "The plugin recomputes it; a client that sends it gets 422."},
+       {"key": "signing_key", "type": "string", "required": false, "secret": true,
+        "read_only": false, "max_length": 4096},
+       {"key": "auth_header", "type": "string", "required": false, "secret": true,
+        "read_only": false, "max_length": 4096}
+     ]}
+  ],
+  "actions": [
+    {"name": "send_test", "long_running": true, "requires_scope": "full",
+     "help": "Sends one test request to a webhook.",
+     "parameters": [
+       {"key": "name", "type": "string", "required": true, "secret": false,
+        "read_only": false},
+       {"key": "payload", "type": "string", "required": true, "secret": false,
+        "read_only": false, "max_length": 8192}
+     ]}
+  ]
+}
+```
+
+- Always `200`, with **empty lists** when the plugin declares no configuration (never a `404`, so a
+  client has one code path).
+- `key`, `type`, `required`, `secret` and `read_only` are always present; `help` and the
+  type-specific attributes (`default`, `choices`, `minimum`, `maximum`, `max_length`, `max_items`,
+  `items`) only when declared. Types: `string`, `integer`, `number`, `boolean`, `enum`, `array`.
+- The schema is public and never contains a secret *value*: a `secret` field is `string` only and
+  cannot declare a `default`.
+
+#### Two shapes, one rule
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:17171/api/v1/plugins/example-checker/settings
+```
+
+```json
+{"plugin": "example-checker", "schema_version": 1,
+ "values": {"environment": {"value": "lab"}, "retries": {"value": 1}}}
+```
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  http://127.0.0.1:17171/api/v1/plugins/example-checker/collections/webhooks
+```
+
+```json
+{"plugin": "example-checker", "collection": "webhooks", "schema_version": 1, "max_items": 5,
+ "items": [
+   {"id": "app", "values": {"name": {"value": "app"},
+                            "url": {"value": "https://hooks.example.test/app"},
+                            "events": {"value": ["finding"]},
+                            "status": {"value": "active"}}},
+   {"id": "ci", "values": {"name": {"value": "ci"},
+                           "url": {"value": "https://hooks.example.test/ci"},
+                           "events": {"value": []},
+                           "status": {"value": "failing"},
+                           "signing_key": {"set": true}}}
+ ]}
+```
+
+A non-secret field is `{"value": <json>}`; a `secret` field is `{"set": true|false}`. **No route
+returns a secret value**, which is why activating a plugin that holds credentials is a trust
+decision: the credential goes in once (Web UI or CLI) and comes out only to the plugin.
+
+#### Writing
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"values": {"environment": "staging", "retries": 3}}' \
+  http://127.0.0.1:17171/api/v1/plugins/example-checker/settings
+```
+
+The write answers with the settings again. A declared `secret` is written the same way — a
+collection item, `-d '{"values": {"signing_key": "<key>"}}'` — and comes back as `{"set": true}`,
+never as a value. An unknown key, a wrong type, a value outside
+`choices`/`minimum`/`maximum`/`max_length`/`max_items`, a missing `required` field on a create or a
+`read_only` field sent by the client is a `422` from the core; a rule of the plugin (uniqueness,
+"webhook names must be unique", …) is a `422` from the plugin, with its own message.
+
+#### Actions
+
+```bash
+curl -X POST -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"parameters": {"name": "app", "payload": "{\"event\": \"test\"}"}}' \
+  http://127.0.0.1:17171/api/v1/plugins/example-checker/actions/send_test
+# {"plugin": "example-checker", "action": "send_test", "status": "running",
+#  "task_id": "9f2c…"}
+```
+
+A short action answers `200` with `{"status": "completed", "result": …}`; a `long_running` one
+answers `202` with a `task_id` and the result lands in `GET /api/v1/tasks/{task_id}`. Action
+parameters can never be `secret`: a long action persists them, so a secret would be at rest outside
+the plugin's own store.
+
+#### Codes
+
+| Code | When | `detail` |
+|---|---|---|
+| `403` | an `agent` token writes a declared secret | `Secret fields can only be written with a token of scope 'full' (Web UI or CLI)` |
+| `403` | an `agent` token runs an action that requires `full` | `This token does not grant access to this resource` |
+| `404` | unknown plugin, collection, action or item | `plugin '<n>' not found`, `plugin '<n>' declares no collection '<c>'`, `plugin '<n>' declares no action '<a>'`, `plugin '<n>' has no <c> '<id>'` |
+| `409` | the plugin cannot be served now | `plugin '<n>' cannot run: <reason>`, `plugin '<n>' declares an invalid … schema`, `plugin '<n>' is not loaded`, `collection '<c>' is full (max <n> items)`, `plugin '<n>' declares no <method>` |
+| `422` | the values break a rule | `{"field": "<key or collection.key>", "message": "<rule>"}` |
+| `500` | the plugin raised | `plugin '<n>' failed` (the traceback goes to the log only) |
+| `503` | the process has no plugin loader, or no task store for a long action | `plugin_loader not available`, `task store not available` |
+
+The secret check runs **before** the body is validated: with an `agent` token the request is refused
+without looking at the values, so no `422` can describe a secret.
+
+#### Scope matrix
+
+| Operation | `full` (`api-token`, Web UI, CLI) | `agent` (`mcp-token`, MCP) |
+|---|---|---|
+| Read the schema, settings or a collection | yes | yes |
+| Write a non-secret setting or item field | yes | yes |
+| Create or delete an item | yes | yes |
+| Write a declared `secret` field | yes | `403` |
+| Run an action with `requires_scope="agent"` | yes | yes |
+| Run an action with `requires_scope="full"` (the default) | yes | `403` |
+
+An unknown or absent scope fails closed (it is treated as insufficient).
+
+#### Configuration works while the plugin is disabled; actions do not
+
+A plugin that cannot load — no license, or a value that breaks `on_load()` — would otherwise be
+impossible to fix outside its own CLI. So reads and writes build a **disposable** instance from the
+catalog's factory and never call `on_load()` on it. An action means "do it now", which a plugin that
+is off cannot promise: it answers `409` `plugin '<n>' is not loaded`.
+
+A write **does not reload** the plugin: the plugin's own `config_write`/`collection_*` persists the
+change and applies it to the live state, which is the only seam. Activation stays a separate,
+machine-wide flag (`POST /api/v1/plugins/{name}/toggle`), so configuring a plugin never enables it.
+
+#### Audit event
+
+Every **confirmed** write publishes `plugin.config_changed` (QoS `critical`) and logs one line;
+`/ws/events` forwards it with the usual envelope:
+
+```json
+{"type": "plugin.config_changed", "plugin": "example-checker", "kind": "settings",
+ "target": "settings", "item_id": null, "changed": ["environment", "retries"],
+ "scope": "full", "timestamp": "2026-11-23T10:00:00+00:00"}
+```
+
+`kind` is `settings`, `collection` or `action`; `changed` carries the **names** of the keys written
+(empty for a delete or an action) and never a value; a write that failed publishes nothing.
 
 ## Headless Scan (API)
 

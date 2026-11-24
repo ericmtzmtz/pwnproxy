@@ -53,10 +53,11 @@ What to do, in order:
 
 ### The scope is not a sandbox
 
-The `agent` scope exists so the credentials of your test accounts do not travel through the MCP
-tools: reading or writing them will need a route that demands `full`. It does **not** contain a
-malicious agent — one with a shell on the same machine can read `~/.pwnproxy/api-token` and use it.
-To contain an agent, run it on another machine or under another user.
+The credentials of your test accounts do not travel through the MCP tools: the routes that carry
+them demand `full`, and the MCP holds an `agent` token. The `agent` scope keeps secrets out of the
+MCP tools, but it does not contain an agent with a shell on the machine: such an agent can read
+`~/.pwnproxy/api-token` and get `full`. To contain an agent, run it on another machine or under
+another user.
 
 ## Quick Start
 
@@ -263,11 +264,50 @@ The default API URL is `http://127.0.0.1:17171/api/v1`.
 | `get_task` | Get task details |
 | `cancel_task` | Cancel a running task |
 | `list_plugins` | List loaded plugins |
-| `toggle_plugin` | Enable/disable a plugin |
+| `toggle_plugin` | Flip a plugin's activation (no body: the API inverts the state) |
+| `plugin_schema` | Configuration a plugin declares (settings, collections, actions) |
+| `plugin_config_get` | Read a plugin's settings (a secret as `set`/`unset`) |
+| `plugin_config_set` | Write some settings (partial) |
+| `plugin_collection_list` | Read one collection of a plugin |
+| `plugin_collection_create` | Create one item in a collection |
+| `plugin_collection_update` | Change some fields of one item (partial) |
+| `plugin_collection_delete` | Delete one item |
+| `plugin_action` | Run an action a plugin declares (inline or as a task) |
 | `trigger_scan` | Trigger scan on a URL |
 | `get_scan_results` | Get scan results |
 | `export_results` | Export scan results (json/sarif/html/pdf) |
 | `health_check` | Check API health |
+
+### Plugin configuration tools
+
+The eight `plugin_*` tools are **generic**: none of them knows a plugin by name. The shape of a
+plugin's settings, its collections and its actions comes from its own schema, so the tools work for
+any plugin — built in, installed, or one you write later — without an MCP release.
+
+```
+plugin_schema(name="example-checker")
+plugin_config_set(name="example-checker", values={"environment": "staging"})
+plugin_collection_create(name="example-checker", collection="webhooks",
+                         values={"name": "ci", "url": "https://hooks.example.test/ci",
+                                 "events": ["finding"]})
+plugin_action(name="example-checker", action="send_test",
+              parameters={"name": "app", "payload": "{\"event\": \"test\"}"})
+get_task(task_id="<task_id>")   # a long action's result
+```
+
+- A `403` is a **scope** answer from the token, not a business permission: the MCP holds the `agent`
+  token, so writing a declared secret field or running an action declared `requires_scope="full"`
+  is refused before the plugin is asked. That is what keeps the credentials of your test accounts
+  away from the model.
+- **Secrets are never read or written from the MCP.** No tool returns a secret value: a secret
+  setting comes back as `{"set": true|false}`, and there is no route behind these tools that would
+  hand the value over. Writing one is the Web UI's or the CLI's job.
+- `409` means "the plugin cannot be served now" (`plugin '<n>' is not loaded` for an action,
+  `collection '<c>' is full`, an invalid schema); `422` carries the rule that was broken as
+  `{"field", "message"}`; `404` means the plugin, the collection or the action is not declared.
+- A write is partial on `plugin_config_set` and `plugin_collection_update`: only the keys you send
+  are written, the rest keep their value.
+- Configuration can be read and written with the plugin **disabled**; an action needs it loaded.
 
 ## Workflow Examples
 
