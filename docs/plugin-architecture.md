@@ -533,6 +533,13 @@ Normative requirements:
   is a no-op, so an unbudgeted loop can overrun the chain budget.
 - **Errors**: wrap risky logic so a stage failure yields an empty `StageResult`; never
   abort the chain.
+- **Text evidence and baseline**: a stage that matches *text* patterns in the response body
+  MUST only confirm when the body is textual — `pwnproxy/shared/scan/content_types.py` provides
+  `is_known_binary()`, `is_textual()`, `response_is_textual()` and `header_value()`; a declared
+  binary type (PDF, image, archive) skips the flow without extra requests when the captured flow
+  carries it — and the matched signature MUST NOT match the baseline: the body captured by the
+  proxy, or one `send_clean()` per injection point reused for every payload when the flow has no
+  captured body. No baseline ⇒ no finding (fail closed).
 
 ```python
 @dataclass
