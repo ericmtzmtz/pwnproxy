@@ -741,6 +741,13 @@ Non-negotiables: fixed chain built once in `on_load`; config only via
 `PluginContext.config`; data injected into stages; replayer created in `on_load` and
 closed in `on_unload`; `payloads.py` is the only payload source.
 
+A scanner whose settings must be editable from outside — or that offers an on-demand action such
+as "send one test request" — publishes a schema on top of this
+([§3.4](#34-plugin-configuration-and-actions-for-authors)): the fields and actions are declared in
+`config_schema()`, and every change arrives through `config_write` / `collection_*`, which must
+persist it **and** apply it to the live plugin because the core does not reload it. The store is
+yours; `PluginContext.config` keeps the load-time reads.
+
 **Trust boundary.** A plugin runs inside the proxy process, with the user's permissions
 and no sandbox: it can read the database, the traffic and the file system. Resolving its
 entry point already imports the package. Enabling a plugin — including one installed
@@ -782,6 +789,33 @@ Three tiers:
 A test that passes is only evidence if it exercises the production path. If a test's name
 promises behavior the assertion does not check, fix the test.
 
+#### A plugin that declares a schema
+
+Optional. A plugin that implements none of the eight methods of
+[§3.4](#34-plugin-configuration-and-actions-for-authors) has no configuration to test. One that
+publishes `config_schema()` MUST add the cases below, driven through `PluginConfigService` — the
+path the REST routes, the MCP tools and the CLI take — and not by reaching into its own store:
+
+- **The declared schema validates.** `validate_schema(plugin.config_schema())` does not raise and
+  the call returns a `PluginConfigSchema`. A schema the core rejects is a `409` that publishes
+  nothing, so a test that only checks "the route answers" hides it.
+- **No read returns a secret.** After writing a `secret` field (`signing_key`), neither
+  `read_settings()` nor `list_items()` carries the value: `render_values()` publishes a secret as
+  `{"set": true}`, so the probe string you wrote appears nowhere in the response.
+- **No action result returns a secret.** `run_action("send_test", …)` may report the URL, the
+  status code or the diff; assert the result holds no secret value. The task store persists it and
+  the MCP reads it, so a secret there is a secret at rest outside your store.
+- **Business rules raise `PluginValidationError`.** A duplicate webhook `name`, an unreachable URL:
+  the client receives **your** `422` `{"field", "message"}`, with the field qualified by the
+  collection (`webhooks.name`) — not a `500`, and not a widened `SchemaViolation`.
+- **`__init__` has no side effects.** Build the instance the way the core does for a plugin that is
+  not loaded — the catalog's factory, no `on_load()` — then write a setting and list a collection:
+  no connection may be opened and no task started. A `__init__` that reaches the network fails
+  here, and it would also break `GET …/schema` with the plugin disabled.
+- **The collection respects `max_items`.** Fill it to the declared capacity and assert the next
+  create is a `409` `collection 'webhooks' is full (max 5 items)`: the core enforces the count, the
+  test proves the number you declared is the one you meant.
+
 ---
 
 ## 15. Anti-patterns (forbidden)
@@ -806,10 +840,15 @@ pwnproxy/plugins/core/          plugin framework
   base.py                       PwnPlugin, ScannerPlugin, PluginMetadata, PluginContext (+ re-export Finding)
   catalog.py                    discover_plugins (built-ins + entry points), PluginRecord, build_scan_loader, scan_config
   config.py                     config.toml: [plugin] legacy block + [plugin.activation] (plugin_enabled, set_plugin_enabled, atomic write)
+  config_schema.py              configuration vocabulary: FieldSpec, CollectionSpec, ActionSpec, PluginConfigSchema, validate_schema, render_values, PluginValidationError
+  config_service.py             PluginConfigService (schema, settings, collections, actions) + the error → HTTP status table in its docstring
   contracts.py                  consumer mixins (Flow/Finding/Surface/Evidence)
   loader.py                     UniversalPluginLoader, PluginLoader (refresh_catalog, toggle, run_scan)
   chain.py                      DetectionChain, BudgetChain, chain_from_depth (+ re-exports from shared/scan/stage.py)
   discovery.py / watchdog.py    PyPI discovery / hot-reload
+
+pwnproxy/transport/rest/
+  plugin_config.py              generic /api/v1/plugins/{name}/{schema,settings,collections,actions} routes (scope checks; knows no plugin by name)
 
 pwnproxy/plugins/scanners/<name>/
   plugin.py                     ScannerPlugin subclass (reads config in on_load)
