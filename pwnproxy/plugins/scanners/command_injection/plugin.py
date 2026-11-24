@@ -36,7 +36,7 @@ class CommandInjectionScannerPlugin(ScannerPlugin):
             if key in seen:
                 continue
             seen.add(key)
-            async for finding in self._scanner._scan_point(point):
+            async for finding in self._scanner._scan_point(point, flow):
                 yield finding
     
     async def on_unload(self) -> None:
