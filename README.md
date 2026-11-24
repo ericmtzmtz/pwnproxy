@@ -521,12 +521,18 @@ This starts:
 
 - Proxy → `:17170`
 - API → `:17171`
-- Web UI → `:17172` — the script prints the URL with `#token=<token>` once `GET /api/v1/health` answers
-- Logs → `.dev-logs/pwnproxy.log` (pwnproxy stdout/stderr; `.dev-logs/pwnproxy.err.log` on Windows)
+- Web UI → `:17172` — started in the background; the URL with `#token=<token>` is printed only
+  once the Web UI answers on its port (60 s by default, `PWNPROXY_WEBUI_TIMEOUT` overrides it),
+  so the printed link works on the first click
+- Logs → `.dev-logs/pwnproxy.log` (pwnproxy stdout/stderr; `.dev-logs/pwnproxy.err.log` on
+  Windows) and `.dev-logs/webui.log` (Astro output, also streamed to the console)
 
 Both scripts run pwnproxy from the repo virtualenv (`poetry run pwnproxy`) when poetry is
-available, and only fall back to a `pwnproxy` on `PATH` (with a warning) otherwise. If the
-process dies at startup, the last lines of that log are printed.
+available, and only fall back to a `pwnproxy` on `PATH` (with a warning) otherwise. If the proxy
+dies at startup, or the Web UI dies or never answers, the last lines of its log are printed and
+every started service is stopped again. They also print `[dev] API token: OK` (or `NOT FOUND`
+plus the command that shows one) so it is obvious whether the printed URL carries a token; the
+token itself only ever appears in that URL.
 
 ### Run tests
 
