@@ -44,6 +44,7 @@ import Card from "@/ui/Card.astro";
 <script>
   import { getStatus, toggleIntercept, getPending, forwardFlow, dropFlow, forwardAll, dropAll } from "@/api/interceptor/calls";
   import type { PendingFlow, InterceptStatus } from "@/api/interceptor/types";
+  import { el, svgIcon } from "@/utils/dom";
 
   const statusDot = document.getElementById("status-dot")!;
   const statusText = document.getElementById("status-text")!;
@@ -52,6 +53,13 @@ import Card from "@/ui/Card.astro";
   const forwardAllBtn = document.getElementById("forward-all-btn")!;
   const dropAllBtn = document.getElementById("drop-all-btn")!;
   const pendingList = document.getElementById("pending-list")!;
+
+  /**
+   * The server-rendered empty state is cloned instead of being written as an
+   * HTML string here: every node in this page that carries data from the target
+   * is created with `document.createElement` and `textContent`.
+   */
+  const emptyStateTemplate = pendingList.firstElementChild;
 
   let expandedId: string | null = null;
   let currentStatus: InterceptStatus = { enabled: false, pending_count: 0 };
@@ -77,13 +85,63 @@ import Card from "@/ui/Card.astro";
     }
   }
 
+  function actionButton(label: string, hover: string, onClick: () => void): HTMLButtonElement {
+    const button = el("button", `rounded px-2 py-1 text-xs font-medium text-neutral-400 transition-colors ${hover}`, label);
+    button.title = label;
+    button.addEventListener("click", onClick);
+    return button;
+  }
+
+  /** One pending request: URL, method and raw request are target-controlled. */
+  function renderFlow(flow: PendingFlow): HTMLElement {
+    const isOpen = expandedId === flow.id;
+    const card = el("div", "group rounded-lg border border-neutral-800 bg-neutral-950");
+
+    const header = el("div", "flex items-center justify-between px-4 py-3");
+    const expand = el("button", "flex items-center gap-3");
+    expand.addEventListener("click", () => {
+      expandedId = expandedId === flow.id ? null : flow.id;
+      refresh();
+    });
+    expand.append(
+      svgIcon(
+        [["polyline", { points: "9 18 15 12 9 6" }]],
+        `h-4 w-4 text-neutral-500 transition-transform ${isOpen ? "rotate-90" : ""}`,
+      ),
+      el("span", "inline-flex h-2 w-2 rounded-full bg-red-500"),
+      el("span", "text-xs font-mono font-bold uppercase tracking-wider text-neutral-200", flow.method),
+    );
+    const url = el("span", "max-w-[300px] truncate text-xs text-neutral-400", flow.url);
+    url.title = flow.url;
+    expand.append(url, el("span", "text-xs text-neutral-500", host(flow.url)));
+
+    const actions = el("div", "flex items-center gap-1.5");
+    actions.append(
+      actionButton("Forward", "hover:bg-success-900/20 hover:text-success-400", () => handleForward(flow.id)),
+      actionButton("Drop", "hover:bg-red-900/20 hover:text-red-400", () => handleDrop(flow.id)),
+    );
+
+    header.append(expand, actions);
+    card.append(header);
+
+    if (isOpen) {
+      card.append(el(
+        "div",
+        "px-4 py-2 bg-neutral-900 text-xs text-neutral-300 whitespace-pre-wrap rounded-b-lg border-t border-neutral-800",
+        flow.raw || "",
+      ));
+    }
+    return card;
+  }
+
+  function host(url: string): string {
+    try { return new URL(url).host; } catch { return url; }
+  }
+
   function renderPending(flows: PendingFlow[]) {
     if (flows.length === 0) {
-      pendingList.innerHTML = `<div class="flex flex-col items-center justify-center rounded-lg border border-dashed border-neutral-800 py-16 text-neutral-600">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mb-3 h-10 w-10"><rect x="2" y="2" width="20" height="20" rx="2.5"/><path d="M8 7v10"/><path d="M12 7v10"/><path d="M16 7v10"/></svg>
-        <p class="text-sm">No intercepted requests</p>
-        <p class="mt-1 text-xs">Enable the interceptor and browse to a target</p>
-      </div>`;
+      if (emptyStateTemplate) pendingList.replaceChildren(emptyStateTemplate.cloneNode(true));
+      else pendingList.replaceChildren();
       forwardAllBtn.classList.add("hidden");
       dropAllBtn.classList.add("hidden");
       pendingBadge.classList.add("hidden");
@@ -95,27 +153,9 @@ import Card from "@/ui/Card.astro";
     pendingBadge.classList.remove("hidden");
     pendingBadge.textContent = `${flows.length} pending`;
 
-    const host = (url: string) => { try { return new URL(url).host; } catch { return url; } };
-
-    pendingList.innerHTML = `<div class="space-y-2">${flows.map((f) => {
-      const isOpen = expandedId === f.id;
-      return `<div class="group rounded-lg border border-neutral-800 bg-neutral-950">
-        <div class="flex items-center justify-between px-4 py-3">
-          <button onClick="toggleExpand('${f.id}')" class="flex items-center gap-3">
-            <svg class="h-4 w-4 text-neutral-500 transition-transform ${isOpen ? "rotate-90" : ""}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-            <span class="inline-flex h-2 w-2 rounded-full bg-red-500" />
-            <span class="text-xs font-mono font-bold uppercase tracking-wider text-neutral-200">${f.method}</span>
-            <span class="max-w-[300px] truncate text-xs text-neutral-400" title="${f.url}">${f.url}</span>
-            <span class="text-xs text-neutral-500">${host(f.url)}</span>
-          </button>
-          <div class="flex items-center gap-1.5">
-            <button onClick="handleForward('${f.id}')" class="rounded px-2 py-1 text-xs font-medium text-neutral-400 transition-colors hover:bg-success-900/20 hover:text-success-400" title="Forward">Forward</button>
-            <button onClick="handleDrop('${f.id}')" class="rounded px-2 py-1 text-xs font-medium text-neutral-400 transition-colors hover:bg-red-900/20 hover:text-red-400" title="Drop">Drop</button>
-          </div>
-        </div>
-        ${isOpen ? `<div class="px-4 py-2 bg-neutral-900 text-xs text-neutral-300 whitespace-pre-wrap rounded-b-lg border-t border-neutral-800">${f.raw || ""}</div>` : ""}
-      </div>`;
-    }).join("")}</div>`;
+    const list = el("div", "space-y-2");
+    for (const flow of flows) list.append(renderFlow(flow));
+    pendingList.replaceChildren(list);
   }
 
   async function handleForward(id: string) {
@@ -139,13 +179,6 @@ import Card from "@/ui/Card.astro";
       await refresh();
     }
   }
-
-  (window as any).handleForward = handleForward;
-  (window as any).handleDrop = handleDrop;
-  (window as any).toggleExpand = (id: string) => {
-    expandedId = expandedId === id ? null : id;
-    refresh();
-  };
 
   async function refresh() {
     try {

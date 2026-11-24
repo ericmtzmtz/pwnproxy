@@ -81,6 +81,7 @@ import Card from "@/ui/Card.astro";
   import { importBurpConfig } from "@/api/scan/calls";
   import { getScope, updateScope } from "@/api/scope/calls";
   import type { ScopeConfig } from "@/api/scope/calls";
+  import { el } from "@/utils/dom";
 
   let scope: ScopeConfig = { in_scope: [], out_of_scope: [], enabled: false };
 
@@ -112,34 +113,30 @@ import Card from "@/ui/Card.astro";
     const bar = document.getElementById("scope-status-bar") as HTMLDivElement;
     if (!bar) return;
     const on = scope.enabled;
-    bar.innerHTML = `
-      <div class="mb-4 flex items-center justify-between rounded-lg border ${on ? "border-success-800" : "border-neutral-800"} bg-neutral-900 px-4 py-3">
-        <div class="flex items-center gap-3">
-          <span class="flex items-center gap-2 text-sm font-medium text-neutral-50">
-            <span class="inline-flex h-2.5 w-2.5 rounded-full ${on ? "bg-success-500" : "bg-neutral-500"}" />
-          </span>
-          <span class="text-sm text-neutral-400">
-            ${on ? "Scope ON" : "Scope OFF"}
-          </span>
-        </div>
-        <button id="scope-status-toggle"
-          class="cursor-pointer rounded-md border ${on ? "border-danger-800 bg-danger-900/20 text-danger-400 hover:bg-danger-900/40" : "border-success-800 bg-success-900/20 text-success-400 hover:bg-success-900/40"} px-3 py-1 text-xs font-medium transition-colors"
-        >
-          ${on ? "Disable" : "Enable"}
-        </button>
-      </div>`;
-    const btn = document.getElementById("scope-status-toggle");
-    if (btn) {
-      btn.addEventListener("click", async () => {
-        scope.enabled = !scope.enabled;
-        await saveScope();
-        renderScopeStatus();
-        renderAll();
-        window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
-          detail: { title: "Scope toggled", message: `Scope filtering is now ${scope.enabled ? "ON" : "OFF"}`, severity: "info" },
-        }));
-      });
-    }
+
+    const row = el("div", `mb-4 flex items-center justify-between rounded-lg border ${on ? "border-success-800" : "border-neutral-800"} bg-neutral-900 px-4 py-3`);
+    const left = el("div", "flex items-center gap-3");
+    const marker = el("span", "flex items-center gap-2 text-sm font-medium text-neutral-50");
+    marker.append(el("span", `inline-flex h-2.5 w-2.5 rounded-full ${on ? "bg-success-500" : "bg-neutral-500"}`));
+    left.append(marker, el("span", "text-sm text-neutral-400", on ? "Scope ON" : "Scope OFF"));
+
+    const button = el(
+      "button",
+      `cursor-pointer rounded-md border ${on ? "border-danger-800 bg-danger-900/20 text-danger-400 hover:bg-danger-900/40" : "border-success-800 bg-success-900/20 text-success-400 hover:bg-success-900/40"} px-3 py-1 text-xs font-medium transition-colors`,
+      on ? "Disable" : "Enable",
+    );
+    button.id = "scope-status-toggle";
+    button.addEventListener("click", async () => {
+      scope.enabled = !scope.enabled;
+      await saveScope();
+      renderAll();
+      window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
+        detail: { title: "Scope toggled", message: `Scope filtering is now ${scope.enabled ? "ON" : "OFF"}`, severity: "info" },
+      }));
+    });
+
+    row.append(left, button);
+    bar.replaceChildren(row);
   }
 
   // Render the include/exclude lists and summary
@@ -149,56 +146,43 @@ import Card from "@/ui/Card.astro";
     renderList(excludeList, scope.out_of_scope, "out");
     summaryInclude.textContent = String(scope.in_scope.length);
     summaryExclude.textContent = String(scope.out_of_scope.length);
-    updateScopeToggle();
   }
 
-  // Update the scope toggle button based on current state
-  function updateScopeToggle() {
-    const btn = document.getElementById("scope-enabled") as HTMLButtonElement;
-    if (!btn) return;
-    btn.className = `cursor-pointer rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-      scope.enabled
-        ? "border-success-800 bg-success-900/20 text-success-400 hover:bg-success-900/40"
-        : "border-neutral-700 bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-    }`;
-    btn.innerHTML = `<span class="inline-flex items-center gap-1.5">
-      <span class="inline-flex h-2 w-2 rounded-full ${scope.enabled ? "bg-success-500" : "bg-neutral-500"}" />
-      ${scope.enabled ? "Scope ON" : "Scope OFF"}
-    </span>`;
-  }
-
-  // Render include/exclude lists
+  // Render include/exclude lists. Rules are typed by the user and echoed by the
+  // API, so they reach the DOM as text: never as an HTML string.
   function renderList(container: HTMLDivElement, items: string[], kind: "in" | "out") {
     if (items.length === 0) {
-      container.innerHTML = `<div class="py-8 text-center text-sm text-neutral-600">No ${kind === "in" ? "targets" : "exclusions"} configured</div>`;
+      container.replaceChildren(
+        el("div", "py-8 text-center text-sm text-neutral-600", `No ${kind === "in" ? "targets" : "exclusions"} configured`),
+      );
       return;
     }
 
-    // Render rules
-    container.innerHTML = items.map((item, i) =>
-      `<div class="flex items-center justify-between rounded bg-neutral-950 px-2 py-1.5 mb-1">
-        <span class="flex items-center gap-2 text-xs font-mono text-neutral-300">
-          <span class="${kind === "in" ? "text-success-500" : "text-danger-500"}">●</span>
-          ${escapeHtml(item)}
-        </span>
-        <button data-kind="${kind}" data-index="${i}" class="delete-rule rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:text-danger-500 hover:bg-neutral-800">✕</button>
-      </div>`
-    ).join("");
-
-    // Add delete event listeners
-    container.querySelectorAll(".delete-rule").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const kind = (btn as HTMLElement).dataset.kind as "in" | "out";
-        const idx = parseInt((btn as HTMLElement).dataset.index ?? "0", 10);
-        if (kind === "in") scope.in_scope.splice(idx, 1);
-        else scope.out_of_scope.splice(idx, 1);
+    const rows = items.map((item, i) => {
+      const row = el("div", "flex items-center justify-between rounded bg-neutral-950 px-2 py-1.5 mb-1");
+      const label = el("span", "flex items-center gap-2 text-xs font-mono text-neutral-300");
+      label.append(
+        el("span", kind === "in" ? "text-success-500" : "text-danger-500", "●"),
+        document.createTextNode(item),
+      );
+      const remove = el(
+        "button",
+        "delete-rule rounded px-1.5 py-0.5 text-xs text-neutral-500 hover:text-danger-500 hover:bg-neutral-800",
+        "✕",
+      );
+      remove.addEventListener("click", async () => {
+        if (kind === "in") scope.in_scope.splice(i, 1);
+        else scope.out_of_scope.splice(i, 1);
         await saveScope();
         await loadScope();
         window.dispatchEvent(new CustomEvent("pwnproxy-toast", {
           detail: { title: "Rule deleted", message: "Scope rule removed", severity: "info" },
         }));
       });
+      row.append(label, remove);
+      return row;
     });
+    container.replaceChildren(...rows);
   }
 
 
@@ -270,12 +254,6 @@ import Card from "@/ui/Card.astro";
       importBtn.textContent = "Import";
     }
   });
-
-  function escapeHtml(s: string): string {
-    const d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
-  }
 
   loadScope();
 </script>
