@@ -13,6 +13,19 @@ and ``httpx``, see ``pyproject.toml``), so it cannot import
 
 The token is read when a client is built, so rotating it is followed by
 ``configure(api_base=...)`` (which rebuilds the client) or a restart.
+
+A plugin publishes its own configuration (settings, collections, actions) and
+this server exposes it through **generic** tools —one set for every plugin, no
+tool per plugin—: ``plugin_schema``, ``plugin_config_get``, ``plugin_config_set``,
+``plugin_collection_list``, ``plugin_collection_create``,
+``plugin_collection_update``, ``plugin_collection_delete`` and ``plugin_action``.
+These tools neither filter nor decide anything: they return the API's body as it
+came, and an error keeps the server's ``detail`` verbatim. Because the token is
+the ``agent`` one, the API answers ``403`` to a write that carries a ``secret``
+field and to an action declared ``requires_scope: "full"`` — that is a scope
+answer, not a business rule. Secrets are therefore never read or written from
+here: ``GET`` renders them as ``{"set": true|false}`` and the ``403`` explains
+where a human has to do it (the Web UI or the CLI).
 """
 
 import asyncio
@@ -113,7 +126,11 @@ class MCPApiClient:
                     detail = resp.json().get("detail", resp.text)
                 except Exception:
                     detail = resp.text
-                return {"error": str(detail), "status_code": resp.status_code}
+                # A `422` is `{"field", "message"}`: publish it as JSON instead of
+                # a Python repr, so the agent reads the server's own words.
+                if not isinstance(detail, str):
+                    detail = json.dumps(detail, default=str)
+                return {"error": detail, "status_code": resp.status_code}
             return resp.json()
         except httpx.ConnectError:
             return {"error": "Connection refused — is pwnproxy API running?", "status_code": 0}
@@ -127,6 +144,15 @@ class MCPApiClient:
 
     def post(self, path: str, **kwargs):
         return self._request("POST", path, **kwargs)
+
+    def patch(self, path: str, **kwargs):
+        """``PATCH``: the partial write of the plugin-configuration contract.
+
+        Settings and collection items are written with ``PATCH`` on purpose
+        (design D5): the missing keys are left untouched, so a client never has
+        to resend —and therefore never has to be able to read— a secret.
+        """
+        return self._request("PATCH", path, **kwargs)
 
     def put(self, path: str, **kwargs):
         return self._request("PUT", path, **kwargs)
@@ -281,8 +307,108 @@ def _register_tools(mcp):
         return _ok(await c.get("/plugins"))
 
     @mcp.tool()
-    async def toggle_plugin(name: str, enabled: bool) -> str:
-        return _ok(await c.post(f"/plugins/{name}/toggle", json={"enabled": enabled}))
+    async def toggle_plugin(name: str) -> str:
+        """Flip a plugin's activation (no body: the API inverts the current state).
+
+        There is no ``enabled`` argument on purpose: the route ignores the body
+        and inverts what the plugin has, so asking for "enabled=false" used to
+        turn a disabled plugin **on**. Read the state from ``list_plugins`` after
+        the call.
+        """
+        return _ok(await c.post(f"/plugins/{name}/toggle"))
+
+    # -- Plugin configuration: one generic set of tools for every plugin ------
+    # Nothing here knows a plugin by name: the shape comes from the plugin's own
+    # schema. These tools never filter or decide; they return the API body and
+    # its `detail` as they came. A 403 is a scope answer from the token (the
+    # `agent` one cannot write a secret field nor run a `full` action), and
+    # secrets are never read or written from here.
+
+    @mcp.tool()
+    async def plugin_schema(name: str) -> str:
+        """Configuration a plugin declares: settings, collections and actions.
+
+        Empty lists mean the plugin declares no configuration (still a 200). A
+        403 means this resource is not covered by your token's scope.
+        """
+        return _ok(await c.get(f"/plugins/{name}/schema"))
+
+    @mcp.tool()
+    async def plugin_config_get(name: str) -> str:
+        """Read a plugin's settings.
+
+        A secret field comes back as {"set": true|false}, never as a value. A 403
+        means this resource is not covered by your token's scope.
+        """
+        return _ok(await c.get(f"/plugins/{name}/settings"))
+
+    @mcp.tool()
+    async def plugin_config_set(name: str, values: dict) -> str:
+        """Write some settings (partial: only the keys sent are written).
+
+        A 403 means this resource is not covered by your token's scope: writing a
+        secret field needs the `full` token (the Web UI or the CLI), so a secret
+        cannot be written from here.
+        """
+        return _ok(await c.patch(f"/plugins/{name}/settings", json={"values": values}))
+
+    @mcp.tool()
+    async def plugin_collection_list(name: str, collection: str) -> str:
+        """Read one of a plugin's collections (its items and its capacity).
+
+        A 403 means this resource is not covered by your token's scope.
+        """
+        return _ok(await c.get(f"/plugins/{name}/collections/{collection}"))
+
+    @mcp.tool()
+    async def plugin_collection_create(name: str, collection: str, values: dict) -> str:
+        """Create one item in a collection.
+
+        `409` means the collection is full; `422` carries the plugin's own rule
+        with its `field` and `message`. A `403` means this resource is not covered
+        by your token's scope (a secret field needs the `full` token).
+        """
+        return _ok(
+            await c.post(f"/plugins/{name}/collections/{collection}", json={"values": values})
+        )
+
+    @mcp.tool()
+    async def plugin_collection_update(
+        name: str, collection: str, item_id: str, values: dict
+    ) -> str:
+        """Change some fields of one item (partial: only the keys sent are written).
+
+        A `403` means this resource is not covered by your token's scope (a secret
+        field needs the `full` token); `404` means the item is gone.
+        """
+        return _ok(
+            await c.patch(
+                f"/plugins/{name}/collections/{collection}/{item_id}",
+                json={"values": values},
+            )
+        )
+
+    @mcp.tool()
+    async def plugin_collection_delete(name: str, collection: str, item_id: str) -> str:
+        """Delete one item of a collection (`404` when it is already gone).
+
+        A 403 means this resource is not covered by your token's scope.
+        """
+        return _ok(await c.delete(f"/plugins/{name}/collections/{collection}/{item_id}"))
+
+    @mcp.tool()
+    async def plugin_action(name: str, action: str, parameters: dict) -> str:
+        """Run an action a plugin declares.
+
+        A short action answers `{"status": "completed", "result": …}`; a long one
+        answers `{"status": "running", "task_id": …}` and its result lands in
+        `get_task`. A 403 means this resource is not covered by your token's scope
+        (an action that requires `full` cannot be run by the `agent` token), and a
+        `409` means the plugin is not loaded.
+        """
+        return _ok(
+            await c.post(f"/plugins/{name}/actions/{action}", json={"parameters": parameters})
+        )
 
     @mcp.tool()
     async def trigger_scan(url: str, scanners: str = "", detection_depth: str = "fast", evasion_level: str = "none") -> str:
@@ -352,7 +478,15 @@ TOOL_DEFINITIONS = [
     {"name": "get_task", "description": "Get task status and result", "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
     {"name": "cancel_task", "description": "Cancel a running task", "inputSchema": {"type": "object", "properties": {"task_id": {"type": "string"}}, "required": ["task_id"]}},
     {"name": "list_plugins", "description": "List loaded plugins", "inputSchema": {"type": "object", "properties": {}}},
-    {"name": "toggle_plugin", "description": "Enable/disable a plugin", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "enabled": {"type": "boolean"}}, "required": ["name", "enabled"]}},
+    {"name": "toggle_plugin", "description": "Flip a plugin's activation (the API inverts its state; no body)", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "plugin_schema", "description": "Configuration a plugin declares: settings, collections, actions. A 403 means the resource is outside your token's scope", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "plugin_config_get", "description": "Read a plugin's settings; secrets come back as {set: bool}, never as a value", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}},
+    {"name": "plugin_config_set", "description": "Write some settings (partial). A secret field needs the full token, so a 403 is expected here", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "values": {"type": "object"}}, "required": ["name", "values"]}},
+    {"name": "plugin_collection_list", "description": "Read one of a plugin's collections", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "collection": {"type": "string"}}, "required": ["name", "collection"]}},
+    {"name": "plugin_collection_create", "description": "Create one item in a collection (409 = full, 422 = the plugin's rule)", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "collection": {"type": "string"}, "values": {"type": "object"}}, "required": ["name", "collection", "values"]}},
+    {"name": "plugin_collection_update", "description": "Change some fields of one item (partial)", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "collection": {"type": "string"}, "item_id": {"type": "string"}, "values": {"type": "object"}}, "required": ["name", "collection", "item_id", "values"]}},
+    {"name": "plugin_collection_delete", "description": "Delete one item of a collection", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "collection": {"type": "string"}, "item_id": {"type": "string"}}, "required": ["name", "collection", "item_id"]}},
+    {"name": "plugin_action", "description": "Run a plugin action: inline result, or a task_id for a long one (403 = outside your token's scope)", "inputSchema": {"type": "object", "properties": {"name": {"type": "string"}, "action": {"type": "string"}, "parameters": {"type": "object"}}, "required": ["name", "action", "parameters"]}},
     {"name": "trigger_scan", "description": "Trigger scan on URL with detection depth and evasion level", "inputSchema": {"type": "object", "properties": {"url": {"type": "string"}, "scanners": {"type": "string"}, "detection_depth": {"type": "string"}, "evasion_level": {"type": "string"}}, "required": ["url"]}},
     {"name": "get_scan_results", "description": "Get scan task results", "inputSchema": {"type": "object", "properties": {"scan_id": {"type": "string"}}, "required": ["scan_id"]}},
     {"name": "export_results", "description": "Export scan results (json/sarif/html/pdf)", "inputSchema": {"type": "object", "properties": {"scan_id": {"type": "string"}, "format": {"type": "string"}}, "required": ["scan_id"]}},
@@ -398,7 +532,15 @@ async def handle_call(tool_name: str, arguments: dict) -> Any:
         "get_task": lambda: c.get(f"/tasks/{arguments['task_id']}"),
         "cancel_task": lambda: c.post(f"/tasks/{arguments['task_id']}/cancel"),
         "list_plugins": lambda: c.get("/plugins"),
-        "toggle_plugin": lambda: c.post(f"/plugins/{arguments['name']}/toggle", json={"enabled": arguments["enabled"]}),
+        "toggle_plugin": lambda: c.post(f"/plugins/{arguments['name']}/toggle"),
+        "plugin_schema": lambda: c.get(f"/plugins/{arguments['name']}/schema"),
+        "plugin_config_get": lambda: c.get(f"/plugins/{arguments['name']}/settings"),
+        "plugin_config_set": lambda: c.patch(f"/plugins/{arguments['name']}/settings", json={"values": arguments.get("values", {})}),
+        "plugin_collection_list": lambda: c.get(f"/plugins/{arguments['name']}/collections/{arguments['collection']}"),
+        "plugin_collection_create": lambda: c.post(f"/plugins/{arguments['name']}/collections/{arguments['collection']}", json={"values": arguments.get("values", {})}),
+        "plugin_collection_update": lambda: c.patch(f"/plugins/{arguments['name']}/collections/{arguments['collection']}/{arguments['item_id']}", json={"values": arguments.get("values", {})}),
+        "plugin_collection_delete": lambda: c.delete(f"/plugins/{arguments['name']}/collections/{arguments['collection']}/{arguments['item_id']}"),
+        "plugin_action": lambda: c.post(f"/plugins/{arguments['name']}/actions/{arguments['action']}", json={"parameters": arguments.get("parameters", {})}),
         "trigger_scan": lambda: c.post("/scan", params={"url": arguments["url"], **({"scanners": arguments["scanners"]} if arguments.get("scanners") else {}), **({"detection_depth": arguments["detection_depth"]} if arguments.get("detection_depth") else {}), **({"evasion_level": arguments["evasion_level"]} if arguments.get("evasion_level") else {})}),
         "get_scan_results": lambda: c.get(f"/scan/{arguments['scan_id']}"),
         "export_results": lambda: c.get(f"/export/{arguments['scan_id']}", params={"format": arguments.get("format", "json")}),

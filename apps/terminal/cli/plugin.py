@@ -4,6 +4,8 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from apps.terminal.cli.plugin_config import action_app as plugin_action_app
+from apps.terminal.cli.plugin_config import config_app as plugin_config_app
 from pwnproxy.plugins.core.config import get_registry_url
 from pwnproxy.plugins.core.discovery import (
     discover_installed,
@@ -13,6 +15,14 @@ from pwnproxy.plugins.core.discovery import (
 
 app = typer.Typer(help="Manage pwnproxy plugins")
 console = Console()
+
+# A plugin's own configuration lives in its own module: `config` and `action`
+# talk to the API (the third client of the same contract as the Web UI and the
+# MCP), while this file keeps the local package commands (search/install/list/
+# create) and its templates.
+app.add_typer(plugin_config_app, name="config", help="Read and write a plugin's configuration")
+app.add_typer(plugin_action_app, name="action", help="Run a plugin action")
+
 
 
 @app.command()
