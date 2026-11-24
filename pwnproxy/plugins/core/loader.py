@@ -12,6 +12,8 @@ from pwnproxy.plugins.core.base import (
     ScannerPlugin,
 )
 from pwnproxy.plugins.core.catalog import (
+    FAILURE_INSTANTIATION,
+    FAILURE_ON_LOAD,
     SOURCE_BUILTIN,
     PluginRecord,
     discover_plugins,
@@ -52,17 +54,33 @@ class PluginUnavailableError(RuntimeError):
     """
 
 
-def _catalog_error(record: PluginRecord, error: str) -> PluginRecord:
-    """Return ``record`` with ``error`` set and its factory dropped."""
+def _catalog_error(record: PluginRecord, error: str, *, phase: str) -> PluginRecord:
+    """Return ``record`` with its failure recorded, keeping the factory only for ``on_load``.
+
+    Args:
+        record: Catalog record that failed at runtime.
+        error: Reason, already formatted for the catalog and the ``409`` body.
+        phase: Runtime phase that failed — ``FAILURE_INSTANTIATION`` or
+            ``FAILURE_ON_LOAD``.
+
+    Returns:
+        The record with the failure recorded. ``factory`` is dropped **unless**
+        the phase is ``FAILURE_ON_LOAD``: such a plugin cannot run, but the
+        configuration API still builds a disposable instance from the factory to
+        let the user fix whatever made ``on_load()`` raise. With no factory
+        (discovery failed, constructor raised) there is nothing to configure and
+        every route answers ``409``.
+    """
     return PluginRecord(
         name=record.name,
         source=record.source,
         package=record.package,
         version=record.version,
         entry_point=record.entry_point,
-        factory=None,
+        factory=record.factory if phase == FAILURE_ON_LOAD else None,
         error=error,
         metadata=record.metadata,
+        failed_phase=phase,
     )
 
 
@@ -330,11 +348,11 @@ class UniversalPluginLoader:
         self._catalog.append(record)
         self._catalog.sort(key=lambda r: (0 if r.source == SOURCE_BUILTIN else 1, r.name))
 
-    def _set_catalog_error(self, name: str, error: str) -> None:
-        """Record a runtime load failure on the catalog entry for ``name``."""
+    def _set_catalog_error(self, name: str, error: str, *, phase: str) -> None:
+        """Record a runtime load failure (and its ``phase``) on the catalog entry."""
         record = self.get_record(name)
         if record is not None:
-            self._replace_record(_catalog_error(record, error))
+            self._replace_record(_catalog_error(record, error, phase=phase))
 
     async def refresh_catalog(self, scanners_path: str | None = None) -> list[PluginRecord]:
         """Rebuild the catalog and load every enabled plugin, isolating failures.
@@ -363,7 +381,13 @@ class UniversalPluginLoader:
         return list(self._catalog)
 
     async def _load_record(self, record: PluginRecord) -> bool:
-        """Load one catalog record. Returns ``False`` when it could not be loaded."""
+        """Load one catalog record. Returns ``False`` when it could not be loaded.
+
+        A record whose ``error`` is set is never loaded, whatever it carries: the
+        factory of a plugin that failed ``on_load()`` is kept for the
+        configuration API, and a broken plugin must not start running because of
+        it.
+        """
         if record.factory is None or record.error:
             return False
         if record.name in self._plugins:
@@ -371,7 +395,9 @@ class UniversalPluginLoader:
         try:
             plugin = record.factory()
         except Exception as exc:
-            self._set_catalog_error(record.name, f"instantiation failed ({exc})")
+            self._set_catalog_error(
+                record.name, f"instantiation failed ({exc})", phase=FAILURE_INSTANTIATION
+            )
             logger.warning("Plugin %s (%s) could not be instantiated: %s", record.name, record.package, exc)
             return False
         try:
@@ -382,7 +408,11 @@ class UniversalPluginLoader:
             self._plugins.pop(record.name, None)
             with contextlib.suppress(Exception):
                 await plugin.on_unload()
-            self._set_catalog_error(record.name, f"on_load failed ({type(exc).__name__}: {exc})")
+            self._set_catalog_error(
+                record.name,
+                f"on_load failed ({type(exc).__name__}: {exc})",
+                phase=FAILURE_ON_LOAD,
+            )
             logger.warning(
                 "Plugin %s (%s) failed on_load and stays disabled: %s", record.name, record.package, exc
             )

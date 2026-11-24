@@ -219,9 +219,13 @@ def catalog_record(
 ) -> PluginRecord:
     """Describe ``plugin`` as a catalog record.
 
-    A record with ``error`` has **no** factory, exactly like the real catalog
-    (``loader._catalog_error`` drops it): a broken plugin cannot be instantiated,
-    so the disposable-instance path must not be reachable for it either.
+    A record with ``error`` has **no** factory, exactly like a catalog record whose
+    discovery or instantiation failed (``loader._catalog_error`` drops it): there
+    is nothing to instantiate, so the disposable-instance path must not be
+    reachable. The one broken record that *does* keep its factory — a plugin whose
+    ``on_load()`` raised, marked with ``failed_phase=FAILURE_ON_LOAD`` — is built
+    with the real loader in ``tests/api/test_plugin_config_broken.py``, because
+    that is where the bug lived.
     """
     return PluginRecord(
         name=name,

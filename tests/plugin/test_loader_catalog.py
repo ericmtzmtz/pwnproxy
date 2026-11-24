@@ -16,7 +16,13 @@ import tomllib
 import pytest
 
 import pwnproxy.plugins.core.loader as loader_module
-from pwnproxy.plugins.core.catalog import PluginRecord, discover_plugins
+from pwnproxy.plugins.core.catalog import (
+    FAILURE_INSTANTIATION,
+    FAILURE_ON_LOAD,
+    PluginRecord,
+    build_scan_loader,
+    discover_plugins,
+)
 from pwnproxy.plugins.core.config import ActivationConfigError, config_path
 from pwnproxy.plugins.core.loader import (
     PluginLoader,
@@ -90,6 +96,25 @@ class Exploding(ScannerPlugin):
 '''
 
 
+FAILING_CONSTRUCTOR_SOURCE = '''
+from pwnproxy.plugins.core.base import PluginMetadata, ScannerPlugin
+
+INSTANTIATIONS = []
+
+
+class Unbuildable(ScannerPlugin):
+    metadata = PluginMetadata(name="unbuildable", version="0.0.1", consumes=["flow"], produces=["finding"])
+
+    def __init__(self):
+        INSTANTIATIONS.append(1)
+        raise RuntimeError("no resource")
+
+    async def on_flow(self, flow):
+        if False:
+            yield None
+'''
+
+
 def _flow(url: str = "http://target.local/?q=1") -> Flow:
     return Flow(id="f1", method="GET", url=url, request_headers={})
 
@@ -106,6 +131,12 @@ def _install_counter(install_fake_plugin):
 def _install_exploding(install_fake_plugin):
     return install_fake_plugin(
         plugin_name="exploding", class_name="Exploding", source=FAILING_ON_LOAD_SOURCE,
+    )
+
+
+def _install_unbuildable(install_fake_plugin):
+    return install_fake_plugin(
+        plugin_name="unbuildable", class_name="Unbuildable", source=FAILING_CONSTRUCTOR_SOURCE,
     )
 
 
@@ -216,6 +247,94 @@ class TestFailureIsolation:
         assert module.LOADS == []  # the installed one never even got instantiated by the loader
         assert loader.plugin_enabled("sqli") is True
         assert loader.get_plugin("sqli").metadata.author != "shadow"
+        await loader.shutdown()
+
+
+class TestBrokenPluginKeepsOnlyWhatItsFailureAllows:
+    """What a failed load leaves on the catalog record, and what it must not allow.
+
+    A plugin whose ``on_load()`` raises stays broken (it is not loaded, not
+    activated, not scanned, and toggling it still fails), but the catalog **keeps
+    its factory** so the configuration API can build a disposable instance and
+    let the user fix whatever made ``on_load()`` fail. A plugin whose constructor
+    raises has nothing to configure: no factory, ``409`` everywhere.
+    """
+
+    @pytest.mark.asyncio
+    async def test_an_on_load_failure_keeps_the_factory_and_records_the_phase(
+        self, install_fake_plugin, activation_config
+    ):
+        fake = _install_exploding(install_fake_plugin)
+        activation_config(f"[plugin.activation]\n{fake.plugin_name} = true\n")
+        loader = PluginLoader(HookBus())
+
+        await loader.refresh_catalog()
+
+        record = loader.get_record(fake.plugin_name)
+        assert (
+            record.error,
+            record.failed_phase,
+            callable(record.factory),
+            record.factory().metadata.name,
+            loader.get_plugin(fake.plugin_name),
+            loader.plugin_enabled(fake.plugin_name),
+        ) == (
+            "on_load failed (RuntimeError: boom)",
+            FAILURE_ON_LOAD,
+            True,
+            fake.plugin_name,
+            None,
+            False,
+        )
+        await loader.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_an_instantiation_failure_drops_the_factory(
+        self, install_fake_plugin, activation_config
+    ):
+        fake = _install_unbuildable(install_fake_plugin)
+        activation_config(f"[plugin.activation]\n{fake.plugin_name} = true\n")
+        loader = PluginLoader(HookBus())
+
+        await loader.refresh_catalog()
+
+        record = loader.get_record(fake.plugin_name)
+        assert (
+            record.error,
+            record.failed_phase,
+            record.factory,
+            loader.plugin_enabled(fake.plugin_name),
+        ) == ("instantiation failed (no resource)", FAILURE_INSTANTIATION, None, False)
+        await loader.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_it_is_not_activated_nor_loaded_by_a_one_shot_scan(
+        self, install_fake_plugin, activation_config
+    ):
+        fake = _install_exploding(install_fake_plugin)
+        activation_config(f"[plugin.activation]\n{fake.plugin_name} = true\n")
+        loader = PluginLoader(HookBus())
+        await loader.refresh_catalog()
+
+        # ``POST /api/v1/scan`` hands the live loader's effective state over, which
+        # is the truth that knows about the failed ``on_load()``. The retained
+        # factory must not sneak the plugin back into the one-shot loader.
+        activated = await loader.activate(fake.plugin_name)
+        scan_loader = await build_scan_loader(disabled_plugins=loader.disabled_names())
+
+        assert (
+            activated,
+            loader.list_plugins(),
+            sorted(set(loader.disabled_names()) & {fake.plugin_name}),
+            sorted(scan_loader.list_plugins()),
+            scan_loader.get_plugin(fake.plugin_name),
+        ) == (
+            False,
+            sorted(BUILTIN_SCANNERS),
+            [fake.plugin_name],
+            sorted(BUILTIN_SCANNERS),
+            None,
+        )
         await loader.shutdown()
 
 
