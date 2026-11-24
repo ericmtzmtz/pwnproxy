@@ -79,10 +79,18 @@ export function ItemEditor({
   async function submit(event: Event): Promise<void> {
     event.preventDefault();
     if (busy) return;
+    const values = payload();
+    // An update with no touched field would reach the server with `values`
+    // empty, which the API refuses (`422`: nothing to write). Saying it here
+    // saves a round trip; a create still travels, because an empty body is a
+    // legal create and the plugin's schema decides whether it is enough.
+    if (item && Object.keys(values).length === 0) {
+      setFailure({ message: "Nothing to save: change at least one field.", field: null });
+      return;
+    }
     setBusy(true);
     setFailure(null);
     try {
-      const values = payload();
       if (item) {
         await updateCollectionItem(plugin, spec.name, item.id, values);
       } else {
