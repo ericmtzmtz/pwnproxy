@@ -158,13 +158,25 @@ await plugin.on_load()          # reads self.context.config here
 `run_scan()` runs the loaded plugins over a flow and takes **only** the flow: depth and
 evasion were already resolved at load time.
 
-**Remote configuration (next change).** Configuration reaches a plugin only through the loader
-today; activation (`[plugin.activation]` in `config.toml`) is machine-wide. The change that adds an
-API to read and write plugin configuration — including client credentials — will require the token
-scope `full` on those routes (`Depends(require_scope("full"))` from
-`pwnproxy/transport/rest/auth.py`). The MCP uses the `agent` scope, so it will not be able to read
-or write secrets; `require_scope` already exists and answers a fixed `403`, but no route uses it yet.
-That is not a sandbox: an agent with a shell can still read `~/.pwnproxy/api-token`.
+**Remote configuration.** The load-time path above is unchanged: only the loader populates
+`PluginContext.config`. On top of it, a plugin that wants its configuration editable from outside
+publishes a schema (`config_schema()`) and implements the methods that read and write its own store
+(`config_read`, `config_write`, `collection_*`, `run_action`). The core stores nothing: it validates
+every write against the published schema, calls the plugin's method and renders what comes back, so
+one generic set of API routes, MCP tools and CLI commands serves every plugin — no client knows a
+plugin by name. The author-facing rules are in [§3.4](#34-plugin-configuration-and-actions-for-authors).
+
+Activation is a separate, machine-wide flag (`[plugin.activation]` in `config.toml`,
+`POST /api/v1/plugins/{name}/toggle`): configuring a plugin does not enable it, and enabling it does
+not reload its values.
+
+A declared `secret` field is **write-only**: no read ever returns its value, only
+`{"set": true|false}`, and the audit event carries key names, never values. Writing one requires a
+token of scope `full` (`pwnproxy/transport/rest/auth.py`); the MCP runs with the `agent` scope, so a
+secret can be neither read nor written through the MCP tools.
+That is not a sandbox. The `agent` scope keeps secrets out of the MCP tools, but it does not
+contain an agent with a shell on the machine: such an agent can read `~/.pwnproxy/api-token` and get
+`full`.
 
 ### 3.3 `Finding`
 
@@ -203,6 +215,164 @@ keeps working). Every scanner MUST emit fully populated `Finding` objects:
 
 **Evidence** MUST be a human-readable string with concrete values, e.g.
 `"Response length diff: TRUE=246, FALSE=158 (diff=88)"`.
+
+### 3.4 Plugin configuration and actions (for authors)
+
+The load-time contract of §3.2 does not change. A plugin that wants its settings editable from
+outside **publishes a schema** and implements the methods that read and write its own store. The core
+stores no configuration: it validates a request against the published schema, calls the plugin's
+method and renders what comes back. One generic set of API routes, MCP tools and CLI commands serves
+every plugin, so nothing in the Web UI, the MCP or the CLI knows a plugin by name.
+
+Everything lives in `pwnproxy/plugins/core/config_schema.py` (the vocabulary) and
+`pwnproxy/plugins/core/config_service.py` (the contract, with the error table in its docstring).
+
+#### 3.4.1 The schema
+
+`config_schema()` returns a `PluginConfigSchema` built from `FieldSpec`, `CollectionSpec` and
+`ActionSpec`. It is validated on every call: a broken one is a `409` and **no** field of it is
+published.
+
+```python
+from pwnproxy.plugins.core.config_schema import (
+    ActionSpec,
+    CollectionSpec,
+    FieldSpec,
+    PluginConfigSchema,
+)
+
+# Settings: one flat object. Values the plugin reads when it loads or when it runs.
+ENVIRONMENT = FieldSpec(
+    "environment",
+    "enum",
+    choices=("lab", "staging"),    # enum => choices is mandatory
+    default="lab",                 # reported when the plugin has no value
+    help="Where the checks run.",
+)
+RETRIES = FieldSpec("retries", "integer", minimum=0, maximum=5)
+
+# A collection: a list of items, each shaped by `item`, at most `max_items` of them.
+WEBHOOKS = CollectionSpec(
+    name="webhooks",               # route segment: /plugins/<name>/collections/webhooks
+    help="Webhooks the checks call.",
+    max_items=5,                   # capacity: the server answers 409 when it is full
+    item=(
+        FieldSpec("name", "string", required=True, max_length=64,
+                  help="Unique; how the client addresses the item."),
+        FieldSpec("url", "string", required=True, max_length=2048,
+                  help="Where the test request goes. The plugin validates it."),
+        FieldSpec("events", "array", items="string", max_items=32,
+                  help="Events this webhook subscribes to."),
+        FieldSpec("status", "enum", choices=("active", "failing"), read_only=True,
+                  help="The plugin recomputes it; a client that sends it gets 422."),
+        # The secrets of a webhook: string only, no default, never returned.
+        FieldSpec("signing_key", "string", secret=True, max_length=4096,
+                  help="Used to sign the request. Never returned."),
+        FieldSpec("auth_header", "string", secret=True, max_length=4096,
+                  help="Sent as the Authorization header. Never returned."),
+    ),
+)
+
+# An action: an operation run on demand, with parameters the client sends.
+SEND_TEST = ActionSpec(
+    name="send_test",              # route segment: /plugins/<name>/actions/send_test
+    long_running=True,             # 202 + task_id; the result lands in GET /tasks/{id}
+    requires_scope="full",         # the token scope it needs; undeclared means "full"
+    help="Sends one test request to a webhook and reports the answer.",
+    parameters=(
+        FieldSpec("name", "string", required=True),
+        FieldSpec("payload", "string", required=True, max_length=8192),
+    ),
+)
+
+def config_schema(self) -> PluginConfigSchema:
+    return PluginConfigSchema(
+        settings=(ENVIRONMENT, RETRIES),
+        collections=(WEBHOOKS,),
+        actions=(SEND_TEST,),
+    )
+```
+
+`FieldSpec` attributes: `key`, `type` (`string` \| `integer` \| `number` \| `boolean` \| `enum` \|
+`array`), `help`, `required`, `secret`, `read_only`, `default`, `choices`, `minimum`, `maximum`,
+`max_length`, `max_items`, `items`. `required` only bites on a **create**: a `PATCH` validates the
+keys it carries and leaves every other key alone. Array items are strings today.
+
+The published form (`GET /api/v1/plugins/{name}/schema`) is `FieldSpec.to_dict()`: `key`, `type`,
+`required`, `secret` and `read_only` are **always** present — a client should not have to tell
+"absent" from `false` — while `help` and the type-specific attributes (`default`, `choices`,
+`minimum`, `maximum`, `max_length`, `max_items`, `items`) appear only when declared. The payload is
+`{"plugin", "schema_version", "settings", "collections", "actions"}` and nothing else;
+`schema_version` is `1`, and growing the shape (a new field type, a new attribute) means a new
+number, never a silent reinterpretation.
+
+#### 3.4.2 The eight optional methods
+
+A plugin may implement any of them, plain or `async` — the core awaits when needed, so the plugin
+does not have to know how it is called. `PwnPlugin` declares none of them: a plugin that implements
+no method simply has no configuration, and the routes answer `200` with empty lists.
+
+| Method | Called by | Must return |
+|---|---|---|
+| `config_schema()` | every configuration route, before anything else | `PluginConfigSchema` |
+| `config_read()` | `GET /api/v1/plugins/{name}/settings` | flat `{key: value}`; a secret adds `"<key>__set": true` |
+| `config_write(values)` | `PATCH /api/v1/plugins/{name}/settings` | nothing (the response is read back with `config_read`) |
+| `collection_list(collection)` | `GET /api/v1/plugins/{name}/collections/{collection}` | `[{"id": …, <field>: …}, …]` |
+| `collection_create(collection, values)` | `POST /api/v1/plugins/{name}/collections/{collection}` | the created item, with its `id` |
+| `collection_update(collection, item_id, values)` | `PATCH …/collections/{collection}/{item_id}` | the updated item |
+| `collection_delete(collection, item_id)` | `DELETE …/collections/{collection}/{item_id}` | nothing (`204`) |
+| `run_action(action, parameters)` | `POST /api/v1/plugins/{name}/actions/{action}` | the action's result, or `{"status": "running", "task_id": …}` |
+
+- A write returns the object again, rendered: settings come back as
+  `{"plugin", "schema_version", "values"}`, an item as `{"id", "values"}` and a collection as
+  `{"plugin", "collection", "schema_version", "max_items", "items"}`.
+- `run_action` returns `{"status": "completed", "result": <yours>}` for a short action (`200`) and
+  `{"status": "running", "task_id": …}` for a `long_running` one (`202`); the result then lands in
+  `GET /api/v1/tasks/{task_id}`. A long action needs a task store in the process (`503` otherwise).
+- A missing method is `409` `plugin '<n>' declares no <method>`; a collection or action the schema
+  does not declare is `404`.
+
+#### 3.4.3 Rules the core enforces for you
+
+- **`secret` is only allowed on `string`**, so `{"set": bool}` can never be confused with a value,
+  and a secret field **cannot declare a `default`** — the schema is published, so a default would
+  leak it.
+- **A secret is write-only.** `render_values()` is the only place that builds the read form: for a
+  secret field it emits `{"set": …}` from `"<key>__set"` and **discards whatever the plugin returned
+  for that key**, so a plugin that forgets its half of the contract leaks nothing. Only key *names*
+  reach the audit event and the log line.
+- **An action parameter can be neither `secret` nor `read_only`** (the schema is rejected with
+  `409`). A long action persists its parameters in the task store, so a secret there would be a
+  secret at rest outside the plugin's own store: an action uses a secret the plugin already holds.
+- **An action result never carries a secret.** The task store persists results and the MCP reads
+  them: return the finding, the status code or the diff, never the credential that produced it.
+- **The core validates the shape; the plugin decides the business rule.** The core checks a
+  declared key (`unknown field`), the JSON type, `choices`, `minimum`/`maximum`, `max_length`,
+  `max_items`, `required` on create, `read_only` refused, `null` refused, and the collection's
+  capacity (`409` `collection '<c>' is full (max <n> items)`). Everything else is yours: uniqueness,
+  "webhook names must be unique", whether the URL answers, what "failing" means. Raise
+  `PluginValidationError(field, message)` — the client receives **your** `422`
+  `{"field", "message"}`, untouched — and do not widen a `SchemaViolation` nor invent an HTTP status.
+  A `422` from a collection item qualifies the field with the collection (`webhooks.signing_key`).
+- **`config_write` and `collection_*` are the only seam, and there is no reload.** Persist the change
+  *and* apply it to the live state of the plugin there. The core does not reload the plugin after a
+  write: that would replay the events the bus buffered while it was off and restart its consumer
+  tasks.
+- **`__init__` must have no side effects** (no network, no store opened). A plugin that is **not
+  loaded** is still configurable: the core builds a *disposable* instance from the catalog's factory
+  and never calls `on_load()` on it. Actions are the exception — they need a live plugin (`409`
+  `plugin '<n>' is not loaded`).
+- **Activation is not configuration.** The `toggle` flips the machine-wide `[plugin.activation]`
+  flag; it does not touch your values and your `config_write` does not enable anything.
+
+#### 3.4.4 The `agent` scope, from the plugin's side
+
+An `agent` token cannot write a declared secret (a `403` whose message names the rule and points at
+the Web UI or the CLI) and cannot run an action declared `requires_scope="full"` (a `403` with the
+generic scope body). It **can** write every non-secret setting: that is the split, and it is the
+reason a setting that must not be changed by an agent is a secret or moves behind an action. The
+bound of the scope is in §3.2 and has not changed: an agent with a shell on the same machine reads
+`~/.pwnproxy/api-token` and gets `full`.
 
 ---
 

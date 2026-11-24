@@ -14,6 +14,7 @@ from pwnproxy.transport.rest import (
     health,
     interceptor,
     intruder,
+    plugin_config,
     plugins,
     proxy,
     repeater,
@@ -93,6 +94,7 @@ app.include_router(repeater)
 app.include_router(intruder)
 app.include_router(scanners)
 app.include_router(plugins)
+app.include_router(plugin_config)
 app.include_router(ws_router)
 app.include_router(tasks)
 app.include_router(reports)

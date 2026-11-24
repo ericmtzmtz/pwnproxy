@@ -270,3 +270,31 @@ class TestToggle:
         asyncio.run(fresh.refresh_catalog())
 
         assert (fresh.plugin_enabled("xxe"), "xxe" in fresh.list_plugins()) == (False, False)
+
+
+#: ``GET /plugins`` payload of ``sqli``, field by field. Written out so that
+#: ``plugin-config-api`` cannot add, drop or rename a field unnoticed: the six
+#: shipped scanners keep the same contract (design D14).
+SQLI_PAYLOAD = {
+    "name": "sqli",
+    "source": "builtin",
+    "package": "pwnproxy",
+    "version": "0.3.0",
+    "enabled": True,
+    "error": None,
+    "loaded": True,
+    "category": "scanner",
+    "description": "",
+    "author": "pwnproxy",
+    "consumes": ["flow"],
+    "produces": ["finding"],
+}
+
+
+def test_a_builtin_payload_is_exactly_the_documented_one(make_client):
+    """``GET /plugins`` did not change for a plugin without a configuration schema."""
+    client, _ = make_client()
+
+    plugins = {plugin["name"]: plugin for plugin in client.get("/api/v1/plugins").json()["plugins"]}
+
+    assert plugins["sqli"] == SQLI_PAYLOAD

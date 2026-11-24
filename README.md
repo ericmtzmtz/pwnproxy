@@ -230,6 +230,13 @@ is the single list of what exists, where it came from and whether it is enabled.
 A plugin runs **inside the proxy process**, with your permissions and no sandbox:
 activating one is a trust decision, not a toggle you flip for an untrusted package.
 
+A plugin that declares a configuration schema publishes its settings, collections and actions on the
+API (`/api/v1/plugins/{name}/schema`, `…/settings`, `…/collections/{collection}`, `…/actions/{action}`);
+the Web UI, the MCP and the CLI (`pwnproxy plugin config`, `pwnproxy plugin action`) consume them
+without their own code. A field declared `secret` is write-only — reads say `set`/`unset`, never the
+value — and writing it needs the `full` token, so the MCP (`agent` scope) can configure a plugin but
+never read or write its credentials.
+
 A watchdog tracks plugin failures and can automatically disable repeatedly failing plugins.
 
 ## One engine, multiple interfaces

@@ -1,6 +1,7 @@
 ---
 import Base from "@/layouts/Base.astro";
 import Card from "@/ui/Card.astro";
+import { PluginsSection } from "@/components/plugins/PluginsSection";
 ---
 
 <Base title="Settings" page="/settings">
@@ -11,16 +12,8 @@ import Card from "@/ui/Card.astro";
 
   <Card>
     <div slot="title">Plugins</div>
-    <div class="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-      <p class="max-w-prose text-xs text-neutral-500">
-        Scanner plugins found on this machine, built-in and installed. Activation is machine-wide
-        and survives sessions.
-      </p>
-      <span id="plugin-summary" class="text-[11px] font-medium text-neutral-400"></span>
-    </div>
-    <div id="plugin-list" class="space-y-2" aria-busy="true">
-      <div class="py-8 text-center text-sm text-neutral-600">Loading plugins...</div>
-    </div>
+    <!-- The island owns the catalog and each plugin's configuration panel. -->
+    <PluginsSection client:load />
   </Card>
 
   <div class="mt-6 grid grid-cols-2 gap-4">
@@ -58,185 +51,9 @@ import Card from "@/ui/Card.astro";
 </Base>
 
 <script>
-  import { listPlugins } from "@/api/plugins/calls";
   import { getHealth } from "@/api/health/calls";
-  import { togglePluginWithFeedback } from "@/components/plugins/toggleFeedback";
-  import { pluginOrigin, pluginState, pluginStatus, pluginStatusClass } from "@/utils/plugins";
-  import type { PluginInfo } from "@/api/plugins/types";
 
-  const pluginList = document.getElementById("plugin-list");
-  const pluginSummary = document.getElementById("plugin-summary");
   const proxyPortInput = document.getElementById("proxy-port");
-
-  const SWITCH_BASE =
-    "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 focus:ring-offset-neutral-950";
-
-  function node<K extends keyof HTMLElementTagNameMap>(
-    tag: K,
-    className: string,
-    text?: string,
-  ): HTMLElementTagNameMap[K] {
-    const element = document.createElement(tag);
-    element.className = className;
-    if (text !== undefined) element.textContent = text;
-    return element;
-  }
-
-  function alertBox(title: string, message: string): HTMLElement {
-    const box = node("div", "rounded-md border border-danger-800 bg-danger-900/20 px-3 py-2");
-    box.setAttribute("role", "alert");
-    box.append(
-      node("p", "text-xs font-medium text-danger-400", title),
-      node("p", "mt-0.5 break-words text-[11px] text-neutral-400", message),
-    );
-    return box;
-  }
-
-  /**
-   * The switch only reflects what the server reports: it never flips on its own.
-   * A broken plugin keeps it off and `aria-disabled` (still focusable, so the
-   * reason in `aria-describedby` can be read); the server would answer `409`.
-   */
-  function toggleSwitch(plugin: PluginInfo, errorId: string | null): HTMLButtonElement {
-    const broken = pluginState(plugin) === "broken";
-    const button = document.createElement("button");
-    button.type = "button";
-    button.setAttribute("role", "switch");
-    button.setAttribute("aria-checked", String(plugin.enabled));
-    button.setAttribute("aria-label", plugin.name);
-    button.className = `${SWITCH_BASE} ${plugin.enabled ? "bg-primary-600" : "bg-neutral-700"} ${
-      broken ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-    }`;
-    const knob = node(
-      "span",
-      `inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform duration-200 ${
-        plugin.enabled ? "translate-x-6" : "translate-x-1"
-      }`,
-    );
-    button.append(knob);
-
-    if (broken) {
-      button.setAttribute("aria-disabled", "true");
-      button.title = "This plugin cannot be turned on while it is broken";
-      if (errorId) button.setAttribute("aria-describedby", errorId);
-      return button;
-    }
-
-    button.title = plugin.enabled ? "Turn off" : "Turn on";
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      button.setAttribute("aria-busy", "true");
-      try {
-        await togglePluginWithFeedback(plugin.name);
-        // Reload from the catalog: the server owns the state, and the reload also
-        // shows the real state after a 404/409/500.
-        await loadPlugins();
-      } finally {
-        button.removeAttribute("aria-busy");
-        button.disabled = false;
-      }
-    });
-    return button;
-  }
-
-  function pluginRow(plugin: PluginInfo, index: number): HTMLElement {
-    const state = pluginState(plugin);
-    const broken = state === "broken";
-    const errorId = broken ? `plugin-error-${index}` : null;
-
-    const row = node(
-      "div",
-      `flex items-start justify-between gap-4 rounded-md border px-3 py-2.5 ${
-        broken ? "border-danger-800/60 bg-danger-900/10" : "border-neutral-800 bg-neutral-950"
-      }`,
-    );
-
-    const avatarTone = broken
-      ? "bg-danger-900/40 text-danger-400"
-      : plugin.enabled
-        ? "bg-primary-900 text-primary-300"
-        : "bg-neutral-800 text-neutral-500";
-    const avatar = node(
-      "span",
-      `inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold uppercase ${avatarTone}`,
-      plugin.name.charAt(0) || "?",
-    );
-
-    const body = node("div", "min-w-0");
-    body.append(
-      node(
-        "p",
-        `text-sm font-medium ${plugin.enabled ? "text-neutral-200" : "text-neutral-400"}`,
-        plugin.name,
-      ),
-      node("p", "text-[11px] text-neutral-500", pluginOrigin(plugin)),
-      node(
-        "p",
-        `mt-0.5 text-[11px] font-medium ${pluginStatusClass(plugin)}`,
-        pluginStatus(plugin),
-      ),
-    );
-    if (plugin.description) {
-      body.append(node("p", "mt-1 text-[11px] text-neutral-500", plugin.description));
-    }
-    if (broken && plugin.error) {
-      const reason = node(
-        "p",
-        "mt-1 break-words rounded bg-danger-900/30 px-1.5 py-1 font-mono text-[11px] text-danger-300",
-        plugin.error,
-      );
-      if (errorId) reason.id = errorId;
-      body.append(reason);
-    }
-
-    const left = node("div", "flex min-w-0 items-start gap-3");
-    left.append(avatar, body);
-    row.append(left, toggleSwitch(plugin, errorId));
-    return row;
-  }
-
-  function renderPlugins(plugins: PluginInfo[], error: string | null): void {
-    if (!pluginList) return;
-
-    const active = plugins.filter((p) => p.enabled).length;
-    if (pluginSummary) {
-      pluginSummary.textContent = plugins.length > 0 ? `${active} of ${plugins.length} active` : "";
-    }
-
-    if (error !== null) {
-      pluginList.replaceChildren(alertBox("Plugin catalog unavailable", error));
-      return;
-    }
-    if (plugins.length === 0) {
-      pluginList.replaceChildren(
-        node("div", "py-8 text-center text-sm text-neutral-600", "No plugins discovered"),
-      );
-      return;
-    }
-    pluginList.replaceChildren(...plugins.map(pluginRow));
-  }
-
-  let hasLoaded = false;
-
-  async function loadPlugins(): Promise<void> {
-    if (!pluginList) return;
-    if (!hasLoaded) {
-      pluginList.setAttribute("aria-busy", "true");
-      pluginList.replaceChildren(
-        node("div", "py-8 text-center text-sm text-neutral-600", "Loading plugins..."),
-      );
-    }
-    try {
-      const data = await listPlugins();
-      renderPlugins(data.plugins, data.error);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      pluginList.replaceChildren(alertBox("Could not reach the API", message));
-    } finally {
-      hasLoaded = true;
-      pluginList.removeAttribute("aria-busy");
-    }
-  }
 
   /** Show the port the proxy really listens on — never a hardcoded one. */
   async function loadProxyPort() {
@@ -250,6 +67,5 @@ import Card from "@/ui/Card.astro";
     }
   }
 
-  void loadPlugins();
   void loadProxyPort();
 </script>
